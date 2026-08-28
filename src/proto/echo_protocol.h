@@ -24,6 +24,7 @@ public:
     Status request() override;
     bool poll(Angle& out) override;
     void serviceEcho() override;
+    bool lastAngle(Angle& out) const override;
     uint32_t framesOk() const override;
     uint32_t framesBad() const override;
     void resetCounters() override;
@@ -53,4 +54,5 @@ private:
     bool badCounted_;
     uint8_t txPayload_[kAnglePayloadLen];
     uint8_t rx_[kRxCap];
+    Angle lastAngle_;
 };

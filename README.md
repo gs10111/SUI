@@ -100,6 +100,11 @@ bancada sem internet) e mostra inclinacao ao vivo, estatisticas do RS-485, saida
 barra proporcional, os quatro reles com o cruzamento LED x rele, o estado do sistema e a matriz do
 relatorio, com botao para copiar o bloco CSV. Os controles ficam escondidos ate `wifi control on`.
 
+**Como o angulo ao vivo funciona sem atrapalhar o teste**: o portal NAO le o barramento — isso
+bloquearia por ate 20 ms e roubaria o quadro de resposta do item t3, produzindo FAIL falso. Em vez
+disso, `IRs485Protocol` guarda o ultimo angulo valido, e o `loop()` faz o polling de fundo a 10 Hz
+**somente enquanto o portal esta no ar e nenhum teste esta em execucao**. O portal so le o cache.
+
 **Por que o radio fica desligado por padrao**: a comutacao de RF injeta ruido na faixa que
 compromete a tolerancia de +/-0,5 % FE das medidas analogicas, alem de elevar o pico de corrente no
 +5 V. Por isso o **teste 1 recusa medir com o radio ligado**: avisa, oferece desligar, e devolve

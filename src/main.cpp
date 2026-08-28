@@ -32,6 +32,8 @@
 
 namespace {
 
+constexpr uint32_t kLinkPollPeriodMs = 100;
+
 constexpr const char* kNvsWdtFlag = "wdt_expect";
 constexpr const char* kNvsSerial = "serial";
 constexpr const char* kNvsDate = "date";
@@ -92,6 +94,8 @@ Ctx g_ctx{g_io,      g_operator, g_ao,     g_relays, g_rs485, g_proto, g_display
           FW_VERSION, BOARD_REV};
 
 WifiPortal g_wifi(g_ctx);
+uint32_t g_lastLinkPollMs = 0;
+
 TestRunner g_runner(g_ctx);
 Console g_console(g_ctx);
 
@@ -200,4 +204,15 @@ void loop() {
     g_console.poll();
     g_buttons.poll();
     g_wifi.poll();
+
+    if (g_wifi.running() && !g_runner.busy()) {
+        const uint32_t nowMs = millis();
+        if ((nowMs - g_lastLinkPollMs) >= kLinkPollPeriodMs) {
+            g_lastLinkPollMs = nowMs;
+            Angle angle = {0.0f, 0.0f, false};
+            if (g_proto.request().ok()) {
+                g_proto.poll(angle);
+            }
+        }
+    }
 }

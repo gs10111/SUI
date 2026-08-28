@@ -36,7 +36,8 @@ ModbusRtuProtocol::ModbusRtuProtocol()
       function_(kFuncReadHolding),
       lastException_(0),
       badCounted_(false),
-      rx_{} {}
+      rx_{},
+      lastAngle_{0.0f, 0.0f, false} {}
 
 const char* ModbusRtuProtocol::name() const {
     return "modbus-rtu-stub";
@@ -76,6 +77,11 @@ void ModbusRtuProtocol::resetCounters() {
     framesBad_ = 0;
     rxLen_ = 0;
     lastException_ = 0;
+}
+
+bool ModbusRtuProtocol::lastAngle(Angle& out) const {
+    out = lastAngle_;
+    return lastAngle_.valid;
 }
 
 uint32_t ModbusRtuProtocol::framesOk() const {
@@ -212,6 +218,7 @@ bool ModbusRtuProtocol::consume(Angle& out) {
         out.x = static_cast<float>(be16(&rx_[3])) * kDeciDegreeToDegree;
         out.y = static_cast<float>(be16(&rx_[5])) * kDeciDegreeToDegree;
         out.valid = true;
+        lastAngle_ = out;
         lastException_ = 0;
         ++framesOk_;
         transport_->noteFrameOk();

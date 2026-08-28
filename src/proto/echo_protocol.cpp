@@ -25,7 +25,8 @@ EchoProtocol::EchoProtocol()
       echoMatch_(false),
       badCounted_(false),
       txPayload_{0, 0, 0, 0},
-      rx_{} {}
+      rx_{},
+      lastAngle_{0.0f, 0.0f, false} {}
 
 const char* EchoProtocol::name() const {
     return "echo";
@@ -44,11 +45,17 @@ void EchoProtocol::setPollTimeoutMs(uint32_t timeoutMs) {
 }
 
 void EchoProtocol::resetCounters() {
+    lastAngle_.valid = false;
     framesOk_ = 0;
     framesBad_ = 0;
     rxLen_ = 0;
     echoMatch_ = false;
     lastDecode_ = frame::Decode::Ok;
+}
+
+bool EchoProtocol::lastAngle(Angle& out) const {
+    out = lastAngle_;
+    return lastAngle_.valid;
 }
 
 uint32_t EchoProtocol::framesOk() const {
@@ -167,6 +174,7 @@ bool EchoProtocol::consume(Angle& out) {
         out.x = static_cast<float>(le16(&payload[0])) * kDeciDegreeToDegree;
         out.y = static_cast<float>(le16(&payload[2])) * kDeciDegreeToDegree;
         out.valid = true;
+        lastAngle_ = out;
         return true;
     }
     return false;

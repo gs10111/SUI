@@ -787,7 +787,8 @@ void WifiPortal::buildStatusJson(char* out, uint16_t cap) {
     json.close(1);
 
     const SerialStats& stats = ctx_.rs485.stats();
-    const Angle angle = {0.0f, 0.0f, false};
+    Angle angle = {0.0f, 0.0f, false};
+    ctx_.proto.lastAngle(angle);
     json.add("\"rs485\":{\"baud\":%lu,\"protocolo\":\"%s\",\"framesOk\":%lu,\"crc\":%lu,\"timeout\":%lu,"
              "\"enquadramento\":%lu,\"anguloX\":%.2f,\"anguloY\":%.2f,\"anguloValido\":%s},",
              static_cast<unsigned long>(ctx_.rs485.baud()), ctx_.proto.name(),

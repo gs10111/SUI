@@ -20,6 +20,7 @@ public:
     virtual Status request() = 0;
     virtual bool poll(Angle& out) = 0;
     virtual void serviceEcho() = 0;
+    virtual bool lastAngle(Angle& out) const = 0;
     virtual uint32_t framesOk() const = 0;
     virtual uint32_t framesBad() const = 0;
     virtual void resetCounters() = 0;
