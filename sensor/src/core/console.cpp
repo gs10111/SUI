@@ -436,18 +436,23 @@ void SensorConsole::cmdStatus() {
     ctx_.io.writeLine("-- registradores do SCL3300 (datasheet Rev.4) --");
     ctx_.io.printf("RS           : %u  %s\r\n", static_cast<unsigned>(diag.returnStatus),
                    scl::rsName(static_cast<scl::Rs>(diag.returnStatus)));
-    ctx_.io.printf("STATUS       : 0x%04X%s%s%s\r\n", static_cast<unsigned>(diag.status),
-                   ((diag.status & scl::kStatusSat) != 0) ? "  SAT(saturado: todo dado invalido)" : "",
-                   ((diag.status & scl::kStatusPwr) != 0) ? "  PWR(normal apos start-up)" : "",
-                   ((diag.status & scl::kStatusModeChange) != 0) ? "  MODE_CHANGE(normal)" : "");
+    char flags[160];
+    scl::describeStatus(diag.status, flags, sizeof(flags));
+    ctx_.io.printf("STATUS       : 0x%04X  %s\r\n", static_cast<unsigned>(diag.status), flags);
     if (!diag.flagsRead) {
         ctx_.io.writeLine("ERR_FLAG1    : NAO LIDO neste ciclo");
         ctx_.io.writeLine("ERR_FLAG2    : NAO LIDO neste ciclo");
     } else {
-        ctx_.io.printf("ERR_FLAG1    : 0x%04X\r\n", static_cast<unsigned>(diag.errFlag1));
-        ctx_.io.printf("ERR_FLAG2    : 0x%04X%s%s\r\n", static_cast<unsigned>(diag.errFlag2),
-                       ((diag.errFlag2 & 0x2000u) != 0) ? "  A_EXTC(capacitor de 100 nF)" : "",
-                       ((diag.errFlag2 & 0x4000u) != 0) ? "  D_EXTC(capacitor de 100 nF)" : "");
+        scl::describeErrFlag1(diag.errFlag1, flags, sizeof(flags));
+        ctx_.io.printf("ERR_FLAG1    : 0x%04X  %s\r\n", static_cast<unsigned>(diag.errFlag1), flags);
+        scl::describeErrFlag2(diag.errFlag2, flags, sizeof(flags));
+        ctx_.io.printf("ERR_FLAG2    : 0x%04X  %s\r\n", static_cast<unsigned>(diag.errFlag2), flags);
+        if ((diag.errFlag2 & (scl::kErr2AExtC | scl::kErr2DExtC | scl::kErr2Agnd)) != 0) {
+            ctx_.io.writeLine("DIAGNOSTICO: erro de conexao externa do componente.");
+            ctx_.io.writeLine("Conferir os capacitores de 100 nF X7R colados no chip (A_EXTC pino 2,");
+            ctx_.io.writeLine("D_EXTC pino 10) e o terra analogico AVSS (pino 1). Sem o capacitor do");
+            ctx_.io.writeLine("core analogico o front-end satura, e por isso SAT acende parado.");
+        }
     }
     ctx_.io.printf("STO          : 0x%04X\r\n", static_cast<unsigned>(diag.sto));
     if (diag.status == 0 && diag.errFlag1 == 0 && diag.errFlag2 == 0 && !diag.ready) {
@@ -467,22 +472,40 @@ void SensorConsole::cmdStatus() {
 }
 
 void SensorConsole::cmdWhoAmI() {
-    uint16_t id = 0;
-    const Status st = ctx_.tilt.probeWhoAmI(id);
-    if (st.failed()) {
-        ctx_.io.printf("WHOAMI: leitura FALHOU (%s) - o barramento nao devolveu quadro valido\r\n",
-                       errName(st.err));
-        cmdTrace();
+    uint32_t first = 0;
+    uint32_t second = 0;
+    const Status st1 = ctx_.tilt.exchangeRaw(scl::kCmdReadWhoAmI, first);
+    const Status st2 = ctx_.tilt.exchangeRaw(scl::kCmdReadWhoAmI, second);
+    if (st1.failed() || st2.failed()) {
+        ctx_.io.printf("WHOAMI: nao foi possivel enviar o quadro (%s)\r\n",
+                       errName(st1.failed() ? st1.err : st2.err));
         return;
     }
-    ctx_.io.printf("WHOAMI: 0x%04X (esperado 0x%02X) %s  [leitura ao vivo]\r\n", static_cast<unsigned>(id),
-                   static_cast<unsigned>(kWhoAmIExpected),
-                   (id == kWhoAmIExpected) ? "OK" : "DIVERGENTE");
-    if (id != kWhoAmIExpected) {
-        ctx_.io.writeLine("responde com CRC valido mas o dado diverge: suspeite de temporizacao");
-        ctx_.io.writeLine("(CS alto por menos de 10 us entre quadros) ou de modo SPI errado");
-        cmdTrace();
+
+    ctx_.io.printf("enviado    : 0x%08lX (duas vezes, pipeline off-frame)\r\n",
+                   static_cast<unsigned long>(scl::kCmdReadWhoAmI));
+    ctx_.io.printf("resposta 1 : 0x%08lX  RS=%s dado=0x%04X crc=%s\r\n", static_cast<unsigned long>(first),
+                   scl::rsName(scl::rsOf(first)), static_cast<unsigned>(scl::frameData(first)),
+                   scl::frameCrcOk(first) ? "ok" : "RUIM");
+    ctx_.io.printf("resposta 2 : 0x%08lX  RS=%s dado=0x%04X crc=%s   <- esta e a valida\r\n",
+                   static_cast<unsigned long>(second), scl::rsName(scl::rsOf(second)),
+                   static_cast<unsigned>(scl::frameData(second)), scl::frameCrcOk(second) ? "ok" : "RUIM");
+
+    const uint16_t id = scl::frameData(second);
+    if (second == 0x00000000u) {
+        ctx_.io.writeLine("MISO em zero constante: nada esta dirigindo a linha");
+        return;
     }
+    if (second == 0xFFFFFFFFu) {
+        ctx_.io.writeLine("MISO em um constante: linha presa em alto ou sem retorno");
+        return;
+    }
+    if (!scl::frameCrcOk(second)) {
+        ctx_.io.writeLine("chegou quadro mas o CRC nao fecha: temporizacao (CS alto < 10 us) ou modo SPI");
+        return;
+    }
+    ctx_.io.printf("WHOAMI = 0x%04X (esperado 0x%02X) %s\r\n", static_cast<unsigned>(id),
+                   static_cast<unsigned>(kWhoAmIExpected), (id == kWhoAmIExpected) ? "OK" : "DIVERGENTE");
 }
 
 void SensorConsole::cmdSelfTest() {

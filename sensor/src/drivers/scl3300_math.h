@@ -103,4 +103,35 @@ uint16_t modeSettleMs(uint8_t mode);
 
 bool commandTableOk();
 
+
+constexpr uint16_t kStatusPinContinuity = 0x0001;
+constexpr uint16_t kStatusPd = 0x0004;
+constexpr uint16_t kStatusMem = 0x0008;
+constexpr uint16_t kStatusTemp = 0x0020;
+constexpr uint16_t kStatusClk = 0x0080;
+constexpr uint16_t kStatusDigi2 = 0x0100;
+constexpr uint16_t kStatusDigi1 = 0x0200;
+
+constexpr uint16_t kErr1AfeSat = 0x07FE;
+constexpr uint16_t kErr1AdcSat = 0x0800;
+constexpr uint16_t kErr1Mem = 0x0001;
+
+constexpr uint16_t kErr2Clk = 0x0001;
+constexpr uint16_t kErr2TempSat = 0x0002;
+constexpr uint16_t kErr2Apwr2 = 0x0004;
+constexpr uint16_t kErr2Vref = 0x0008;
+constexpr uint16_t kErr2Dpwr = 0x0010;
+constexpr uint16_t kErr2Apwr = 0x0020;
+constexpr uint16_t kErr2MemoryCrc = 0x0080;
+constexpr uint16_t kErr2Pd = 0x0100;
+constexpr uint16_t kErr2ModeChange = 0x0200;
+constexpr uint16_t kErr2Vdd = 0x0800;
+constexpr uint16_t kErr2Agnd = 0x1000;
+constexpr uint16_t kErr2AExtC = 0x2000;
+constexpr uint16_t kErr2DExtC = 0x4000;
+
+void describeStatus(uint16_t value, char* out, uint16_t cap);
+void describeErrFlag1(uint16_t value, char* out, uint16_t cap);
+void describeErrFlag2(uint16_t value, char* out, uint16_t cap);
+
 }  // namespace scl
