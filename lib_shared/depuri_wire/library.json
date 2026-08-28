@@ -1,0 +1,9 @@
+{
+  "name": "depuri_wire",
+  "version": "1.0.0",
+  "description": "Formato de quadro e CRC16-MODBUS do enlace RS-485 entre a supervisora DE-PURI-DI261924 e a sensora PUSI-DI261930. Fonte unica de verdade das duas pontas.",
+  "keywords": ["rs485", "crc16", "modbus"],
+  "build": {
+    "flags": ["-I include"]
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "depuri_core",
+  "version": "1.0.0",
+  "description": "Codigos de erro comuns aos firmwares da supervisora DE-PURI-DI261924 e da sensora PUSI-DI261930.",
+  "build": {
+    "flags": ["-I include"]
+  }
+}
