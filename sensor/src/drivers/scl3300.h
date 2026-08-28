@@ -31,6 +31,7 @@ public:
     uint32_t reads() const override;
     uint32_t crcErrors() const override;
     uint32_t frameErrors() const override;
+    void diagnostics(InclinometerDiag& out) const override;
 
     Status reinit();
 

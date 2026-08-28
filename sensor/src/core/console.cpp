@@ -416,29 +416,39 @@ void SensorConsole::cmdRaw() {
 void SensorConsole::cmdStatus() {
     Tilt t;
     const Status st = ctx_.tilt.read(t);
-    ctx_.io.writeLine("---- ESTADO DA SENSORA ----");
-    ctx_.io.printf("Inclinometro : %s\r\n", ctx_.tilt.name());
-    ctx_.io.printf("Leitura      : %s\r\n", st.ok() ? "OK" : errName(st.err));
-    ctx_.io.printf("RS atual     : %s\r\n", rsText(t));
+    InclinometerDiag diag;
+    ctx_.tilt.diagnostics(diag);
 
+    ctx_.io.writeLine("---- ESTADO DA SENSORA ----");
+    ctx_.io.printf("Inclinometro : %s  (%s)\r\n", ctx_.tilt.name(), diag.ready ? "inicializado" : "NAO INICIALIZADO");
+    ctx_.io.printf("Leitura      : %s\r\n", st.ok() ? "OK" : errName(st.err));
+
+    ctx_.io.writeLine("-- registradores do SCL3300 (datasheet Rev.4) --");
+    ctx_.io.printf("RS           : %u  %s\r\n", static_cast<unsigned>(diag.returnStatus),
+                   scl::rsName(static_cast<scl::Rs>(diag.returnStatus)));
+    ctx_.io.printf("STATUS       : 0x%04X%s%s%s\r\n", static_cast<unsigned>(diag.status),
+                   ((diag.status & scl::kStatusSat) != 0) ? "  SAT(saturado: todo dado invalido)" : "",
+                   ((diag.status & scl::kStatusPwr) != 0) ? "  PWR(normal apos start-up)" : "",
+                   ((diag.status & scl::kStatusModeChange) != 0) ? "  MODE_CHANGE(normal)" : "");
+    ctx_.io.printf("ERR_FLAG1    : 0x%04X\r\n", static_cast<unsigned>(diag.errFlag1));
+    ctx_.io.printf("ERR_FLAG2    : 0x%04X%s%s\r\n", static_cast<unsigned>(diag.errFlag2),
+                   ((diag.errFlag2 & 0x2000u) != 0) ? "  A_EXTC(capacitor de 100 nF)" : "",
+                   ((diag.errFlag2 & 0x4000u) != 0) ? "  D_EXTC(capacitor de 100 nF)" : "");
+    ctx_.io.printf("STO          : 0x%04X\r\n", static_cast<unsigned>(diag.sto));
+    if (diag.status == 0 && diag.errFlag1 == 0 && diag.errFlag2 == 0 && !diag.ready) {
+        ctx_.io.writeLine("registradores zerados e driver nao inicializado: nenhum quadro valido ainda");
+        ctx_.io.writeLine("veja docs/bringup_sensora.md - a essa altura o suspeito e alimentacao/solda");
+    }
+
+    ctx_.io.writeLine("-- estado publicado no RS-485 (bits de tilt.h) --");
     char decoded[kStatusTextBytes];
     statusText(t.status, decoded, kStatusTextBytes);
-    ctx_.io.printf("STATUS       : 0x%04X  %s\r\n", static_cast<unsigned>(t.status), decoded);
-
-    statusText(static_cast<uint16_t>(t.status & kErrFlag1Mask), decoded, kStatusTextBytes);
-    ctx_.io.printf("ERR_FLAG1    : 0x%04X  %s\r\n", static_cast<unsigned>(t.status & kErrFlag1Mask),
-                   decoded);
-
-    statusText(static_cast<uint16_t>(t.status & kErrFlag2Mask), decoded, kStatusTextBytes);
-    ctx_.io.printf("ERR_FLAG2    : 0x%04X  %s\r\n", static_cast<unsigned>(t.status & kErrFlag2Mask),
-                   decoded);
+    ctx_.io.printf("status       : 0x%04X  %s\r\n", static_cast<unsigned>(t.status), decoded);
 
     ctx_.io.printf("Leituras     : %lu\r\n", static_cast<unsigned long>(ctx_.tilt.reads()));
     ctx_.io.printf("Erros CRC    : %lu\r\n", static_cast<unsigned long>(ctx_.tilt.crcErrors()));
     ctx_.io.printf("Erros quadro : %lu\r\n", static_cast<unsigned long>(ctx_.tilt.frameErrors()));
     ctx_.io.printf("Uptime       : %lu s\r\n", static_cast<unsigned long>(ctx_.io.nowMs() / 1000u));
-    ctx_.io.writeLine("ERR_FLAG1 e ERR_FLAG2 sao a parte de comunicacao e a parte de medida do");
-    ctx_.io.writeLine("STATUS publicado; o registrador bruto do SCL3300 fica dentro do driver.");
 }
 
 void SensorConsole::cmdWhoAmI() {

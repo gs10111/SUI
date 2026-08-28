@@ -6,6 +6,15 @@
 #include "status.h"
 #include "tilt.h"
 
+struct InclinometerDiag {
+    uint16_t status;
+    uint16_t errFlag1;
+    uint16_t errFlag2;
+    uint16_t sto;
+    uint8_t returnStatus;
+    bool ready;
+};
+
 class IInclinometer {
 public:
     virtual ~IInclinometer() = default;
@@ -17,4 +26,5 @@ public:
     virtual uint32_t reads() const = 0;
     virtual uint32_t crcErrors() const = 0;
     virtual uint32_t frameErrors() const = 0;
+    virtual void diagnostics(InclinometerDiag& out) const = 0;
 };

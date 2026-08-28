@@ -382,3 +382,12 @@ uint32_t Scl3300::crcErrors() const {
 uint32_t Scl3300::frameErrors() const {
     return frameErrors_;
 }
+
+void Scl3300::diagnostics(InclinometerDiag& out) const {
+    out.status = lastStatus_;
+    out.errFlag1 = lastErrFlag1_;
+    out.errFlag2 = lastErrFlag2_;
+    out.sto = lastSto_;
+    out.returnStatus = static_cast<uint8_t>(lastRs_);
+    out.ready = ready_;
+}
