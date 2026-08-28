@@ -25,7 +25,7 @@ int main(int argc, char** argv) {
     const uint32_t timeScale = (argc > 2) ? static_cast<uint32_t>(atoi(argv[2])) : 200u;
 
     sim::SimConsoleIO io(script, timeScale);
-    sim::SimOperator op(io, (argc > 3) ? argv[3] : "", "1");
+    sim::SimOperator op(io, (argc > 3) ? argv[3] : "", (argc > 5) ? argv[5] : "1");
     sim::SimKvStore kv;
     CalibrationStore cal(kv);
     sim::SimAnalogOutput ao(cal);
@@ -54,9 +54,9 @@ int main(int argc, char** argv) {
     boot.chipIdHigh = 0x0000C0FFu;
     snprintf(boot.macText, sizeof(boot.macText), "24:6F:28:00:00:01");
 
-    Ctx ctx{io,  op,  ao,   relays, rs485, proto, display,    buttons,
-            wdt, cal, kv,   report, safe,  boot,  nullptr,    FW_VERSION,
-            BOARD_REV};
+    Ctx ctx{io,  op,  ao,   relays, rs485, proto, display, buttons,
+            wdt, cal, kv,   report, safe,  boot,  nullptr, nullptr,
+            FW_VERSION, BOARD_REV};
 
     report.setMeta(FW_VERSION, BOARD_REV);
     report.setDate("2026-08-28 (simulado)");

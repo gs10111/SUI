@@ -25,6 +25,7 @@
 #include "drivers/rs485.h"
 #include "drivers/spi_bus.h"
 #include "drivers/xtr300.h"
+#include "net/wifi_portal.h"
 #include "platform/nvs_store.h"
 #include "platform/serial_console_io.h"
 #include "proto/echo_protocol.h"
@@ -87,9 +88,10 @@ private:
 JigSafeState g_safe(g_relays, g_ao, g_display, g_rs485);
 
 Ctx g_ctx{g_io,      g_operator, g_ao,     g_relays, g_rs485, g_proto, g_display, g_buttons,
-          g_wdt,     g_cal,      g_nvs,    g_report, g_safe,   g_boot,  nullptr,   FW_VERSION,
-          BOARD_REV};
+          g_wdt,     g_cal,      g_nvs,    g_report, g_safe,   g_boot,  nullptr,   nullptr,
+          FW_VERSION, BOARD_REV};
 
+WifiPortal g_wifi(g_ctx);
 TestRunner g_runner(g_ctx);
 Console g_console(g_ctx);
 
@@ -185,6 +187,10 @@ void setup() {
     g_wdt.rearmPin();
 
     g_ctx.runner = &g_runner;
+    g_ctx.radio = &g_wifi;
+    g_wifiPortal = &g_wifi;
+    g_wifi.loadConfig();
+
     g_safe.enterSafeState();
 
     g_console.begin();
@@ -193,4 +199,5 @@ void setup() {
 void loop() {
     g_console.poll();
     g_buttons.poll();
+    g_wifi.poll();
 }

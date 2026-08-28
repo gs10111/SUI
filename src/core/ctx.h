@@ -9,6 +9,7 @@
 #include "iface/idigital_output_bank.h"
 #include "iface/idisplay.h"
 #include "iface/ioperator.h"
+#include "iface/iradio.h"
 #include "iface/isafe_state.h"
 #include "iface/iserial_transport.h"
 #include "iface/iwatchdog.h"
@@ -45,6 +46,7 @@ struct Ctx {
     ISafeState& safe;
     BootInfo& boot;
     ITestRunner* runner;
+    IRadio* radio;
     const char* fwVersion;
     const char* boardRev;
 };

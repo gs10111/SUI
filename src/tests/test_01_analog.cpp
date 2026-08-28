@@ -169,6 +169,20 @@ public:
     uint8_t order() const override { return 1; }
 
     TestResult run(Ctx& ctx) override {
+        if (ctx.radio != nullptr && ctx.radio->running()) {
+            ctx.op.info("radio ligado em modo %s: a comutacao de RF injeta ruido na faixa que", ctx.radio->modeName());
+            ctx.op.info("compromete a tolerancia de +/-0,5%% de fundo de escala desta medida");
+            if (!ctx.op.askYes("desligar o radio agora e continuar?")) {
+                return TestResult(Verdict::Skip, "radio ligado: medida de +/-0,5% FE nao e confiavel");
+            }
+            const Status st = ctx.radio->stop();
+            if (st.failed()) {
+                snprintf(g_noteBuf, sizeof(g_noteBuf), "nao foi possivel desligar o radio (%s)", errName(st.err));
+                return TestResult(Verdict::Fail, g_noteBuf);
+            }
+            ctx.op.info("radio desligado");
+        }
+
         for (uint8_t axis = 0; axis < board::kAxisCount; ++axis) {
             g_crossValue[axis][0] = '\0';
         }

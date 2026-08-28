@@ -32,7 +32,7 @@ class Test06Wdt : public ITest {
 public:
     const char* id() const override { return "t6"; }
     const char* name() const override { return "Watchdog externo STWD100"; }
-    uint8_t order() const override { return 6; }
+    uint8_t order() const override { return 9; }
 
     TestResult run(Ctx& ctx) override {
         if (ctx.boot.wdtResetExpected && ctx.boot.wdtResetObserved) {

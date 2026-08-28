@@ -90,7 +90,8 @@ class SimOperator : public IOperator {
 public:
     SimOperator(IConsoleIO& io, const char* answers, const char* lineAnswer)
         : io_(io), answers_(answers != nullptr ? answers : ""), pos_(0),
-          line_(lineAnswer != nullptr ? lineAnswer : "1"), aborted_(false), skipped_(false) {}
+          line_(lineAnswer != nullptr ? lineAnswer : "1"), linePos_(0),
+          lastStart_(lineAnswer != nullptr ? lineAnswer : "1"), aborted_(false), skipped_(false) {}
 
     void info(const char* fmt, ...) override __attribute__((format(printf, 2, 3))) {
         char buf[256];
@@ -122,12 +123,24 @@ public:
         if (out == nullptr || cap == 0) {
             return false;
         }
+        const char* start = line_ + linePos_;
+        if (*start == '\0' && linePos_ > 0) {
+            start = lastStart_;
+        }
         size_t i = 0;
-        while (i + 1 < cap && line_[i] != '\0') {
-            out[i] = line_[i];
+        while (i + 1 < cap && start[i] != '\0' && start[i] != ';') {
+            out[i] = start[i];
             ++i;
         }
         out[i] = '\0';
+        if (start == line_ + linePos_) {
+            lastStart_ = start;
+            size_t advance = i;
+            if (start[advance] == ';') {
+                ++advance;
+            }
+            linePos_ += advance;
+        }
         io_.printf("  %s -> \"%s\" (simulado)\r\n", prompt != nullptr ? prompt : "valor?", out);
         return true;
     }
@@ -154,6 +167,8 @@ private:
     const char* answers_;
     size_t pos_;
     const char* line_;
+    size_t linePos_;
+    const char* lastStart_;
     bool aborted_;
     bool skipped_;
 };

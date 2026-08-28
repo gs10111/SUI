@@ -74,6 +74,11 @@ constexpr uint32_t kDacSpiMaxHz = 10000000;
 constexpr uint32_t kDisplaySpiHz = 4000000;
 constexpr uint32_t kRs485DefaultBaud = 19200;
 
+constexpr float kDacFullScaleV = 5.0f;
+constexpr float kXtrRGainOhms = 10000.0f;
+constexpr float kXtrRSetNominalOhms = 2500.0f;
+constexpr float kXtrCurrentMirrorRatio = 10.0f;
+
 constexpr uint32_t kWdtKickPeriodMs = 250;
 constexpr uint32_t kWdtMinTimeoutMs = 1120;
 constexpr uint32_t kWdtTypTimeoutMs = 1600;

@@ -59,7 +59,9 @@ bancada.
 | Teste 3 — RS-485 | implementado |
 | Teste 4 — display | implementado — SSD1322 256x64 via U8g2, base do repo `CDM4L-DI221651`. Compila no env `esp32dev-ihm`. |
 | Teste 5 — botoes | implementado — ativos em nivel baixo, com deteccao explicita de pull-up ausente em IO34/IO35. |
-| Teste 6 — watchdog externo | implementado |
+| Teste 6 — watchdog externo | implementado (roda por ultimo: e o unico que reseta a placa) |
+| Teste 7 — escala do XTR300 e RSET | implementado — deriva RSET e RGAIN da calibracao medida |
+| Teste 8 — bobina dos reles e margem | implementado — mede R, corrente, hFE exigido e pull-in |
 
 O display usa o mesmo controlador do projeto `CDM4L-DI221651`: **SSD1322 NHD 256x64 por SPI de
 4 fios, via U8g2** (`U8g2Display`). Os botoes seguem a mesma convencao da familia: **ativos em nivel
@@ -77,6 +79,35 @@ pressionamento: nivel de repouso diferente de alto reprova com a causa provavel 
 prende o MISO default do VSPI, que nesta placa e o **IO19 = `WDI` do watchdog**, virando o pino em
 entrada. Por isso `ExtWatchdog::rearmPin()` existe e e chamado no `setup()` depois de toda
 inicializacao de SPI. Sem isso a placa entra em reset-loop de 1,6 s.
+
+## Portal web embarcado
+
+A placa serve uma pagina propria em `http://<ip>/`, para comissionamento em campo e acompanhamento
+de bancada pelo celular. **O radio nasce desligado e so sobe por comando explicito** — nunca
+automaticamente no boot:
+
+```
+wifi ap DEPURI-JIG senha12345    # sobe ponto de acesso proprio
+wifi sta <ssid> <senha>          # entra numa rede existente
+wifi control on                  # libera os botoes de controle da pagina
+wifi status                      # modo, IP, requisicoes, se o controle esta liberado
+wifi off                         # desliga o radio
+wifi save / wifi forget          # credenciais na NVS
+```
+
+A pagina e servida da flash (14 KB, sem CDN, sem fonte remota, sem imagem externa: funciona numa
+bancada sem internet) e mostra inclinacao ao vivo, estatisticas do RS-485, saidas analogicas com
+barra proporcional, os quatro reles com o cruzamento LED x rele, o estado do sistema e a matriz do
+relatorio, com botao para copiar o bloco CSV. Os controles ficam escondidos ate `wifi control on`.
+
+**Por que o radio fica desligado por padrao**: a comutacao de RF injeta ruido na faixa que
+compromete a tolerancia de +/-0,5 % FE das medidas analogicas, alem de elevar o pico de corrente no
++5 V. Por isso o **teste 1 recusa medir com o radio ligado**: avisa, oferece desligar, e devolve
+`SKIP` se o operador insistir em manter ligado.
+
+Endpoints: `GET /api/status` (JSON), `GET /api/report[?format=csv]`, e os POST de controle
+`/api/relay`, `/api/ao`, `/api/mode`, `/api/safe`, todos com 403 enquanto o controle estiver
+bloqueado.
 
 ## Riscos de projeto que o jig expoe (nao corrige)
 

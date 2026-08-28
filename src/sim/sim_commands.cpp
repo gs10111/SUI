@@ -114,14 +114,15 @@ public:
         (void)argv;
         const calmath::Point volt1 = {6553u, 1.0f};
         const calmath::Point volt2 = {58982u, 9.0f};
-        const calmath::Point curr1 = {6553u, 5.6f};
-        const calmath::Point curr2 = {58982u, 18.4f};
+        const calmath::Point curr1 = {13107u, 4.0f};
+        const calmath::Point curr2 = {65535u, 20.0f};
         for (uint8_t axis = 0; axis < board::kAxisCount; ++axis) {
             ctx.cal.setFromPoints(axis, AoMode::Voltage, volt1, volt2);
             ctx.cal.setFromPoints(axis, AoMode::Current, curr1, curr2);
         }
         const Status st = ctx.cal.save();
-        ctx.io.printf("calibracao simulada gravada (%s): 0-10 V e 4-20 mA em 0x0000..0xFFFF\r\n",
+        ctx.io.printf("calibracao simulada gravada (%s): 0-10 V em 0x0000..0xFFFF e 4-20 mA com live\r\n"
+                      "zero digital (4 mA no codigo 13107, 20 mA em 0xFFFF), o que da RSET coerente\r\n",
                       errName(st.err));
     }
 };
