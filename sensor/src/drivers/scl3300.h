@@ -18,6 +18,7 @@ public:
     static constexpr uint32_t kSpiMinHz = 100000;
     static constexpr uint32_t kSpiMaxHz = 8000000;
     static constexpr uint32_t kSpiDefaultHz = 2000000;
+    static constexpr uint8_t kTraceDepth = 24;
     static constexpr uint8_t kStatusReadsOnBegin = 3;
     static constexpr uint8_t kBurstFrames = 6;
 
@@ -32,6 +33,8 @@ public:
     uint32_t crcErrors() const override;
     uint32_t frameErrors() const override;
     void diagnostics(InclinometerDiag& out) const override;
+    uint8_t traceCount() const override;
+    bool traceAt(uint8_t index, FrameTrace& out) const override;
 
 
     Status reinit();
@@ -50,6 +53,7 @@ public:
 private:
     static uint32_t clampHz(uint32_t hz);
     void captureErrorFlags();
+    void recordTrace(uint32_t command, uint32_t response);
     static uint8_t clampMode(uint8_t requested);
 
     void waitCsHigh();
@@ -76,4 +80,7 @@ private:
     bool ready_;
     bool selfTestFailed_;
     bool flagsRead_;
+    FrameTrace trace_[kTraceDepth];
+    uint8_t traceFill_;
+    uint8_t traceHead_;
 };

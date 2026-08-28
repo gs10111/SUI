@@ -32,6 +32,7 @@ private:
     void cmdWdt();
     void cmdVer();
     void cmdProbe(const char* arg);
+    void cmdTrace();
     void cmdSpiRaw(const char* arg);
     void showProtocol();
 

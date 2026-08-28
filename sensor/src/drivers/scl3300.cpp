@@ -39,7 +39,10 @@ Scl3300::Scl3300(SpiBus& bus, board::Pin cs, uint32_t clockHz, uint8_t mode)
       lastRs_(scl::Rs::Startup),
       ready_(false),
       selfTestFailed_(false),
-      flagsRead_(false) {}
+      flagsRead_(false),
+      trace_{},
+      traceFill_(0),
+      traceHead_(0) {}
 
 uint32_t Scl3300::clampHz(uint32_t hz) {
     if (hz < kSpiMinHz) {
@@ -80,6 +83,7 @@ Status Scl3300::sendFrame(uint32_t command, uint32_t& previousResponse) {
     lastFrameEndUs_ = static_cast<uint32_t>(micros());
     ++frames_;
     previousResponse = rx;
+    recordTrace(command, rx);
     return kOk;
 }
 
@@ -122,6 +126,8 @@ Status Scl3300::begin() {
     ready_ = false;
     selfTestFailed_ = false;
     flagsRead_ = false;
+    traceFill_ = 0;
+    traceHead_ = 0;
     lastRs_ = scl::Rs::Startup;
     if (cs_ == board::kNoPin) {
         return Status(Err::Param);
@@ -385,6 +391,28 @@ uint32_t Scl3300::crcErrors() const {
 
 uint32_t Scl3300::frameErrors() const {
     return frameErrors_;
+}
+
+void Scl3300::recordTrace(uint32_t command, uint32_t response) {
+    trace_[traceHead_].command = command;
+    trace_[traceHead_].response = response;
+    traceHead_ = static_cast<uint8_t>((traceHead_ + 1u) % kTraceDepth);
+    if (traceFill_ < kTraceDepth) {
+        ++traceFill_;
+    }
+}
+
+uint8_t Scl3300::traceCount() const {
+    return traceFill_;
+}
+
+bool Scl3300::traceAt(uint8_t index, FrameTrace& out) const {
+    if (index >= traceFill_) {
+        return false;
+    }
+    const uint8_t start = static_cast<uint8_t>((traceHead_ + kTraceDepth - traceFill_) % kTraceDepth);
+    out = trace_[(start + index) % kTraceDepth];
+    return true;
 }
 
 void Scl3300::captureErrorFlags() {

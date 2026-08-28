@@ -16,6 +16,11 @@ struct InclinometerDiag {
     bool flagsRead;
 };
 
+struct FrameTrace {
+    uint32_t command;
+    uint32_t response;
+};
+
 class IInclinometer {
 public:
     virtual ~IInclinometer() = default;
@@ -28,4 +33,6 @@ public:
     virtual uint32_t crcErrors() const = 0;
     virtual uint32_t frameErrors() const = 0;
     virtual void diagnostics(InclinometerDiag& out) const = 0;
+    virtual uint8_t traceCount() const = 0;
+    virtual bool traceAt(uint8_t index, FrameTrace& out) const = 0;
 };

@@ -190,6 +190,7 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  ver        firmware, BOARD_REV e pinout");
     ctx_.io.writeLine("  spiprobe   bring-up do SPI: spiprobe miso | all | pin <n>");
     ctx_.io.writeLine("  spiraw     envia um quadro de 32 bits: spiraw <hex>");
+    ctx_.io.writeLine("  trace      ultimos quadros trocados com o SCL3300");
 }
 
 void SensorConsole::poll() {
@@ -313,6 +314,10 @@ void SensorConsole::handleLine(char* line) {
     }
     if (strcmp(head, "spiraw") == 0) {
         cmdSpiRaw(arg);
+        return;
+    }
+    if (strcmp(head, "trace") == 0) {
+        cmdTrace();
         return;
     }
     ctx_.io.printf("comando desconhecido: %s (digite help)\r\n", head);
@@ -475,10 +480,33 @@ void SensorConsole::cmdSelfTest() {
     ctx_.io.printf("selftest: FALHA (%s)\r\n", errName(st.err));
 }
 
+void SensorConsole::cmdTrace() {
+    const uint8_t total = ctx_.tilt.traceCount();
+    if (total == 0) {
+        ctx_.io.writeLine("nenhum quadro registrado: rode 'reinit'");
+        return;
+    }
+    ctx_.io.writeLine("-- quadros trocados com o SCL3300 (lembre do pipeline: a resposta e do comando ANTERIOR) --");
+    ctx_.io.writeLine("  n  enviado     recebido    RS         dado    CRC");
+    for (uint8_t i = 0; i < total; ++i) {
+        FrameTrace f;
+        if (!ctx_.tilt.traceAt(i, f)) {
+            break;
+        }
+        const bool crcOk = scl::frameCrcOk(f.response);
+        ctx_.io.printf(" %2u  0x%08lX  0x%08lX  %-9s 0x%04X  %s\r\n", static_cast<unsigned>(i),
+                       static_cast<unsigned long>(f.command), static_cast<unsigned long>(f.response),
+                       scl::rsName(scl::rsOf(f.response)),
+                       static_cast<unsigned>(scl::frameData(f.response)), crcOk ? "ok" : "RUIM");
+    }
+    ctx_.io.writeLine("resposta 0x00000000 = barramento mudo; 0xFFFFFFFF = linha presa em alto");
+}
+
 void SensorConsole::cmdReinit() {
     const Status st = ctx_.tilt.begin();
     if (st.failed()) {
         ctx_.io.printf("reinit: FALHA (%s)\r\n", errName(st.err));
+        cmdTrace();
         return;
     }
     ctx_.io.printf("reinit: OK - %s, WHOAMI 0x%04X\r\n", ctx_.tilt.name(),
