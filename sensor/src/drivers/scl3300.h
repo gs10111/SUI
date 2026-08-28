@@ -28,6 +28,7 @@ public:
     Status read(Tilt& out) override;
     Status selfTest() override;
     uint16_t whoAmI() const override;
+    Status probeWhoAmI(uint16_t& out) override;
     const char* name() const override;
     uint32_t reads() const override;
     uint32_t crcErrors() const override;

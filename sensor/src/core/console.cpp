@@ -462,12 +462,21 @@ void SensorConsole::cmdStatus() {
 }
 
 void SensorConsole::cmdWhoAmI() {
-    const uint16_t id = ctx_.tilt.whoAmI();
-    ctx_.io.printf("WHOAMI: 0x%04X (esperado 0x%02X) %s\r\n", static_cast<unsigned>(id),
+    uint16_t id = 0;
+    const Status st = ctx_.tilt.probeWhoAmI(id);
+    if (st.failed()) {
+        ctx_.io.printf("WHOAMI: leitura FALHOU (%s) - o barramento nao devolveu quadro valido\r\n",
+                       errName(st.err));
+        cmdTrace();
+        return;
+    }
+    ctx_.io.printf("WHOAMI: 0x%04X (esperado 0x%02X) %s  [leitura ao vivo]\r\n", static_cast<unsigned>(id),
                    static_cast<unsigned>(kWhoAmIExpected),
                    (id == kWhoAmIExpected) ? "OK" : "DIVERGENTE");
     if (id != kWhoAmIExpected) {
-        ctx_.io.writeLine("Confira alimentacao, CS e a fiacao do SPI antes de trocar o componente.");
+        ctx_.io.writeLine("responde com CRC valido mas o dado diverge: suspeite de temporizacao");
+        ctx_.io.writeLine("(CS alto por menos de 10 us entre quadros) ou de modo SPI errado");
+        cmdTrace();
     }
 }
 

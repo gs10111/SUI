@@ -373,6 +373,15 @@ Status Scl3300::selfTest() {
     return kOk;
 }
 
+Status Scl3300::probeWhoAmI(uint16_t& out) {
+    out = 0;
+    const Status st = readRegister(scl::kCmdReadWhoAmI, out);
+    if (st.ok()) {
+        whoAmi_ = out;
+    }
+    return st;
+}
+
 uint16_t Scl3300::whoAmI() const {
     return whoAmi_;
 }
