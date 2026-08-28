@@ -17,6 +17,9 @@
 #include "drivers/calibration.h"
 #include "drivers/dac8562.h"
 #include "drivers/display.h"
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2
+#include "drivers/display_u8g2.h"
+#endif
 #include "drivers/ext_wdt.h"
 #include "drivers/relays.h"
 #include "drivers/rs485.h"
@@ -48,7 +51,9 @@ Rs485Transport g_rs485;
 EchoProtocol g_proto;
 ButtonMonitor g_buttons;
 
-#if DISPLAY_DRIVER == DISPLAY_DRIVER_RAW
+#if DISPLAY_DRIVER == DISPLAY_DRIVER_U8G2
+U8g2Display g_display;
+#elif DISPLAY_DRIVER == DISPLAY_DRIVER_RAW
 RawSpiDisplay g_display(g_dispBus);
 #else
 NullDisplay g_display;
@@ -168,12 +173,16 @@ void setup() {
     restoreNvsState();
 
     g_dacBus.begin();
+#if DISPLAY_DRIVER != DISPLAY_DRIVER_U8G2
     g_dispBus.begin();
+#endif
     g_ao.begin();
     g_display.begin();
     g_buttons.begin();
     g_rs485.begin(board::kRs485DefaultBaud, 8, 'N', 1);
     g_proto.begin(g_rs485);
+
+    g_wdt.rearmPin();
 
     g_ctx.runner = &g_runner;
     g_safe.enterSafeState();

@@ -14,4 +14,6 @@ public:
     virtual bool kicking() const = 0;
     virtual uint32_t kickPeriodMs() const = 0;
     virtual uint32_t kickCount() const = 0;
+    virtual uint32_t minTimeoutMs() const = 0;
+    virtual uint32_t typTimeoutMs() const = 0;
 };

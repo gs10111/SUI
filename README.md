@@ -57,14 +57,19 @@ bancada.
 | Teste 1 — saida analogica (DAC8562 + XTR300) | implementado |
 | Teste 2 — reles de limite | implementado |
 | Teste 3 — RS-485 | implementado |
-| Teste 4 — display | **TODO** no firmware de bancada — controlador do CN4 em aberto (pergunta 1). Roda no `sim-ihm`. |
+| Teste 4 — display | implementado — SSD1322 256x64 via U8g2, base do repo `CDM4L-DI221651`. Compila no env `esp32dev-ihm`. |
 | Teste 5 — botoes | **TODO** no firmware de bancada — pull-up da IHM e nivel ativo em aberto. Roda no `sim-ihm`. |
 | Teste 6 — watchdog externo | implementado |
 
-O display e os botoes ficam como pendencia deliberada. A infraestrutura esta pronta
-(`IDisplay`/`IButtons`, drivers, comandos), mas os itens t4 e t5 devolvem `SKIP` com nota de TODO
-enquanto o controlador do display e a fiacao da IHM nao forem confirmados. Compile com
-`-DIHM_ENABLED=1 -DDISPLAY_DRIVER=DISPLAY_DRIVER_RAW` para habilita-los.
+O display usa o mesmo controlador do projeto `CDM4L-DI221651`: **SSD1322 NHD 256x64 por SPI de
+4 fios, via U8g2** (`U8g2Display`). Os botoes continuam como pendencia enquanto o nivel ativo e o
+pull-up da IHM nao forem confirmados. O env `esp32dev` (padrao) sobe com `NullDisplay` e
+`IHM_ENABLED=0`, e os itens t4/t5 devolvem `SKIP`; o env `esp32dev-ihm` compila com o display real.
+
+**Armadilha herdada do U8g2**: ele chama `SPI.begin()` sem argumentos, e o core do ESP32 entao
+prende o MISO default do VSPI, que nesta placa e o **IO19 = `WDI` do watchdog**, virando o pino em
+entrada. Por isso `ExtWatchdog::rearmPin()` existe e e chamado no `setup()` depois de toda
+inicializacao de SPI. Sem isso a placa entra em reset-loop de 1,6 s.
 
 ## Riscos de projeto que o jig expoe (nao corrige)
 
@@ -109,7 +114,19 @@ Diferencial muito baixo com carga leve → incluir **TVS CDSOT23-SM712 em curto*
 `EFOT`, `EFLD` e `EFCM` so acendem LEDs locais (LD1..LD3 no eixo X, LD4..LD6 no eixo Y). O roteiro
 pede inspecao visual em cada ponto medido e o relatorio tem campo por ponto.
 
-### 5. Watchdog externo STWD100YNYWY3F
+### 5. Saidas analogicas nao sao isoladas
+
+O esquematico (folha 2/2) mostra o pino `0V` de saida do A0515S-2WR3 ligado ao mesmo `0V` do
+sistema: o conversor gera os +/-15 V mas **nao isola**. Qualquer material que prometa isolacao
+galvanica das saidas precisa ser corrigido, e o roteiro de medicao considera laco de terra comum
+com a carga de 250 ohm.
+
+### 6. LDAC do DAC8562 esta em nivel alto, nao em 0 V
+
+`R15` de 10K puxa `LDAC` para **+5 V** (folha 2/2). O `begin()` do driver programa o registro LDAC
+(comando 110, `0x30 0x00 0x03`) para que os dois canais atualizem independentemente do pino.
+
+### 7. Watchdog externo STWD100YNYWY3F
 
 Decodificacao (ST DocID14134 Rev 11): **Y** automotivo, **N** saida `WDO` **open-drain**,
 **Y** `tWD` = **1,6 s tipico (min 1,12 s / max 2,24 s)**, `tPW` 210 ms, SOT23-5.

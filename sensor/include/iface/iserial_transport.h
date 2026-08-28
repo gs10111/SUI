@@ -1,4 +1,4 @@
-// Transporte RS-485 half-duplex da sensora (SN65HVD75, DE e /RE unidos).
+// Transporte serial half-duplex da sensora PUSI-DI261930 (SN65HVD75D).
 #pragma once
 
 #include <stdint.h>
@@ -23,10 +23,13 @@ public:
     virtual uint16_t read(uint8_t* buf, uint16_t cap, uint32_t timeoutMs) = 0;
     virtual uint16_t available() const = 0;
     virtual Status flushRx() = 0;
+    virtual Status driveStatic(bool enable, bool level) = 0;
+    virtual uint32_t lastTurnaroundUs() const = 0;
     virtual const SerialStats& stats() const = 0;
     virtual void resetStats() = 0;
-    virtual void noteFrameOk() = 0;
     virtual void noteCrcError() = 0;
+    virtual void noteFrameOk() = 0;
+    virtual void noteTimeout() = 0;
     virtual uint32_t baud() const = 0;
     virtual uint32_t charTimeUs() const = 0;
 };

@@ -1,5 +1,6 @@
 // DAC8562 duplo de 16 bits no barramento do DAC (folha 2/2), TI SLAS719E tabelas 8, 9 e 17.
 // SYNC em IO12 (strapping MTDI): so vira saida em nivel alto dentro de begin(), nunca antes do boot.
+// LDAC esta em nivel alto por R15 10K para +5 V, entao o registro LDAC ignora o pino (SLAS719E tabela 17).
 #pragma once
 
 #include <stdint.h>
@@ -20,6 +21,7 @@ public:
     Status softReset();
     Status powerUpBoth();
     Status enableInternalRefGain2();
+    Status ignoreLdacPin();
     Status setClockHz(uint32_t hz);
     uint32_t clockHz() const { return clockHz_; }
     uint16_t lastCode(uint8_t ch) const;

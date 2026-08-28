@@ -1,5 +1,5 @@
-// PUSI-DI261930 REV A. ATENCAO: o esquematico desta placa nao foi fornecido.
-// Todos os pinos abaixo sao PENDENTES de confirmacao e estao reunidos aqui para troca em um lugar so.
+// PUSI-DI261930 REV A. Pinos lidos do esquematico DiEletrons (PUSI-DI261930, folha 1/1).
+// SCL3300 no VSPI, RS-485 no SN65HVD75DR (VCC 3V3), STWD100 com WDO -> J1 -> EN do ESP32.
 #pragma once
 
 #include <stdint.h>
@@ -9,7 +9,7 @@ namespace board {
 using Pin = int8_t;
 constexpr Pin kNoPin = -1;
 
-constexpr bool kPinoutConfirmado = false;
+constexpr bool kPinoutConfirmado = true;
 
 constexpr Pin kSclCs = 5;
 constexpr Pin kSclSclk = 18;
@@ -18,9 +18,9 @@ constexpr Pin kSclMosi = 23;
 
 constexpr Pin kRs485Rx = 16;
 constexpr Pin kRs485Tx = 17;
-constexpr Pin kRs485De = 4;
+constexpr Pin kRs485De = 13;
 
-constexpr Pin kWdi = 13;
+constexpr Pin kWdi = 14;
 
 constexpr Pin kStatusLed = 2;
 
@@ -33,5 +33,9 @@ constexpr uint32_t kWdtTypTimeoutMs = 1600;
 constexpr uint32_t kWdiPulseUs = 5;
 
 constexpr uint8_t kModbusSlaveId = 1;
+
+constexpr bool kRs485TerminatorOnBoard = true;
+constexpr bool kRs485ExternalBias = false;
+constexpr bool kWatchdogEnablePinWired = false;
 
 }  // namespace board

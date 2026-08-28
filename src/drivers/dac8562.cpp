@@ -12,10 +12,12 @@ constexpr uint8_t kCmdWriteUpdateB = 0x19;
 constexpr uint8_t kCmdPowerUp = 0x20;
 constexpr uint8_t kCmdSoftReset = 0x28;
 constexpr uint8_t kCmdRefGain = 0x38;
+constexpr uint8_t kCmdLdacRegister = 0x30;
 
 constexpr uint16_t kDataPowerUpBoth = 0x0003;
 constexpr uint16_t kDataResetAll = 0x0001;
 constexpr uint16_t kDataRefIntGain2 = 0x0001;
+constexpr uint16_t kDataLdacIgnorePin = 0x0003;
 constexpr uint16_t kDataZero = 0x0000;
 
 constexpr uint32_t kSyncSettleMs = 1;
@@ -86,6 +88,11 @@ Status Dac8562::begin() {
         ready_ = false;
         return st;
     }
+    st = ignoreLdacPin();
+    if (st.failed()) {
+        ready_ = false;
+        return st;
+    }
     for (uint8_t ch = 0; ch < kChannelCount; ++ch) {
         st = writeChannel(ch, kDataZero);
         if (st.failed()) {
@@ -112,6 +119,10 @@ Status Dac8562::powerUpBoth() {
 
 Status Dac8562::enableInternalRefGain2() {
     return writeFrame(kCmdRefGain, kDataRefIntGain2);
+}
+
+Status Dac8562::ignoreLdacPin() {
+    return writeFrame(kCmdLdacRegister, kDataLdacIgnorePin);
 }
 
 Status Dac8562::writeChannel(uint8_t ch, uint16_t code) {

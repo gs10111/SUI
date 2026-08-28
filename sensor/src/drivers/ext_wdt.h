@@ -1,6 +1,5 @@
-// Watchdog externo STWD100YNYWY3F com WDI em IO19 (folha 1/2), ST DocID14134 Rev 11.
+// Watchdog externo STWD100YNYWY3F com WDI em IO19 (placa sensora PUSI-DI261930), ST DocID14134 Rev 11.
 // tWD 1,12 s min / 1,6 s tip / 2,24 s max, tPW 210 ms; kick por esp_timer periodico, nunca pelo loop().
-// rearmPin() existe porque o IO19 e o MISO default do VSPI: SPI.begin() sem argumentos o vira entrada.
 #pragma once
 
 #include <stdint.h>
@@ -32,7 +31,6 @@ public:
     uint32_t maxTimeoutMs() const { return kWdtMaxTimeoutMs; }
     uint32_t resetPulseMs() const { return kWdtResetPulseMs; }
     uint32_t pulseUs() const { return board::kWdiPulseUs; }
-    void rearmPin();
     board::Pin pin() const { return board::kWdi; }
     bool ready() const { return ready_; }
 

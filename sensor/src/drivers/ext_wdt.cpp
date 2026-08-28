@@ -1,4 +1,4 @@
-// ExtWatchdog: pulso em WDI (IO19) para o STWD100YNYWY3F, folha 1/2 (ST DocID14134 Rev 11).
+// ExtWatchdog: pulso em WDI (IO19) para o STWD100YNYWY3F, placa sensora PUSI-DI261930 (ST DocID14134 Rev 11).
 // EN tem pull-down interno: o chip fica sempre habilitado, nao ha como desligar por software.
 #include "drivers/ext_wdt.h"
 
@@ -53,14 +53,6 @@ Status ExtWatchdog::begin() {
     ready_ = true;
     kicking_ = true;
     return kOk;
-}
-
-void ExtWatchdog::rearmPin() {
-    if (board::kWdi == board::kNoPin) {
-        return;
-    }
-    pinMode(static_cast<uint8_t>(board::kWdi), OUTPUT);
-    digitalWrite(static_cast<uint8_t>(board::kWdi), LOW);
 }
 
 void ExtWatchdog::kickNow() {
