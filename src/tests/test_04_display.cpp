@@ -106,9 +106,8 @@ public:
 
     TestResult run(Ctx& ctx) override {
         if (!kIhmEnabled) {
-            ctx.op.info("TODO: display do CN4 pendente - controlador nao confirmado (pergunta 1)");
-            ctx.op.info("habilite com -DIHM_ENABLED=1 -DDISPLAY_DRIVER=DISPLAY_DRIVER_RAW");
-            return TestResult(Verdict::Skip, "TODO: display pendente (IHM_ENABLED=0)");
+            ctx.op.info("build sem IHM: compile o env esp32dev-ihm (SSD1322 256x64 via U8g2)");
+            return TestResult(Verdict::Skip, "IHM nao habilitada nesta build (IHM_ENABLED=0)");
         }
         const char* driver = ctx.display.driverName();
         ctx.op.info("driver de display: %s", safeText(driver));

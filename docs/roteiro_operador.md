@@ -101,15 +101,34 @@ Executado com: ( ) placa sensora PUSI-DI261930   ( ) adaptador USB-RS485 do PC
 
 Diferencial baixo com carga leve → suspeitar de TVS CDSOT23-SM712 em curto, J7 e +5 V da sensora.
 
-## Teste 4 — display (`test t4`) — **TODO**
+## Teste 4 — display (`test t4`)
 
-Pendente: controlador do CN4 nao confirmado. Item devolve `SKIP`.
+Requer firmware do env `esp32dev-ihm` (SSD1322 256x64 via U8g2).
 
-## Teste 5 — botoes (`test t5`) — **TODO**
+| Padrao | O que precisa aparecer | OK |
+|---|---|---|
+| 1 | todos os pixels acesos | |
+| 2 | todos os pixels apagados | |
+| 3 | tabuleiro de xadrez de 8 x 8 | |
+| 4 | texto de identificacao legivel | |
+| 5 | contraste minimo (quase apagado) | |
+| 6 | contraste maximo (brilho total) | |
 
-Pendente: pull-up e nivel ativo da IHM nao confirmados. Item devolve `SKIP`.
-Quando habilitado: 3 pressionamentos limpos por botao, sem repique e sem acionamento cruzado.
-Nivel de repouso indefinido em IO34/IO35 = falta de pull-up na IHM (pinos input-only).
+## Teste 5 — botoes (`test t5`)
+
+Requer firmware do env `esp32dev-ihm`. Botoes ativos em nivel BAIXO.
+
+Fase 1, sem tocar em nada: o jig le o nivel de repouso dos tres. Qualquer um em nivel baixo reprova
+na hora, com a causa provavel impressa (falta de pull-up na IHM em IO34/IO35, botao preso fechado,
+ou curto para o 0V do CN3-4).
+
+Fase 2: 3 pressionamentos limpos por botao, sem repique e sem acionamento cruzado.
+
+| Botao | CN3 | GPIO | Pull-up | Presses | Repiques | OK |
+|---|---|---|---|---|---|---|
+| UP | CN3-1 | IO15 | interno do ESP32 | | | |
+| DOWN | CN3-2 | IO34 | **tem de vir da IHM** | | | |
+| MENU | CN3-3 | IO35 | **tem de vir da IHM** | | | |
 
 ## Teste 6 — watchdog (`test t6`, ultimo)
 

@@ -26,10 +26,9 @@ firmware assumiu para poder existir** e **o que muda quando a engenharia respond
 - **Display**: o controlador foi definido (SSD1322 256x64 via U8g2, base do `CDM4L-DI221651`) e o
   driver `U8g2Display` esta implementado. O env `esp32dev-ihm` ja compila com ele. O teste 4 so
   entra no `selftest` do dia a dia quando o env com `IHM_ENABLED=1` for o de producao.
-- **Botoes (teste 5)** seguem como TODO: falta confirmar o nivel ativo e se ha pull-up na placa da
-  IHM para IO34/IO35, que sao input-only.
-- Nivel ativo dos botoes assumido **ativo em baixo** (fecham para GND). IO34/IO35 sao input-only e
-  `pinMode(INPUT_PULLUP)` e silenciosamente ignorado neles: sem pull-up na placa de IHM o nivel de
-  repouso fica indefinido, e o teste 5 tem FAIL explicito com essa mensagem.
+- **Botoes (teste 5)**: implementados. Nivel ativo **baixo**, confirmado pela convencao do projeto
+  irmao `CDM4L-DI221651` (mesma casa, mesmos pinos de UP, watchdog, LED e DE do RS-485). O
+  esquematico confirma que **nao ha pull-up na supervisora**: para IO34/IO35 ele tem de vir da IHM,
+  e o teste 5 reprova com essa causa escrita quando o nivel de repouso nao e alto.
 - Tolerancia de diafonia entre eixos: a definir com a primeira placa boa. O jig sempre **registra o
   valor medido** no relatorio.

@@ -1,5 +1,5 @@
-// Item t5: botoes UP/DOWN/MENU da IHM no CN3. Folha 1/2 (IO15, IO34, IO35).
-// IO34/IO35 sao input-only no ESP32-WROOM-32D: pull-up interno inexistente (Espressif TRM, cap. IO_MUX).
+// Item t5: botoes UP/DOWN/MENU da IHM no CN3. Folha 1/2 (IO15, IO34, IO35), ativos em nivel BAIXO.
+// A supervisora nao tem pull-up nessas linhas: o de IO34/IO35 tem de vir da IHM (pino input-only).
 #include <stdint.h>
 #include <stdio.h>
 
@@ -19,6 +19,7 @@ constexpr uint32_t kMonitorMs = 60000;
 constexpr uint32_t kSettleMs = 1500;
 constexpr uint32_t kProgressMs = 10000;
 constexpr uint32_t kRequiredPresses = 3;
+constexpr bool kRestLevelExpected = true;
 
 static_assert(kButtonCount == 3, "resumo de progresso assume UP/DOWN/MENU");
 
@@ -44,6 +45,23 @@ void drainEdges(Ctx& ctx) {
 }
 
 TestResult checkRestLevels(Ctx& ctx) {
+    for (uint8_t i = 0; i < kButtonCount; ++i) {
+        if (ctx.buttons.level(i) != kRestLevelExpected) {
+            ctx.op.info("botao %s marca nivel BAIXO em repouso, com ninguem pressionando",
+                        ctx.buttons.name(i));
+            if (ctx.buttons.inputOnly(i)) {
+                ctx.op.info("causa provavel: falta o pull-up na IHM (IO34/IO35 nao tem pull interno)");
+                ctx.op.info("verificar tambem o botao preso fechado e o 0V do CN3-4");
+                snprintf(g_noteBuf, sizeof(g_noteBuf), "%s em nivel baixo: falta pull-up na IHM ou botao preso",
+                         ctx.buttons.name(i));
+            } else {
+                ctx.op.info("causa provavel: botao preso fechado ou curto para 0V na fiacao do CN3");
+                snprintf(g_noteBuf, sizeof(g_noteBuf), "%s preso em nivel baixo: botao ou fiacao do CN3",
+                         ctx.buttons.name(i));
+            }
+            return TestResult(Verdict::Fail, g_noteBuf);
+        }
+    }
     for (uint8_t i = 0; i < kButtonCount; ++i) {
         if (ctx.buttons.restLevelStable(i)) {
             continue;
@@ -71,9 +89,8 @@ public:
 
     TestResult run(Ctx& ctx) override {
         if (!kIhmEnabled) {
-            ctx.op.info("TODO: botoes do CN3 pendentes - pull-up e nivel ativo da IHM nao confirmados");
-            ctx.op.info("habilite com -DIHM_ENABLED=1");
-            return TestResult(Verdict::Skip, "TODO: botoes pendentes (IHM_ENABLED=0)");
+            ctx.op.info("build sem IHM: compile o env esp32dev-ihm para testar os botoes do CN3");
+            return TestResult(Verdict::Skip, "IHM nao habilitada nesta build (IHM_ENABLED=0)");
         }
         const Status stBegin = ctx.buttons.begin();
         if (stBegin.failed()) {

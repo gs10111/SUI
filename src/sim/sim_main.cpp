@@ -34,6 +34,9 @@ int main(int argc, char** argv) {
     EchoProtocol proto;
     sim::SimDisplay display;
     sim::SimButtons buttons;
+    if (argc > 4) {
+        buttons.forceStuckLow(static_cast<uint8_t>(atoi(argv[4])));
+    }
     sim::SimWatchdog wdt;
     sim::SimSafeState safe(relays, ao, display);
     Report report;

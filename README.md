@@ -58,13 +58,20 @@ bancada.
 | Teste 2 — reles de limite | implementado |
 | Teste 3 — RS-485 | implementado |
 | Teste 4 — display | implementado — SSD1322 256x64 via U8g2, base do repo `CDM4L-DI221651`. Compila no env `esp32dev-ihm`. |
-| Teste 5 — botoes | **TODO** no firmware de bancada — pull-up da IHM e nivel ativo em aberto. Roda no `sim-ihm`. |
+| Teste 5 — botoes | implementado — ativos em nivel baixo, com deteccao explicita de pull-up ausente em IO34/IO35. |
 | Teste 6 — watchdog externo | implementado |
 
 O display usa o mesmo controlador do projeto `CDM4L-DI221651`: **SSD1322 NHD 256x64 por SPI de
-4 fios, via U8g2** (`U8g2Display`). Os botoes continuam como pendencia enquanto o nivel ativo e o
-pull-up da IHM nao forem confirmados. O env `esp32dev` (padrao) sobe com `NullDisplay` e
-`IHM_ENABLED=0`, e os itens t4/t5 devolvem `SKIP`; o env `esp32dev-ihm` compila com o display real.
+4 fios, via U8g2** (`U8g2Display`). Os botoes seguem a mesma convencao da familia: **ativos em nivel
+baixo**, com `INPUT_PULLUP` em IO15 e `INPUT` puro em IO34/IO35. O env `esp32dev` (padrao) sobe com
+`NullDisplay` e `IHM_ENABLED=0`, e os itens t4/t5 devolvem `SKIP` por nao haver IHM na build; o env
+`esp32dev-ihm` compila os dois.
+
+**A supervisora nao tem pull-up nas linhas de botao**: elas vao direto do ESP32 ao CN3 (confirmado
+no esquematico). Como IO34/IO35 sao input-only e `pinMode(INPUT_PULLUP)` e silenciosamente ignorado
+neles, o pull-up **tem** de estar na placa de IHM. O teste 5 checa isso antes de pedir qualquer
+pressionamento: nivel de repouso diferente de alto reprova com a causa provavel escrita por extenso
+(falta de pull-up, botao preso fechado, ou curto para o 0V do CN3-4).
 
 **Armadilha herdada do U8g2**: ele chama `SPI.begin()` sem argumentos, e o core do ESP32 entao
 prende o MISO default do VSPI, que nesta placa e o **IO19 = `WDI` do watchdog**, virando o pino em

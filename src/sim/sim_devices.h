@@ -573,7 +573,7 @@ private:
 
 class SimButtons : public IButtons {
 public:
-    SimButtons() : polls_(0), cursor_(0), pendingRelease_(false), fill_(0), out_(0) {
+    SimButtons() : polls_(0), cursor_(0), pendingRelease_(false), stuckLowMask_(0), fill_(0), out_(0) {
         memset(press_, 0, sizeof(press_));
         memset(edges_, 0, sizeof(edges_));
     }
@@ -605,8 +605,12 @@ public:
         ++cursor_;
     }
 
+    void forceStuckLow(uint8_t mask) { stuckLowMask_ = mask; }
+
     bool level(uint8_t index) const override {
-        (void)index;
+        if (index < kButtonCount && ((stuckLowMask_ >> index) & 1u) != 0u) {
+            return false;
+        }
         return true;
     }
 
@@ -672,6 +676,7 @@ private:
     uint32_t polls_;
     uint8_t cursor_;
     bool pendingRelease_;
+    uint8_t stuckLowMask_;
     uint32_t press_[kButtonCount];
     Edge edges_[kQueue];
     uint8_t fill_;
