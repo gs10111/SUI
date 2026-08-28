@@ -191,6 +191,7 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  spiprobe   bring-up do SPI: spiprobe miso | all | pin <n>");
     ctx_.io.writeLine("  spiraw     envia um quadro de 32 bits: spiraw <hex>");
     ctx_.io.writeLine("  trace      ultimos quadros trocados com o SCL3300");
+    ctx_.io.writeLine("  spiloop    clock continuo para osciloscopio: spiloop [hex] [segundos]");
 }
 
 void SensorConsole::poll() {
@@ -318,6 +319,10 @@ void SensorConsole::handleLine(char* line) {
     }
     if (strcmp(head, "trace") == 0) {
         cmdTrace();
+        return;
+    }
+    if (strcmp(head, "spiloop") == 0) {
+        cmdSpiLoop(arg);
         return;
     }
     ctx_.io.printf("comando desconhecido: %s (digite help)\r\n", head);
@@ -487,6 +492,59 @@ void SensorConsole::cmdSelfTest() {
         return;
     }
     ctx_.io.printf("selftest: FALHA (%s)\r\n", errName(st.err));
+}
+
+void SensorConsole::cmdSpiLoop(const char* arg) {
+    uint32_t word = scl::kCmdReadWhoAmI;
+    uint32_t seconds = 10;
+    if (arg != nullptr && *arg != '\0') {
+        char* end = nullptr;
+        const unsigned long parsed = strtoul(arg, &end, 16);
+        if (end != arg) {
+            word = static_cast<uint32_t>(parsed);
+        }
+        while (end != nullptr && *end == ' ') {
+            ++end;
+        }
+        if (end != nullptr && *end != '\0') {
+            const unsigned long secs = strtoul(end, nullptr, 10);
+            if (secs > 0 && secs <= 120) {
+                seconds = static_cast<uint32_t>(secs);
+            }
+        }
+    }
+    ctx_.io.printf("repetindo 0x%08lX por %lu s no caminho real do driver (2 MHz, modo 0)\r\n",
+                   static_cast<unsigned long>(word), static_cast<unsigned long>(seconds));
+    ctx_.io.writeLine("ponta no SCLK para medir a frequencia, no CS para ver o enquadramento,");
+    ctx_.io.writeLine("e no MISO para ver se o SCL3300 esta dirigindo alguma coisa");
+
+    const uint32_t startMs = ctx_.io.nowMs();
+    uint32_t frames = 0;
+    uint32_t nonZero = 0;
+    uint32_t crcOk = 0;
+    uint32_t last = 0;
+    while ((ctx_.io.nowMs() - startMs) < (seconds * 1000u)) {
+        uint32_t response = 0;
+        if (ctx_.tilt.exchangeRaw(word, response).failed()) {
+            break;
+        }
+        ++frames;
+        last = response;
+        if (response != 0x00000000u && response != 0xFFFFFFFFu) {
+            ++nonZero;
+        }
+        if (scl::frameCrcOk(response)) {
+            ++crcOk;
+        }
+    }
+    ctx_.io.printf("quadros: %lu   respostas nao triviais: %lu   com CRC valido: %lu\r\n",
+                   static_cast<unsigned long>(frames), static_cast<unsigned long>(nonZero),
+                   static_cast<unsigned long>(crcOk));
+    ctx_.io.printf("ultima resposta: 0x%08lX  RS=%s dado=0x%04X\r\n", static_cast<unsigned long>(last),
+                   scl::rsName(scl::rsOf(last)), static_cast<unsigned>(scl::frameData(last)));
+    if (nonZero == 0) {
+        ctx_.io.writeLine("MISO nunca saiu de nivel constante: o chip nao esta respondendo");
+    }
 }
 
 void SensorConsole::cmdTrace() {

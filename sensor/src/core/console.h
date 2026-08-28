@@ -34,6 +34,7 @@ private:
     void cmdProbe(const char* arg);
     void cmdTrace();
     void cmdSpiRaw(const char* arg);
+    void cmdSpiLoop(const char* arg);
     void showProtocol();
 
     SensorCtx& ctx_;

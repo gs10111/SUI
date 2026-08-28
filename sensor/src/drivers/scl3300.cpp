@@ -373,6 +373,10 @@ Status Scl3300::selfTest() {
     return kOk;
 }
 
+Status Scl3300::exchangeRaw(uint32_t command, uint32_t& response) {
+    return sendFrame(command, response);
+}
+
 Status Scl3300::probeWhoAmI(uint16_t& out) {
     out = 0;
     const Status st = readRegister(scl::kCmdReadWhoAmI, out);

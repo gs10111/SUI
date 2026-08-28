@@ -29,6 +29,7 @@ public:
     Status selfTest() override;
     uint16_t whoAmI() const override;
     Status probeWhoAmI(uint16_t& out) override;
+    Status exchangeRaw(uint32_t command, uint32_t& response) override;
     const char* name() const override;
     uint32_t reads() const override;
     uint32_t crcErrors() const override;

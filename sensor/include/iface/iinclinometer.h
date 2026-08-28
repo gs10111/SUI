@@ -29,6 +29,7 @@ public:
     virtual Status selfTest() = 0;
     virtual uint16_t whoAmI() const = 0;
     virtual Status probeWhoAmI(uint16_t& out) = 0;
+    virtual Status exchangeRaw(uint32_t command, uint32_t& response) = 0;
     virtual const char* name() const = 0;
     virtual uint32_t reads() const = 0;
     virtual uint32_t crcErrors() const = 0;
