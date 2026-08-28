@@ -2,6 +2,9 @@
 // Registradores publicados conforme sensor_map.h; RS e ERR_FLAG do SCL3300 (Murata 1862 rev 4).
 #include "core/console.h"
 
+#include "core/spi_probe.h"
+#include "drivers/scl3300_math.h"
+
 #include <stddef.h>
 #include <string.h>
 
@@ -185,6 +188,8 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  proto      mostra ou troca o escravo: proto [jig|modbus]");
     ctx_.io.writeLine("  wdt        watchdog externo STWD100");
     ctx_.io.writeLine("  ver        firmware, BOARD_REV e pinout");
+    ctx_.io.writeLine("  spiprobe   bring-up do SPI: spiprobe miso | all | pin <n>");
+    ctx_.io.writeLine("  spiraw     envia um quadro de 32 bits: spiraw <hex>");
 }
 
 void SensorConsole::poll() {
@@ -302,7 +307,81 @@ void SensorConsole::handleLine(char* line) {
         cmdVer();
         return;
     }
+    if (strcmp(head, "spiprobe") == 0) {
+        cmdProbe(arg);
+        return;
+    }
+    if (strcmp(head, "spiraw") == 0) {
+        cmdSpiRaw(arg);
+        return;
+    }
     ctx_.io.printf("comando desconhecido: %s (digite help)\r\n", head);
+}
+
+void SensorConsole::cmdProbe(const char* arg) {
+    const spiprobe::Pins compiled = {board::kSclCs, board::kSclSclk, board::kSclMiso, board::kSclMosi};
+
+    if (arg != nullptr && strncmp(arg, "pin", 3) == 0) {
+        const char* number = arg + 3;
+        while (*number == ' ') {
+            ++number;
+        }
+        const long pin = strtol(number, nullptr, 10);
+        if (pin < 0 || pin > 39) {
+            ctx_.io.writeLine("uso: spiprobe pin <0..39>");
+            return;
+        }
+        ctx_.io.printf("IO%ld alternando a 1 Hz por 10 s: meca com o multimetro NO PINO DO SCL3300\r\n", pin);
+        ctx_.io.writeLine("se o pino do ESP32 oscila mas o do chip nao, a trilha ou a solda esta aberta");
+        spiprobe::togglePin(static_cast<int8_t>(pin), 1000, 10000);
+        ctx_.io.writeLine("fim");
+        return;
+    }
+
+    spiprobe::ScanResult result;
+    const bool full = (arg != nullptr) && (strcmp(arg, "all") == 0);
+    if (full) {
+        ctx_.io.writeLine("varredura completa: pode levar alguns segundos...");
+        spiprobe::scanAll(result);
+    } else {
+        ctx_.io.writeLine("varrendo so o MISO, mantendo CS/SCLK/MOSI compilados");
+        spiprobe::scanMiso(compiled, result);
+    }
+
+    ctx_.io.printf("tentativas: %lu\r\n", static_cast<unsigned long>(result.attempts));
+    if (result.hitCount == 0) {
+        ctx_.io.writeLine("nenhuma combinacao devolveu WHOAMI 0xC1 com CRC valido");
+        ctx_.io.writeLine("com a pinagem ja conferida, isso aponta para o lado eletrico:");
+        ctx_.io.writeLine("  1) VDD e DVIO do SCL3300 entre 3,0 e 3,6 V, com DVIO nunca acima de VDD");
+        ctx_.io.writeLine("  2) os quatro capacitores de 100 nF (VDD, DVIO, A_EXTC, D_EXTC)");
+        ctx_.io.writeLine("  3) solda dos pinos do chip, principalmente MISO e CS");
+        ctx_.io.writeLine("use 'spiprobe pin <n>' e meca no pino do chip para provar a continuidade");
+    } else {
+        for (uint8_t i = 0; i < result.hitCount; ++i) {
+            const spiprobe::Pins& p = result.hits[i];
+            ctx_.io.printf("RESPONDEU: CS=IO%d SCLK=IO%d MISO=IO%d MOSI=IO%d\r\n", static_cast<int>(p.cs),
+                           static_cast<int>(p.sclk), static_cast<int>(p.miso), static_cast<int>(p.mosi));
+        }
+        ctx_.io.writeLine("ajuste sensor/include/board_pins.h se divergir do compilado, e recompile");
+    }
+    ctx_.tilt.begin();
+}
+
+void SensorConsole::cmdSpiRaw(const char* arg) {
+    if (arg == nullptr || *arg == '\0') {
+        ctx_.io.writeLine("uso: spiraw <hex de 32 bits>   ex: spiraw 40000091 (le WHOAMI)");
+        return;
+    }
+    const uint32_t word = static_cast<uint32_t>(strtoul(arg, nullptr, 16));
+    const spiprobe::Pins pins = {board::kSclCs, board::kSclSclk, board::kSclMiso, board::kSclMosi};
+    const uint32_t first = spiprobe::transfer(pins, word);
+    const uint32_t second = spiprobe::transfer(pins, word);
+    ctx_.io.printf("enviado 0x%08lX\r\n", static_cast<unsigned long>(word));
+    ctx_.io.printf("resposta 1: 0x%08lX  (do comando anterior)\r\n", static_cast<unsigned long>(first));
+    ctx_.io.printf("resposta 2: 0x%08lX  RS=%s dado=0x%04X crc=%s\r\n", static_cast<unsigned long>(second),
+                   scl::rsName(scl::rsOf(second)), scl::frameData(second),
+                   scl::frameCrcOk(second) ? "ok" : "RUIM");
+    ctx_.tilt.begin();
 }
 
 void SensorConsole::cmdAngle() {

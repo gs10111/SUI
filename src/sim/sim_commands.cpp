@@ -12,7 +12,7 @@ char g_buf[1024];
 class SimSelftestCommand : public ICommand {
 public:
     const char* name() const override { return "selftest"; }
-    const char* usage() const override { return "selftest - executa t0..t6 na ordem"; }
+    const char* usage() const override { return "selftest - executa todos os itens na ordem"; }
 
     void execute(Ctx& ctx, uint8_t argc, const char* const* argv) override {
         (void)argc;
@@ -28,7 +28,7 @@ public:
 class SimTestCommand : public ICommand {
 public:
     const char* name() const override { return "test"; }
-    const char* usage() const override { return "test <id> - executa um item isolado (t0..t6)"; }
+    const char* usage() const override { return "test <id> - executa um item isolado (t0..t8)"; }
 
     void execute(Ctx& ctx, uint8_t argc, const char* const* argv) override {
         if (argc < 2 || ctx.runner == nullptr) {
