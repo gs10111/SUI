@@ -84,7 +84,8 @@ Nota de projeto: base ~0,25 mA exige hFE >= 145 para bobina de ~36 mA. Sem marge
 
 ## Teste 3 — RS-485 (`test t3`)
 
-Quantos terminadores no cabo? ( ) 1 — esperado A-B 3,5 a 5 V   ( ) 2 — esperado A-B 2 a 3 V
+Quantos terminadores no cabo? ( ) 1 — esperado A-B 2,0 a 3,3 V   ( ) 2 — esperado A-B 1,5 a 3,0 V
+(o SN65HVD75 e alimentado com 3,3 V: nao existe diferencial acima disso)
 
 | Condicao | A-B medido | OK |
 |---|---|---|

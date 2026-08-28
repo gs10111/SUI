@@ -140,6 +140,9 @@ bool ConsoleOperator::askLine(const char* prompt, char* out, uint16_t cap) {
     uint8_t value = 0;
     while (waitByte(start, remind, value)) {
         if (value == '\r' || value == '\n') {
+            if (len == 0) {
+                continue;
+            }
             io_.writeLine("");
             out[len] = '\0';
             return true;

@@ -52,10 +52,12 @@ uint32_t askTerminatorCount(Ctx& ctx, bool& aborted) {
 }
 
 TestResult runElectrical(Ctx& ctx, bool twoTerminators) {
-    const char* expectedHigh = twoTerminators ? "A-B entre +2,0 e +3,0 V (60 ohm efetivos, 2 terminadores)"
-                                              : "A-B entre +3,5 e +5,0 V (120 ohm, so o terminador local J7)";
-    const char* expectedLow = twoTerminators ? "A-B entre -2,0 e -3,0 V (60 ohm efetivos, 2 terminadores)"
-                                             : "A-B entre -3,5 e -5,0 V (120 ohm, so o terminador local J7)";
+    const char* expectedHigh =
+        twoTerminators ? "A-B entre +1,5 e +3,0 V (60 ohm efetivos, 2 terminadores; VOD min do datasheet = 1,5 V)"
+                       : "A-B entre +2,0 e +3,3 V (120 ohm, so o terminador local J7; o SN65HVD75 e alimentado com 3,3 V)";
+    const char* expectedLow =
+        twoTerminators ? "A-B entre -1,5 e -3,0 V (60 ohm efetivos, 2 terminadores; VOD min do datasheet = 1,5 V)"
+                       : "A-B entre -2,0 e -3,3 V (120 ohm, so o terminador local J7; o SN65HVD75 e alimentado com 3,3 V)";
 
     Status st = ctx.rs485.driveStatic(true, true);
     if (st.failed()) {

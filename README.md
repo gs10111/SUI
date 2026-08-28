@@ -97,9 +97,10 @@ O `SN65HVD75D` tem failsafe interno: com o barramento aberto, em curto ou sem tr
 receptor vai para nivel alto **sem resistores de bias externos**. Logo, em `rs485 idle` o esperado
 com multimetro e **A-B ~ 0 V** (barramento passivo), e nao um nivel de bias.
 
-Em `rs485 drive`, medindo A-B:
-- apenas o terminador local de 120 ohm (J7): **3,5 a 5 V**
-- dois terminadores (60 ohm efetivos): **2 a 3 V**
+Em `rs485 drive`, medindo A-B (**correcao ao roteiro original**: o `SN65HVD75D` e um transceptor
+de **3,3 V**, entao um diferencial de 3,5 a 5 V e fisicamente inalcancavel e reprovaria placa boa):
+- apenas o terminador local de 120 ohm (J7): **2,0 a 3,3 V**
+- dois terminadores (60 ohm efetivos): **1,5 a 3,0 V** (`VOD` minimo do datasheet com 54 ohm = 1,5 V)
 
 Diferencial muito baixo com carga leve → incluir **TVS CDSOT23-SM712 em curto** nas causas provaveis.
 

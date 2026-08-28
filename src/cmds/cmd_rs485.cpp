@@ -119,7 +119,8 @@ private:
         ctx.io.writeLine("  1. J7 (terminador de 120 ohm da placa) esta fechado ou aberto?");
         ctx.io.writeLine("  2. Quantos terminadores existem no cabo inteiro (placa + sensora)?");
         ctx.io.writeLine("  3. O +5 V da sensora chega em CN2A/CN2B?");
-        ctx.io.writeLine("Esperado em A-B: 3,5 a 5,0 V com UM terminador; 2,0 a 3,0 V com DOIS.");
+        ctx.io.writeLine("Esperado em A-B: 2,0 a 3,3 V com UM terminador; 1,5 a 3,0 V com DOIS.");
+        ctx.io.writeLine("O SN65HVD75 e alimentado com 3,3 V: nao existe diferencial acima disso.");
         ctx.io.writeLine("Nivel 1 da A-B positivo; nivel 0 da a mesma amplitude com o sinal invertido.");
     }
 
