@@ -33,6 +33,7 @@ public:
     uint32_t frameErrors() const override;
     void diagnostics(InclinometerDiag& out) const override;
 
+
     Status reinit();
 
     uint16_t lastStatus() const { return lastStatus_; }
@@ -48,6 +49,7 @@ public:
 
 private:
     static uint32_t clampHz(uint32_t hz);
+    void captureErrorFlags();
     static uint8_t clampMode(uint8_t requested);
 
     void waitCsHigh();
@@ -73,4 +75,5 @@ private:
     scl::Rs lastRs_;
     bool ready_;
     bool selfTestFailed_;
+    bool flagsRead_;
 };

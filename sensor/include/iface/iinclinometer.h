@@ -13,6 +13,7 @@ struct InclinometerDiag {
     uint16_t sto;
     uint8_t returnStatus;
     bool ready;
+    bool flagsRead;
 };
 
 class IInclinometer {

@@ -430,10 +430,15 @@ void SensorConsole::cmdStatus() {
                    ((diag.status & scl::kStatusSat) != 0) ? "  SAT(saturado: todo dado invalido)" : "",
                    ((diag.status & scl::kStatusPwr) != 0) ? "  PWR(normal apos start-up)" : "",
                    ((diag.status & scl::kStatusModeChange) != 0) ? "  MODE_CHANGE(normal)" : "");
-    ctx_.io.printf("ERR_FLAG1    : 0x%04X\r\n", static_cast<unsigned>(diag.errFlag1));
-    ctx_.io.printf("ERR_FLAG2    : 0x%04X%s%s\r\n", static_cast<unsigned>(diag.errFlag2),
-                   ((diag.errFlag2 & 0x2000u) != 0) ? "  A_EXTC(capacitor de 100 nF)" : "",
-                   ((diag.errFlag2 & 0x4000u) != 0) ? "  D_EXTC(capacitor de 100 nF)" : "");
+    if (!diag.flagsRead) {
+        ctx_.io.writeLine("ERR_FLAG1    : NAO LIDO neste ciclo");
+        ctx_.io.writeLine("ERR_FLAG2    : NAO LIDO neste ciclo");
+    } else {
+        ctx_.io.printf("ERR_FLAG1    : 0x%04X\r\n", static_cast<unsigned>(diag.errFlag1));
+        ctx_.io.printf("ERR_FLAG2    : 0x%04X%s%s\r\n", static_cast<unsigned>(diag.errFlag2),
+                       ((diag.errFlag2 & 0x2000u) != 0) ? "  A_EXTC(capacitor de 100 nF)" : "",
+                       ((diag.errFlag2 & 0x4000u) != 0) ? "  D_EXTC(capacitor de 100 nF)" : "");
+    }
     ctx_.io.printf("STO          : 0x%04X\r\n", static_cast<unsigned>(diag.sto));
     if (diag.status == 0 && diag.errFlag1 == 0 && diag.errFlag2 == 0 && !diag.ready) {
         ctx_.io.writeLine("registradores zerados e driver nao inicializado: nenhum quadro valido ainda");

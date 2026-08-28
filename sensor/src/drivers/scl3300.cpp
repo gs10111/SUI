@@ -38,7 +38,8 @@ Scl3300::Scl3300(SpiBus& bus, board::Pin cs, uint32_t clockHz, uint8_t mode)
       lastSto_(0),
       lastRs_(scl::Rs::Startup),
       ready_(false),
-      selfTestFailed_(false) {}
+      selfTestFailed_(false),
+      flagsRead_(false) {}
 
 uint32_t Scl3300::clampHz(uint32_t hz) {
     if (hz < kSpiMinHz) {
@@ -120,6 +121,7 @@ Status Scl3300::readRegister(uint32_t readCommand, uint16_t& value) {
 Status Scl3300::begin() {
     ready_ = false;
     selfTestFailed_ = false;
+    flagsRead_ = false;
     lastRs_ = scl::Rs::Startup;
     if (cs_ == board::kNoPin) {
         return Status(Err::Param);
@@ -169,12 +171,14 @@ Status Scl3300::begin() {
     lastStatus_ = scl::frameData(statusFrame);
     if (lastRs_ == scl::Rs::Reserved) {
         ++frameErrors_;
+        captureErrorFlags();
         return Status(Err::HwFault);
     }
     if (lastRs_ == scl::Rs::Startup) {
         return Status(Err::Busy);
     }
     if (lastRs_ != scl::Rs::Ok) {
+        captureErrorFlags();
         return Status(Err::HwFault);
     }
 
@@ -383,6 +387,18 @@ uint32_t Scl3300::frameErrors() const {
     return frameErrors_;
 }
 
+void Scl3300::captureErrorFlags() {
+    uint16_t value = 0;
+    if (readRegister(scl::kCmdReadErrFlag1, value).ok()) {
+        lastErrFlag1_ = value;
+        flagsRead_ = true;
+    }
+    if (readRegister(scl::kCmdReadErrFlag2, value).ok()) {
+        lastErrFlag2_ = value;
+        flagsRead_ = true;
+    }
+}
+
 void Scl3300::diagnostics(InclinometerDiag& out) const {
     out.status = lastStatus_;
     out.errFlag1 = lastErrFlag1_;
@@ -390,4 +406,5 @@ void Scl3300::diagnostics(InclinometerDiag& out) const {
     out.sto = lastSto_;
     out.returnStatus = static_cast<uint8_t>(lastRs_);
     out.ready = ready_;
+    out.flagsRead = flagsRead_;
 }
