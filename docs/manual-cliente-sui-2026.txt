@@ -1,0 +1,345 @@
+# Manual do Cliente SUI-DI141388XY rev. 2026 - texto extraido
+#
+# Fonte: imagens/Manual cliente SUI 2026 - rev.docx (word/document.xml)
+# Extracao automatica: paragrafos na ordem do documento, tabelas entre marcadores
+# --- TABELA --- / --- FIM TABELA ---, imagens marcadas como [[IMAGEM]].
+# Este arquivo e a fonte de requisitos rastreavel do firmware de aplicacao da
+# Unidade Remota. Em caso de divergencia, o .docx original prevalece.
+#
+
+SUPERVISOR DE INCLINAÇÃO
+MODELO SUI-DI141388XY
+SUPERVISOR DE INCLINAÇÃO
+SUPERVISOR DE INCLINAÇÃO SUI-DI141388XY
+1. Introdução
+O Supervisor de Inclinação Di-Elétrons, modelo SUI-DI141388XY, é um transmissor eletrônico de inclinação microcontrolado, desenvolvido para aplicações industriais e portuárias que exigem a medição precisa de ângulos verticais. O equipamento garante a preservação da referência angular mesmo após desligamentos.
+Composição do sistema
+O sistema é composto por dois módulos principais:
+Sensor de Inclinação (SI-DI141389XY): sensor monolítico de estado sólido, baseado em tecnologia de acelerômetro, responsável pela medição da inclinação.
+Unidade Remota (UR-DI151399): unidade eletrônica responsável pelo processamento dos dados, configuração do sistema e apresentação das informações ao usuário.
+Instalação do sensor
+Para garantir a correta medição da inclinação, o Sensor de Inclinação deve ser rigidamente fixado ao equipamento ou estrutura cuja posição angular será monitorada. Recomenda-se posicioná-lo alinhado aos eixos de medição (X e Y) e devidamente centralizado em relação ao sistema mecânico, de modo que seus eixos permaneçam perpendiculares ao plano de referência da aplicação.
+Princípio de funcionamento
+Qualquer variação na posição do objeto monitorado provoca uma variação angular equivalente no sensor, permitindo que a Unidade Remota determine continuamente a posição angular do sistema.
+[[IMAGEM]]
+Figura 1 – Vista isométrica da Unidade Remoto e Sensor.
+2. Características Técnicas
+O Supervisor de Inclinação SUI-DI141388XY possui as seguintes características técnicas:
+2.1. Elétricas:
+Alimentação de 100 a 240Vca com consumo máximo de 5 W;
+Temperatura de operação de até 60 °C;
+Conexão elétrica por conector industrial macho/fêmea;
+Três teclas frontais para operação, configuração e navegação pelos parâmetros;
+Proteção por senha para acesso aos parâmetros de configuração.
+Escala de medição digital programável de ±90° nos eixos X e Y, em relação ao plano de referência (outras faixas de medição disponíveis sob consulta);
+Display OLED branco de 3,2", resolução 256 × 64 pixels;
+Sensor de inclinação em módulo independente da Unidade Remota, permitindo instalação a uma distância de até 500 metros;
+Resolução da indicação digital: 0,1°;
+Precisão, linearidade e repetibilidade: ±0,1% da escala máxima;
+Função Preset programável, com ajuste de referência angular em toda a faixa de medição configurada;
+Restauração dos parâmetros de fábrica por meio das teclas de programação;
+Retenção permanente dos parâmetros e configurações em memória EEPROM, dispensando o uso de bateria de backup;
+Duas saídas analógicas isoladas, uma para cada eixo monitorado, com sinal bipolar de –10 a +10 Vcc, simétrico em relação ao zero (0,0° = 0,00 Vcc), com ângulo de fundo de escala programável por eixo e ajuste integral por software (sem trimpots), através de conversor D/A de 16 bits;
+Interface de comunicação serial RS485 para comunicação entre o Sensor de Inclinação e a Unidade Remota;
+Quatro saídas a relé independentes, com contato NA/NF para 5 A / 250 Vca máx., cujos limites são programados diretamente em ângulo, com resolução de 0,1° (Limites 1 e 2 no eixo X e Limites 3 e 4 no eixo Y);
+Indicação e programação sempre em graus, com uma casa decimal fixa (0,1°), dispensando parâmetros de unidade livre, constante de conversão, número de dígitos ou casas decimais;
+Cálculo do ângulo realizado no próprio Sensor de Inclinação, por meio de chip acelerômetro digital com saída angular, transmitido à Unidade Remota já convertido em graus;
+Função Auto Calibração por dois pontos (zero mecânico e fim de curso), com entrada do ângulo real em graus;
+Sentido de incremento da leitura programável, horário ou anti-horário, independente para cada eixo;
+2.2. Mecânicas:
+Unidade Remota construída em invólucro de alumínio, com 200 mm de largura, 100 mm de altura e 80 mm de profundidade; peso aproximado de 1,2 kg;
+Sensor de Inclinação construído em invólucro de alumínio, com 98 mm de largura, 65 mm de altura e 35 mm de profundidade; peso aproximado de 270 g;
+Temperatura máxima de operação: até 60º C sem refrigeração e até 120° C com refrigeração a água (opcional);
+Grau de vedação IP65.
+3. Descrição de Funcionamento
+O Supervisor de Inclinação SUI- DI141388XY utiliza um sistema de controle baseado em um microcontrolador RISC de alto desempenho, operando com frequência de 40 MHz, equivalente a um tempo de ciclo de instrução de aproximadamente 100 ns.
+O microcontrolador possui memória EEPROM interna para armazenamento não volátil dos parâmetros de configuração e das informações do usuário, garantindo a retenção dos dados mesmo na ausência de alimentação elétrica. O programa de controle do equipamento é armazenado em memória Flash, proporcionando confiabilidade e facilidade de atualização do firmware quando necessário.
+Todas as funções do Supervisor de Inclinação são gerenciadas pelo microcontrolador, incluindo:
+• Aquisição e processamento dos dados de inclinação;
+• Decodificação dos valores medidos pelo sensor;
+• Gerenciamento das entradas e sinais de controle;
+• Execução das funções matemáticas e algoritmos de conversão;
+• Controle das saídas analógicas, saídas de limite e interface de comunicação;
+• Gerenciamento das funções de configuração e operação do equipamento.
+A medição da inclinação é realizada por meio de um sensor digital do tipo acelerômetro, responsável por detectar as variações angulares nos eixos monitorados e transmitir essas informações à Unidade Remota para processamento e exibição.
+4. Princípio de Funcionamento
+O Sensor de Inclinação deve ser fixado diretamente ao equipamento ou estrutura cuja posição angular será monitorada. Durante a instalação, recomenda-se que o sensor seja corretamente alinhado aos eixos de medição (X e Y), de forma a garantir a precisão das medições.
+Sempre que ocorrer uma rotação em torno de qualquer um dos eixos monitorados, o sensor mede a inclinação instantânea e transmite os valores correspondentes à Unidade Remota por meio da interface de comunicação RS485.
+A Unidade Remota recebe os dados enviados pelo sensor, realiza o processamento das informações e apresenta, em seu display, os valores de inclinação dos eixos monitorados.
+Como o sensor está rigidamente acoplado ao objeto, o deslocamento angular medido corresponde diretamente ao deslocamento angular do equipamento monitorado. Dessa forma, após a realização do ajuste da posição de referência por meio da função Preset (consulte o item 5.6), o sistema passa a calcular a posição angular relativa ao ponto de referência estabelecido.
+Para determinar a posição angular apresentada ao usuário, o microcontrolador utiliza os valores absolutos fornecidos pelo sensor, juntamente com os parâmetros configurados durante a programação do equipamento.
+Com o objetivo de reduzir oscilações provocadas por vibrações mecânicas ou pequenas variações transitórias na medição, o Supervisor de Inclinação dispõe de um filtro passa-baixa, permitindo adequar o tempo de resposta do equipamento às características de aplicação.
+Display
+Em condições normais, o display indica o valor da medição, inclusive para valores negativos. Quando em modo de programação, mostra o novo valor a ser programado e seus parâmetros.
+5. Operação
+Ao energizar a Unidade Remota, o equipamento executa automaticamente uma rotina de inicialização. Durante esse processo, é realizado um autoteste do display, permitindo verificar seu correto funcionamento.
+Simultaneamente, o LED LIG é acionado, indicando que a Unidade Remota está devidamente alimentada e em operação.
+Após a conclusão do autoteste, a logomarca da Di-Elétrons é exibida temporariamente no display. Em seguida, o equipamento conclui a sequência de inicialização e passa a operar normalmente, apresentando a tela principal de medição.
+5.1 Modos de Operação
+A Unidade Remota possui dois modos de operação:
+Modo Normal: utilizado para a visualização das medições e operação do equipamento (consulte o item 5.2).
+Modo Programação: destinado à configuração dos parâmetros do equipamento (consulte o item 5.3).
+Para acessar o Modo Programação, é necessário informar a senha de acesso: 1234, conforme descrito no item 5.3.
+5.2 Modo Normal
+No Modo Normal, a Unidade Remota exibe continuamente no display o valor da inclinação medida. Como o equipamento monitora dois eixos independentes, a leitura é acompanhada da identificação do eixo correspondente:
+X: Inclinação do eixo X;
+Y: Inclinação do eixo Y.
+Durante a operação neste modo, as saídas analógicas dos eixos X e Y permanecem atualizadas, fornecendo um sinal proporcional às respectivas inclinações medidas.
+Função das teclas no Modo Normal
+Tecla MENU
+Mantida pressionada por aproximadamente 3 segundos, permite o acesso ao Modo Programação, mediante a digitação da senha: 1234.
+Tecla ▼
+Alterna a indicação do display entre os eixos X e Y.
+Tecla ▲
+Não possui função neste modo de operação.
+5.3 Acesso ao Modo de Programação por Senha
+Para acessar o Modo de Programação a partir da tela de operação, siga os passos:
+Segure o botão Menu até que a tela de login seja exibida:
+Senha de acesso:0000 Senha de acesso:0000
+A senha 1234 vem configurada de fábrica.
+Senha de acesso:1234 Senha de acesso:1234
+Use os botões ▲ e ▼ para editar o valor do dígito piscando e pressione Menu para que o dígito à esquerda fique editável (piscando);
+Depois de inserir a senha, segure o botão Menu;
+Se a senha estiver correta, o Menu de Opções será exibido. Caso contrário, a mensagem "Senha incorreta!" aparecerá por alguns segundos antes de desaparecer e permitir uma nova tentativa.
+Senha incorreta! Senha incorreta!
+Caso a senha não seja digitada após a solicitação de acesso, a Unidade Remota cancelará automaticamente a operação e retornará ao Modo Normal após aproximadamente 2 minutos de inatividade.
+Observação: A senha padrão de fábrica é 1234. Esse valor também será restaurado após a execução do reset geral do equipamento.
+5.4 Programação dos Parâmetros
+Para alterar qualquer parâmetro da Unidade Remota, acesse o Modo Programação (descrito no item 5.3) e navegue até o parâmetro desejado utilizando as teclas ▲ e ▼.
+Com o parâmetro selecionado e exibido no display, clique na tecla MENU para habilitar sua edição.
+Após concluir a alteração, mantenha a tecla MENU pressionada por aproximadamente 3 segundos para confirmar e gravar o novo valor.
+Os parâmetros configurados são armazenados na memória EEPROM do microcontrolador, garantindo sua preservação mesmo na ausência de alimentação elétrica.
+Menu>Voltar   Ajusta Preset   Auto Calibração   Limite 1   Limite 2   Limite 3   Limite 4   Sentido Sensor   Senha   SairMenu>Voltar   Ajusta Preset   Auto Calibração   Limite 1   Limite 2   Limite 3   Limite 4   Sentido Sensor   Senha   SairO Menu apresenta a sequência dos parâmetros programáveis e a forma como cada um é exibido no display da Unidade Remota do Supervisor de Inclinação.
+Observação: Todos os parâmetros angulares — Preset, Limites 1 a 4 e o fundo de escala da Auto Calibração — são programados diretamente em graus, com resolução de 0,1°. Os Limites 1 e 2 atuam sobre o eixo X (identificados no display como X1 e X2) e os Limites 3 e 4 sobre o eixo Y (Y1 e Y2). Os demais parâmetros (Preset, Auto Calibração e Sentido do Sensor) possuem configuração independente para cada eixo, identificada por "X" ou "Y".
+A tabela 1 apresenta os parâmetros programáveis e suas respectivas escalas de trabalho.
+--- TABELA ---
+Parâmetro | Valor da Escala
+Ajusta Preset X | –90,0 a +90,0° (passo de 0,1°)
+Ajusta Preset Y | –90,0 a +90,0° (passo de 0,1°)
+Auto Calibração X | Ajuste do zero (0,0° = 0,00 Vcc) e do ganho no ângulo de fundo de escala informado (0,1 a 90,0°)
+Auto Calibração Y | Ajuste do zero (0,0° = 0,00 Vcc) e do ganho no ângulo de fundo de escala informado (0,1 a 90,0°)
+Operação Limite 1 (X1) | Off, ≥, ≤, + (módulo)
+Limite 1 (X1) | –90,0 a +90,0° (passo de 0,1°)
+Operação Limite 2 (X2) | Off, ≥, ≤, + (módulo)
+Limite 2 (X2) | –90,0 a +90,0° (passo de 0,1°)
+Operação Limite 3 (Y1) | Off, ≥, ≤, + (módulo)
+Limite 3 (Y1) | –90,0 a +90,0° (passo de 0,1°)
+Operação Limite 4 (Y2) | Off, ≥, ≤, + (módulo)
+Limite 4 (Y2) | –90,0 a +90,0° (passo de 0,1°)
+Sentido Sensor X | Horário / Anti-horário
+Sentido Sensor Y | Horário / Anti-horário
+Senha | 0000 a 9999 (padrão de fábrica: 1234)
+Sair | Retorna ao Modo Normal de operação
+--- FIM TABELA ---
+Tabela 1 - Parâmetros programáveis e suas respectivas escalas de trabalho
+Para retornar ao Modo Normal, selecione o parâmetro SAIR e clique na tecla MENU.
+A Unidade Remota também pode sair automaticamente do Modo Programação por timeout, quando nenhuma tecla for acionada durante aproximadamente 2 minutos. Ao concluir a saída do modo de programação, o equipamento grava na memória EEPROM todos os parâmetros alterados, preservando as configurações mesmo após o desligamento da alimentação.
+ATENÇÃO: Em caso de falha de energia antes da gravação na EEPROM, as alterações realizadas não serão armazenadas. Nessa situação, os parâmetros modificados deverão ser reprogramados após o restabelecimento da alimentação.
+5.5. Indicação da Medição em Graus
+O Sensor de Inclinação calcula o ângulo internamente, por meio de um chip acelerômetro digital com saída angular, e transmite à Unidade Remota o valor já convertido em graus (°), através da interface RS485. A faixa de medição é de ±90,0° em cada eixo, com resolução de 0,1°.
+Como o cálculo do ângulo é realizado no próprio sensor, o equipamento não utiliza parâmetros de unidade livre, constante de conversão, número de dígitos ou casas decimais. A indicação do display e todos os parâmetros angulares — Preset, Limites 1 a 4 e pontos de Auto Calibração — são sempre expressos em graus, no formato ±XXX,X, com uma casa decimal fixa.
+A leitura é apresentada com sinal, indicando o sentido da inclinação em relação à referência estabelecida pelo Preset. O sentido de incremento do valor é definido pelo parâmetro Sentido do Sensor (consulte o item 5.8), de forma independente para cada eixo.
+Observação: A resolução de 0,1° aplica-se tanto à indicação no display quanto à programação dos limites e do preset, garantindo que o ponto de atuação dos relés seja ajustado exatamente no ângulo desejado.
+5.6. Ajuste do Preset (Referência Angular)
+O recurso Preset tem como finalidade estabelecer a referência angular da leitura dos eixos X e Y, ou seja, o valor, em graus, que deve ser indicado no display quando o equipamento monitorado estiver em uma posição conhecida. A programação é feita diretamente em ângulo, na faixa de –90,0° a +90,0°, com resolução de 0,1°.
+O equipamento possui dois parâmetros de Preset:
+Preset X: referência angular do eixo X;
+Preset Y: referência angular do eixo Y.
+Preset>Voltar   Preset X   Preset YPreset>Voltar   Preset X   Preset Y
+A configuração do Preset é realizada em duas etapas: programação do valor de referência e ativação do Preset.
+Programação do Preset — Preset X / Preset Y
+Para programar o valor de referência do Preset, siga os procedimentos abaixo:
+Entre no modo PROGRAMAÇÃO, conforme descrito no item 5.3.
+Utilize as teclas ▼ e ▲ para selecionar o parâmetro Preset X ou Preset Y, correspondente ao eixo que será configurado.
+Pressione a tecla MENU para iniciar a edição do parâmetro.
+Utilize a tecla MENU para selecionar o dígito a ser alterado.
+Utilize a tecla ▲ para modificar o valor do dígito selecionado.
+Utilize a tecla ▼ para alterar o sinal (+ ou –) do valor programado.
+Após configurar o valor desejado, pressione a tecla MENU para gravar o parâmetro na memória e retornar ao modo PROGRAMAÇÃO.
+Para retornar ao modo NORMAL, aperte a tecla ‘VOLTAR’ utilizando as teclas ▼ e ▲.
+Efetivação do Preset
+Após programar o valor de referência, posicione o equipamento monitorado na posição correspondente a esse valor e execute o comando de preset por meio de um duplo acionamento da tecla ▲ (PSET). O display piscará, indicando que o comando foi aceito, e a leitura passa a ser apresentada em relação ao valor programado.
+Observação: O valor do Preset é gravado na memória EEPROM e mantido após o desligamento do equipamento. Como o ângulo é calculado pelo sensor a partir da gravidade, a leitura correta é restabelecida automaticamente na religação, mesmo que a posição do equipamento tenha sido alterada enquanto o sistema estava desligado.
+5.7. Auto Calibração das Saídas Analógicas (Zero e Ganho)
+A função Auto Calibração ajusta a saída analógica de cada eixo em dois pontos: o zero, em que 0,0° corresponde a 0,00 Vcc, e o ganho, em que o ângulo de fundo de escala informado pelo operador corresponde a +10,00 Vcc. Durante o procedimento, a Unidade Remota simula internamente a inclinação informada, permitindo calibrar a saída sem movimentar o equipamento monitorado.
+A saída analógica é bipolar e simétrica em relação ao zero. Por exemplo, ajustando-se o fundo de escala em 45,0° para +10,00 Vcc, a inclinação de –45,0° resultará em –10,00 Vcc e a posição de 0,0° em 0,00 Vcc.
+A calibração é realizada individualmente para cada eixo, por meio dos parâmetros Auto Calibração X e Auto Calibração Y, podendo o ângulo de fundo de escala ser diferente para cada um deles.
+Importante: Antes de iniciar o procedimento, conecte um voltímetro de precisão aos terminais da saída analógica do eixo a ser calibrado (consulte o item 8 – Conexões Elétricas).
+Procedimento de Auto Calibração
+Etapa 1 – Ajuste do zero (0,0° = 0,00 Vcc)
+1. Acesse o Modo Programação e utilize as teclas ▲ e ▼ para selecionar o parâmetro Auto Calibração X ou Auto Calibração Y, conforme o eixo a ser calibrado.
+2. Clique na tecla MENU para iniciar o procedimento. A Unidade Remota passa a simular a inclinação de 0,0° e exibe a tela de ajuste do zero:
+Ajuste 0Vcc:0000 Ajuste 0Vcc:0000
+3. Utilize a tecla MENU para selecionar o dígito desejado e as teclas ▲ e ▼ para alterar seu valor, acompanhando a leitura do voltímetro até que a tensão de saída seja de 0,00 Vcc.
+4. Mantenha a tecla MENU pressionada por aproximadamente 3 segundos para confirmar o ajuste do zero.
+Etapa 2 – Ajuste do ganho (ângulo de fundo de escala = +10,00 Vcc)
+5. Em seguida, o equipamento solicita o ângulo de fundo de escala, ou seja, a inclinação que deve corresponder a +10,00 Vcc na saída analógica:
+Angulo fim de escala X(°):+045,0Angulo fim de escala X(°):+045,0
+6. Utilize a tecla MENU para selecionar o dígito desejado e as teclas ▲ e ▼ para alterar seu valor, informando o ângulo desejado com resolução de 0,1° (no exemplo, 45,0°). Confirme mantendo a tecla MENU pressionada.
+7. A Unidade Remota passa a simular internamente a inclinação informada e exibe a tela de ajuste do ganho:
+Ajuste 10Vcc:0000 Ajuste 10Vcc:0000
+8. Utilize a tecla MENU para selecionar o dígito desejado e as teclas ▲ e ▼ para alterar seu valor, acompanhando o voltímetro até que a tensão de saída seja de +10,00 Vcc.
+9. Mantenha a tecla MENU pressionada por aproximadamente 3 segundos para gravar a calibração na memória EEPROM. O display confirmará a conclusão do procedimento:
+Alteracao bem sucedida!Alteracao bem sucedida!
+Concluída a calibração, o equipamento retorna automaticamente ao Modo Normal de Operação e a saída analógica passa a acompanhar o ângulo medido de forma proporcional e simétrica: com fundo de escala em 45,0°, cada 0,1° corresponde a aproximadamente 22,2 mV; com fundo de escala em 90,0°, a aproximadamente 11,1 mV.
+Obs.: O ângulo de fundo de escala define apenas a proporção da saída analógica e não altera a faixa de indicação do display, que permanece em ±90,0°. Inclinações superiores ao fundo de escala mantêm a saída saturada em ±10,00 Vcc.
+Obs.: A calibração deve ser realizada com voltímetro devidamente calibrado e com resolução compatível com a precisão requerida pela aplicação. Recomenda-se não interromper a alimentação do equipamento durante o procedimento, para evitar a perda dos ajustes realizados.
+Importante: O ajuste do zero deve ser sempre realizado antes do ajuste do ganho, pois a referência de 0,00 Vcc é utilizada no cálculo da proporção da saída analógica.
+5.8. Sentido do Sensor X e Y
+Este parâmetro define o sentido em que a leitura angular é incrementada, permitindo adequar a indicação ao sentido de movimento do equipamento monitorado. A configuração é independente para cada eixo.
+Opções de configuração
+Horário: o valor do ângulo aumenta quando o sensor gira no sentido horário e diminui no sentido anti-horário;
+Anti-horário: o valor do ângulo aumenta quando o sensor gira no sentido anti-horário e diminui no sentido horário.
+Procedimento de configuração
+1. Acesse o Modo Programação (consulte o item 5.3).
+2. Utilize as teclas ▲ e ▼ para selecionar o parâmetro Sentido Sensor X ou Sentido Sensor Y.
+3. Clique na tecla MENU para habilitar a edição.
+4. Utilize as teclas ▲ e ▼ para selecionar a opção desejada (Horário ou Anti-horário).
+5. Mantenha a tecla MENU pressionada por aproximadamente 3 segundos para gravar o parâmetro na memória EEPROM.
+Observação: A alteração do sentido do sensor inverte o sinal da leitura. Após alterar este parâmetro, recomenda-se refazer o Preset e conferir os valores programados nos Limites 1 a 4.
+5.9. Limites 1 a 4 (Ajuste por Ângulo)
+Os Limites definem os pontos de atuação das quatro saídas a relé do equipamento. Cada limite é programado diretamente em ângulo, na faixa de –90,0° a +90,0°, com resolução de 0,1°, e possui um parâmetro de operação que determina a condição de acionamento do respectivo relé.
+Nota: Os Limites 1 e 2 são referentes ao eixo X e os Limites 3 e 4 ao eixo Y, sendo identificados no display como X1, X2, Y1 e Y2, respectivamente. Cada limite dispõe de uma saída a relé independente, com contato NA/NF para 5 A / 250 Vca máx., e de um LED de sinalização no painel frontal da Unidade Remota.
+Operação dos limites
+Off: limite desativado; o relé permanece em repouso, independentemente do ângulo medido.
+≥ (maior ou igual): o relé é acionado sempre que o ângulo medido for maior ou igual ao valor programado.
+≤ (menor ou igual): o relé é acionado sempre que o ângulo medido for menor ou igual ao valor programado.
++ (módulo): o relé é acionado sempre que o módulo do ângulo medido for maior ou igual ao módulo do valor programado, ou seja, para inclinações em qualquer um dos dois sentidos.
+Exemplo: com a Operação do Limite 1 programada em + e o Limite 1 ajustado em 5,0°, o relé do Limite 1 é acionado sempre que a inclinação do eixo X ultrapassar 5,0° para qualquer um dos lados. Programando-se o mesmo limite em ≥, o relé será acionado somente a partir de +5,0°.
+Procedimento de configuração
+1. Acesse o Modo Programação (consulte o item 5.3).
+2. Utilize as teclas ▲ e ▼ para selecionar o parâmetro Operação Limite ou Limite (1 a 4), conforme o eixo e a função que deseja configurar.
+3. Pressione a tecla MENU para habilitar a edição.
+4. Utilize a tecla MENU para selecionar o dígito desejado, as teclas ▲ e ▼ para alterar seu valor e a tecla ▼ para definir o sinal (+ ou –) do ângulo programado.
+Valor Limite X1(°):+000,0 Valor Limite X1(°):+000,0
+Valor Limite X2(°):+000,0 Valor Limite X2(°):+000,0
+Valor Limite Y1(°):+000,0 Valor Limite Y1(°):+000,0
+Valor Limite Y2(°):+000,0 Valor Limite Y2(°):+000,0
+Após ajustar o valor do limite, selecione o parâmetro Operação Limite correspondente e escolha, com as teclas ▲ e ▼, a condição de acionamento desejada (Off, ≥, ≤ ou +).
+Exemplo:
+Valor Limite Y2(°):+025,0 Valor Limite Y2(°):+025,0
+Após concluir a configuração, pressione a tecla MENU para gravar o novo valor na memória.
+Após a confirmação, o equipamento retornará automaticamente ao Modo Programação.
+Importante: Os valores programados nos Limites 1 a 4 são sempre expressos em graus, com resolução de 0,1°, e referem-se à leitura apresentada no display, ou seja, já consideram o Preset e o Sentido do Sensor configurados para o respectivo eixo.
+5.10. Definição de Senha
+O parâmetro Senha permite definir uma nova senha para acesso ao Modo Programação, aumentando a segurança das configurações do equipamento.
+Procedimento de configuração
+Acesse o Modo Programação (consulte o item 5.3).
+Utilize as teclas ▲ e ▼ para selecionar o parâmetro Senha.
+Clique na tecla MENU para habilitar a edição.
+Será exibida uma tela semelhante à apresentada abaixo:
+Edita senha:1234 Edita senha:1234
+Utilize a tecla MENU para selecionar o dígito que deseja alterar. O dígito selecionado permanecerá piscando.
+Utilize as teclas ▲ e ▼ para ajustar o valor do dígito selecionado.
+Repita o procedimento até configurar todos os dígitos da nova senha.
+Após concluir a configuração, mantenha a tecla MENU pressionada por aproximadamente 3 segundos para gravar a nova senha na memória EEPROM.
+Após a confirmação, o equipamento retornará automaticamente ao Modo Programação.
+Observação: A nova senha somente passará a ser utilizada nos próximos acessos ao Modo Programação.
+5.11. Restaurar Padrões de Fábrica (Reset Geral)
+A função Reset Geral permite restaurar todos os parâmetros de configuração do Supervisor de Inclinação para os valores originais de fábrica, conforme apresentado na Tabela 2.
+Além dos parâmetros de programação, o procedimento também restaura os ajustes de calibração das saídas analógicas realizados durante o processo de fabricação.
+Procedimento de Reset Geral
+Desligue o Supervisor de Inclinação.
+Com o equipamento desligado, pressione e mantenha pressionada a tecla ▲.
+Mantendo a tecla ▲ pressionada, energize novamente o equipamento.
+Aguarde a exibição da mensagem "RESET DE FABRICA" no display.
+RESET DE FABRICARESET DE FABRICA
+Após a exibição da mensagem, libere a tecla ▲.
+Concluído o procedimento, o Supervisor de Inclinação carregará automaticamente os valores padrão de fábrica para todos os parâmetros configuráveis.
+Importante: A execução do Reset Geral apaga todas as configurações realizadas pelo usuário, restaurando os valores originais de fábrica. Caso existam parâmetros específicos da aplicação, recomenda-se registrá-los antes da execução deste procedimento para possibilitar sua posterior reconfiguração.  Após o Reset Geral, a senha de acesso, os parâmetros de medição, os limites programados e os ajustes das saídas analógicas retornarão aos valores definidos em fábrica.
+--- TABELA ---
+Parâmetro default | Valor
+Ajusta Preset X | +000,0°
+Ajusta Preset Y | +000,0°
+Auto Calibração X | Calibração de fábrica: 0,0° = 0,00 Vcc e fundo de escala de 45,0° = +10,00 Vcc
+Auto Calibração Y | Calibração de fábrica: 0,0° = 0,00 Vcc e fundo de escala de 45,0° = +10,00 Vcc
+Operação Limite 1 (X1) | + (módulo)
+Limite 1 (X1) | +005,0°
+Operação Limite 2 (X2) | Off
+Limite 2 (X2) | +000,0°
+Operação Limite 3 (Y1) | + (módulo)
+Limite 3 (Y1) | +005,0°
+Operação Limite 4 (Y2) | Off
+Limite 4 (Y2) | +000,0°
+Sentido Sensor X | Horário
+Sentido Sensor Y | Horário
+Senha | 1234
+--- FIM TABELA ---
+Tabela 2 – Parâmetros após a restauração dos padrões de fábrica.
+6. Instalação Mecânica
+O Supervisor de Inclinação SUI-DI141388XY é fornecido em invólucro de alumínio de alta robustez mecânica, podendo ser equipado, opcionalmente, com sistema de refrigeração a água para aplicações especiais.
+O equipamento possui elevado grau de proteção contra a entrada de poeira e umidade, permitindo sua utilização em ambientes industriais severos. Entretanto, para maximizar sua vida útil e garantir a confiabilidade operacional, recomenda-se que a instalação seja realizada em local protegido da incidência direta de chuva, jatos de água, radiação solar excessiva e demais intempéries.
+O local de montagem do Sensor de Inclinação deve ser selecionado de forma a minimizar a exposição a vibrações mecânicas excessivas, impactos e deformações estruturais que possam comprometer a precisão da medição. O equipamento dispõe de filtros capazes de reduzir os efeitos de pequenas oscilações e vibrações presentes na aplicação. Contudo, esses recursos não substituem a necessidade de uma instalação mecânica adequada.
+6.1. Posicionamento do Sensor
+Para garantir a máxima faixa de medição e a melhor precisão do sistema, o Sensor de Inclinação deve ser instalado corretamente em relação ao plano de referência da aplicação. A faixa nominal de medição do sensor é de ±90° em cada eixo monitorado. Para que essa faixa seja plenamente utilizada, o sensor deve ser montado na posição especificada para a aplicação, observando-se a orientação indicada pela seta de referência existente no corpo do equipamento.
+Após a instalação mecânica, a posição de referência pode ser ajustada por meio da função Preset, permitindo adequar a indicação do sistema à posição inicial desejada pelo usuário.
+Importante: Instalações realizadas com desalinhamento mecânico ou orientação incorreta do sensor podem reduzir a faixa útil de medição e comprometer a exatidão dos valores indicados.
+Observação: A faixa de operação da saída analógica de –10 a +10 Vcc é definida pela Auto Calibração de cada eixo, podendo ser adaptada às necessidades específicas de cada aplicação dentro dos limites de medição do equipamento.
+6.2. Sistema de Refrigeração a Água (Opcional)
+O sistema de refrigeração a água é um recurso opcional destinado a aplicações em ambientes com temperaturas elevadas, contribuindo para a manutenção da temperatura de operação do Sensor de Inclinação dentro dos limites especificados.
+Recomenda-se a utilização desse sistema quando a temperatura ambiente exceder 60 °C. Quando adequadamente refrigerado, o sensor pode operar em ambientes com temperaturas de até 120 °C, sem comprometimento de seu desempenho.
+O sistema de refrigeração é constituído por uma serpentina interna instalada no invólucro do sensor, conectada a dois bocais metálicos com diâmetro externo de 7,5 mm, destinados à entrada e saída da água de refrigeração.
+Requisitos da água de refrigeração
+Para garantir o correto funcionamento do sistema, recomenda-se utilizar água com as seguintes características:
+Água limpa, adequada para uso industrial;
+Temperatura máxima de entrada: 25 °C;
+Pressão máxima recomendada: 60 psi (aproximadamente 4,1 bar);
+Vazão recomendada: entre 1 e 2 litros por minuto.
+Instalação Hidráulica
+As conexões de alimentação e retorno de água devem ser realizadas utilizando tubulações flexíveis compatíveis com as condições da aplicação. O uso de mangueiras flexíveis é indispensável para permitir os movimentos do sensor sem transmitir esforços mecânicos às conexões hidráulicas.
+Importante: Antes da colocação do equipamento em operação, verifique a estanqueidade de todas as conexões hidráulicas e certifique-se de que a vazão de água esteja dentro da faixa recomendada.
+Atenção: A utilização de água contaminada, com excesso de partículas sólidas ou incrustações, pode reduzir a eficiência térmica do sistema e causar obstruções na serpentina de refrigeração.
+6.3. Inspeção da Instalação
+Antes de energizar o Supervisor de Inclinação, recomenda-se verificar cuidadosamente todos os itens relacionados à instalação mecânica, elétrica e hidráulica do sistema.
+Os seguintes pontos devem ser inspecionados:
+Fixação mecânica do Sensor de Inclinação, verificando a rigidez da estrutura de montagem, o alinhamento e o correto posicionamento do sensor em relação ao eixo de medição;
+Fixação da Unidade Remota;
+Integridade e correta execução das conexões elétricas;
+Conexões do sistema de refrigeração a água, quando aplicável;
+Ausência de vazamentos nas conexões hidráulicas;
+Condições adequadas de operação do sistema de refrigeração.
+Importante: O Sensor de Inclinação não deve ser instalado em ambientes com temperatura superior a 60 °C sem a utilização do sistema de refrigeração a água. Nesses casos, o circuito de refrigeração deverá estar devidamente conectado e em operação antes da energização do equipamento.
+[[IMAGEM]]
+Figura 4 - Indicação do sentido das inclinações
+A figura 4 mostra a etiqueta de identificação do sensor, onde é indicado o sentido de inclinação do dispositivo e seu respectivo eixo de medição.
+7. Falhas e Falta de Energia
+Durante o Modo Normal de operação, caso ocorra uma falha de comunicação entre a Unidade Remota (UR-DI151399) e o Sensor de Inclinação (SI-DI141389XY), será exibida no display a mensagem de falha de comunicação. As causas mais comuns são: rompimento ou mau contato do cabo, inversão dos sinais A e B da interface RS485, ausência da alimentação de +5 Vcc do sensor ou blindagem do cabo não aterrada.
+Nessa condição, verifique as conexões elétricas conforme o item 8 e corrija a causa identificada, para que o equipamento retorne à sua condição normal de medição.
+Em caso de falta de energia, todos os parâmetros programados permanecem armazenados na memória EEPROM, dispensando o uso de bateria de backup. Como o ângulo é calculado pelo sensor a partir da referência gravitacional, o valor real da inclinação é restabelecido automaticamente na religação do equipamento, mesmo que a posição do sistema monitorado tenha sido alterada enquanto ele estava desligado.
+ATENÇÃO: Caso ocorra uma falha de energia antes da gravação dos novos valores na EEPROM, ou seja, antes do retorno ao Modo Normal, será necessário reprogramar os parâmetros alterados.
+8. Conexões Elétricas
+As tabelas 3 e 4 descrevem a função de cada terminal dos conectores CN1 e CN2 da Unidade Remota do Supervisor de Inclinação SUI-DI141388XY.
+--- TABELA ---
+Terminal | Identificação | Descrição
+1 | Malha | Aterramento (Ground)
+2 | Preto — "Alim" | Alimentação: 100 a 240 Vca/Vcc ≤ 5 W (opcionalmente 18 a 30 Vcc ≤ 5 W). Em ambos os casos, sem polaridade
+3 | Vermelho — "Alim" | Alimentação (vide terminal 2)
+4 | Vermelho — +5 Vcc | Saída de tensão regulada e isolada, +5 Vcc / 200 mA máx. — alimentação do Sensor de Inclinação
+5 | Amarelo — 0 V | Referência (0 V) da alimentação do Sensor de Inclinação
+6 | Laranja — A | RS485, sinal A — comunicação com o Sensor de Inclinação
+7 | Marrom — B | RS485, sinal B — comunicação com o Sensor de Inclinação
+8 | Blindagem — BL | Blindagem do cabo de comunicação
+9 | Azul — "SaiAnaX+" | Saída analógica bipolar de –10 a +10 Vcc relativa ao eixo X (+)
+10 | Preto — "SaiAnaX–" | Saída analógica relativa ao eixo X (–)
+11 | Vermelho — "SaiAnaY+" | Saída analógica bipolar de –10 a +10 Vcc relativa ao eixo Y (+)
+12 | Cristal — "SaiAnaY–" | Saída analógica relativa ao eixo Y (–)
+--- FIM TABELA ---
+Tabela 3 – Conector CN1: alimentação, comunicação e saídas analógicas.
+--- TABELA ---
+Terminal | Identificação | Descrição
+13 | Não utilizado | Reservado para saída digital em estado sólido do Limite 1 (opcional)
+14 | Marrom — "Lim1X" NA/NF | Saída a relé do Limite 1 (eixo X), 5 A × 250 Vca máx. Configuração NA/NF por jumper; padrão de fábrica em NF
+15 | Lilás — "Lim1X" C | Comum do relé do Limite 1
+16 | Não utilizado | Reservado para saída digital em estado sólido do Limite 2 (opcional)
+17 | Cinza — "Lim2X" NA/NF | Saída a relé do Limite 2 (eixo X), 5 A × 250 Vca máx.
+18 | Amarelo — "Lim2X" C | Comum do relé do Limite 2
+19 | Não utilizado | Reservado para saída digital em estado sólido do Limite 3 (opcional)
+20 | Verde — "Lim3Y" NA/NF | Saída a relé do Limite 3 (eixo Y), 5 A × 250 Vca máx.
+21 | Azul — "Lim3Y" C | Comum do relé do Limite 3
+22 | Não utilizado | Reservado para saída digital em estado sólido do Limite 4 (opcional)
+23 | Cristal — "Lim4Y" NA/NF | Saída a relé do Limite 4 (eixo Y), 5 A × 250 Vca máx.
+24 | Laranja — "Lim4Y" C | Comum do relé do Limite 4
+25 | Comum (0 V) | Comum das saídas digitais isoladas em coletor aberto (opcionais): 0,1 A × 40 Vcc máx.
+--- FIM TABELA ---
+Tabela 4 – Conector CN2: saídas a relé dos Limites 1 a 4.
+Observação: A configuração dos contatos NA/NF de cada limite é feita por jumper na placa da Unidade Remota, sendo o padrão de fábrica NF (normalmente fechado).
