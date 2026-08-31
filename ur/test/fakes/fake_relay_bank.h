@@ -65,11 +65,17 @@ public:
     // --- IRelayBank ---
 
     Status begin() override {
-        // Como no alvo: o nivel de Signalled e escrito antes e depois de habilitar a saida, e a
-        // janela de energizacao do passo 2 do boot e SEMPRE uma transicao registrada, mesmo que a
-        // mascara ja fosse a mesma - e o instante que a medicao de inrush procura.
-        mask_ = kRelayMaskAllSignalled;
-        record(kRelayMaskAllSignalled);
+        // Como no alvo: o passo 2 do boot escreve o NIVEL DE BOOT da base comum (LOW nas duas
+        // polaridades, urbase::kRelayBootLevel), nao o nivel de "Signalled" - os dois so
+        // coincidem quando failSafeCoil() e true. Na polaridade do manual, LOW e "Clear", e um
+        // fake que insistisse em AllSignalled prometeria um boot com as quatro bobinas
+        // energizadas que o alvo nao produz. A janela do passo 2 e SEMPRE uma transicao
+        // registrada, mesmo que a mascara ja fosse a mesma - e o instante que a medicao de
+        // inrush procura.
+        const RelayMask bootMask =
+            failSafePolarity_ ? kRelayMaskAllSignalled : kRelayMaskAllClear;
+        mask_ = bootMask;
+        record(bootMask);
         if (beginFault_) {
             ready_ = false;
             return Status(Err::HwFault);

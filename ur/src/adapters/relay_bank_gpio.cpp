@@ -146,22 +146,40 @@ bool RelayBankGpio::latchMatches(RelayMask wanted) const {
 }
 
 Status RelayBankGpio::begin() {
+    // PASSO 2 DA ORDEM DE BOOT: o nivel escrito aqui e o NIVEL DE BOOT da base comum
+    // (urbase::kRelayBootLevel = false), que e LOW NAS DUAS POLARIDADES porque e o estado de
+    // hardware do reset - o pull-down de 1K na base do BC337 ja mantem a bobina desenergizada.
+    // NAO e o nivel de "Signalled": os dois so coincidem quando failSafePolarity_ e true. Com a
+    // opcao A de A1 (fidelidade ao manual, failSafePolarity_ = false) signalledLevel_ vira HIGH
+    // e escrever "Signalled" no boot ENERGIZARIA as quatro bobinas em toda energizacao - 144 mA
+    // de surto somados aos ~226 ms mais criticos do boot num orcamento de fonte de 5 W ja
+    // apertado, quatro reles chaveando por ciclo de energia, e os quatro contatos de alarme
+    // fechando sem que exista alarme angular, disparando o intertravamento do CLP. DECISIONS.md
+    // 2.3 fecha a questao: "Em ambas as opcoes, o boot mantem os quatro reles desenergizados".
+    // A direcao segura nao se perde: o LimitEvaluator nasce todo Signalled e o primeiro ciclo
+    // da tarefa ctrl, <= 50 ms depois, leva os reles ao estado que ele quer.
+    const bool kBootLevel = false;  // urbase::kRelayBootLevel
+    // Mascara equivalente ao nivel de boot NA POLARIDADE VIGENTE, para que latchMatches()
+    // confira contra o nivel realmente escrito.
+    const RelayMask bootMask = signalledLevel_ ? kRelayMaskAllClear : kRelayMaskAllSignalled;
+
     // Antes do pinMode: e o par validado em bancada contra o glitch de habilitacao da saida.
     // Aqui a simultaneidade nao tem papel nenhum (o driver de saida ainda esta desligado), so o
     // valor do latch, entao vale o HAL do driver de fabrica.
     for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
-        digitalWrite(static_cast<uint8_t>(board::kRelayPins[i]), signalledLevel_ ? HIGH : LOW);
+        digitalWrite(static_cast<uint8_t>(board::kRelayPins[i]), kBootLevel ? HIGH : LOW);
     }
     for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
         pinMode(static_cast<uint8_t>(board::kRelayPins[i]), OUTPUT);
     }
     configured_ = true;
-    driveMask(kRelayMaskAllSignalled);
-    mask_ = kRelayMaskAllSignalled;
-    if (!latchMatches(kRelayMaskAllSignalled)) {
+    driveMask(bootMask);
+    mask_ = bootMask;
+    if (!latchMatches(bootMask)) {
         // Nao ha como provar que este adaptador comanda os quatro pinos. O hardware fica no
-        // nivel de Signalled que acabou de ser escrito, ready_ segue false e toda escrita
-        // posterior devolve NotInit: o composition root decide se derruba a placa.
+        // nivel de boot que acabou de ser escrito, ready_ segue false e toda escrita posterior
+        // devolve NotInit; a Application enxerga applyMask() e signalAll() reprovando no mesmo
+        // ciclo, para de renovar o token de liveness e deixa o STWD100 resetar a placa.
         ready_ = false;
         return Status(Err::HwFault);
     }

@@ -19,6 +19,14 @@
 // glitch de 100 ns e 210x abaixo do tPW. Sem digitalWrite, sem delayMicroseconds, sem
 // busy-wait e sem tocar em nada que more em flash (.rodata inclusive) dentro da ISR.
 //
+// LED LIG (IO2 / CN4-1) NA MESMA ISR, decisao 12 item 14: enablePowerLed(), chamado no passo 14
+// da ordem de boot (depois da janela de strapping do IO2), poe o LED a piscar 900 ms aceso /
+// 100 ms apagado a partir do MESMO contador de 1 ms desta ISR e sob o MESMO token de liveness.
+// Consequencia pretendida: LED aceso com uma piscada curta por segundo = alimentada E firmware
+// vivo; LED apagado = sem alimentacao, firmware travado ou placa em modo download. Um LED de
+// "LIG" aceso continuamente por GPIO mente exatamente quando importa - fica aceso no travamento,
+// que e o unico instante em que alguem o olharia. Por isso ele nao pode nascer no loop().
+//
 // TOKEN DE LIVENESS: a ISR so pulsa enquanto o token renovado por heartbeat() tiver menos de
 // kLivenessDeadlineMs. Passado o prazo ela PARA de pulsar e o STWD100 reseta a placa. Sem
 // esse gate o chute seria incondicional, e um periferico que pulsa com o firmware morto e um
@@ -97,6 +105,8 @@ public:
     // urbase::kCtrlLivenessDeadlineMs em vez de repetir o numero. Enquanto isso o valor e
     // publicado por heartbeatTimeoutMs() e a tarefa ctrl le dali - nunca uma segunda copia.
     static constexpr uint32_t kLivenessDeadlineMs = 800;
+    static constexpr uint32_t kLedOnMs = 900;
+    static constexpr uint32_t kLedOffMs = 100;
 
     // Carencia do boot: teto absoluto do chute incondicional antes do primeiro heartbeat().
     // Cobre os 971 ms de setup no pior caso mais os 1200 ms de splash nao bloqueante, com
@@ -122,6 +132,8 @@ public:
     void heartbeat() override;
     void kickNow() override;
     Status rearmPin() override;
+    Status enablePowerLed();
+    bool powerLedArmed() const;
 
     bool kicking() const override;
     uint32_t kickPeriodMs() const override;

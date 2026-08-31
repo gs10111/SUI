@@ -166,10 +166,6 @@ Status Xtr300AnalogOutput::begin() {
         return st;
     }
     delay(kResetSettleMs);
-    st = writeFrame(kCmdPowerUp, kDataPowerUpBoth);
-    if (st.failed()) {
-        return st;
-    }
     st = writeFrame(kCmdRefGain, kDataRefIntGain2);
     if (st.failed()) {
         return st;
@@ -180,11 +176,27 @@ Status Xtr300AnalogOutput::begin() {
     }
     // Estado de boot = kDacBootCode = codigo de falha. A saida sai do trilho negativo direto
     // para -11,00 V, sem passar por 0,00 V (DECISIONS.md L606 e decisao 7 item (b)).
+    //
+    // O DADO VEM ANTES DO POWER-UP, E ESSA ORDEM E O REQUISITO. O soft reset restaura o POR do
+    // DAC8562, que e ZERO-SCALE (kPorCode = 0x0000). Energizar os dois canais com os
+    // registradores de dado ainda em 0x0000 DIRIGE a saida em 0x0000 durante os quadros
+    // seguintes - ~72 us a 1 MHz, ~720 us em kDacSpiMinHz = 100 kHz - e 0x0000 vale -12,5 V,
+    // satura o XTR300 em ~-12 V, abre a malha da IA e aciona o EFLD; com Cc = 47 nF sobre
+    // R_OS = 1K a constante de tempo e 47 us, entao em 720 us a saida chega la de fato.
+    // DECISIONS.md 2.5 e categorico: 0x0000 e PROIBIDO em qualquer caminho desta placa. Os
+    // comandos 0x18/0x19 (write and update) atualizam o registrador de dado mesmo com o canal
+    // em power-down, entao escrever 3932 primeiro faz a saida NASCER no codigo de falha quando
+    // o power-up chegar. O orcamento de 6 ms do passo 5 nao muda: e a mesma quantidade de
+    // quadros, em outra ordem.
     for (uint8_t ch = 0; ch < kAnalogAxisCount; ++ch) {
         st = writeChannelRaw(ch, kFaultCode);
         if (st.failed()) {
             return st;
         }
+    }
+    st = writeFrame(kCmdPowerUp, kDataPowerUpBoth);
+    if (st.failed()) {
+        return st;
     }
 
     delayMicroseconds(kXtrSettleUs);

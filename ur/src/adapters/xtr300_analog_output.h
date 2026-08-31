@@ -14,7 +14,14 @@
 // D = 0x8000 (32768), -10,00 V em 6554, +10,00 V em 58982. O codigo 0x0000 e PROIBIDO nesta
 // placa (DECISIONS.md L1642 e L811): vale -12,5 V pedidos, satura em ~-12 V e aciona EFLD.
 // Ele so aparece aqui como kPorCode, o valor de POR do DAC8562, usado como marca de "nada
-// comandado ainda" - nenhum caminho deste arquivo o entrega ao barramento.
+// comandado ainda" - nenhum caminho deste arquivo o entrega ao barramento, E NENHUM CAMINHO O
+// DEIXA SER DIRIGIDO. A distincao importa: o soft reset de begin() RESTAURA o POR de
+// zero-scale nos dois registradores de dado, entao energizar os canais antes de escrever o
+// codigo de falha poria 0x0000 na saida durante os quadros seguintes (~72 us a 1 MHz, ~720 us
+// em kDacSpiMinHz) - tempo de sobra para os 47 us de tau do Cc de 47 nF levarem a saida a
+// saturacao e acionarem o EFLD. Por isso a ordem de begin() e softReset -> refGain2 ->
+// ignoreLdacPin -> ESCRITA DE 3932 NOS DOIS CANAIS -> powerUpBoth: os comandos 0x18/0x19
+// atualizam o registrador de dado com o canal ainda em power-down, e a saida nasce em -11,00 V.
 //
 // GRAMPO DURO DO ADAPTADOR = [kCodeMin, kCodeMax] = [5243, 61342]. E o grampo ELETRICO da
 // cadeia, nao a saturacao de +/-10,00 Vcc do manual 5.7 L185 - essa e REGRA DE NEGOCIO,

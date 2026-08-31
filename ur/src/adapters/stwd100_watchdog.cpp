@@ -44,6 +44,9 @@
 namespace {
 
 constexpr uint32_t kWdiMask = 1u << static_cast<uint32_t>(board::kWdi);
+constexpr uint32_t kLedMask = 1u << static_cast<uint32_t>(board::kLedTest);
+constexpr uint32_t kLedOnTicks = Stwd100Watchdog::kLedOnMs * Stwd100Watchdog::kIsrTickHz / 1000u;
+constexpr uint32_t kLedOffTicks = Stwd100Watchdog::kLedOffMs * Stwd100Watchdog::kIsrTickHz / 1000u;
 constexpr uint32_t kKickPeriodTicks =
     board::kWdtKickPeriodMs * Stwd100Watchdog::kIsrTickHz / 1000u;
 constexpr uint32_t kLivenessDeadlineTicks =
@@ -66,6 +69,10 @@ constexpr uint32_t kLastKickAfterStallMs =
     board::kWdtKickPeriodMs;
 
 static_assert(board::kWdi >= 0 && board::kWdi < 32, "WDI fora do banco baixo de GPIO");
+static_assert(board::kLedTest >= 0 && board::kLedTest < 32, "LED LIG fora do banco baixo de GPIO");
+static_assert(kLedOnTicks > 0u && kLedOffTicks > 0u, "fase do LED LIG menor que um tique da ISR");
+static_assert(Stwd100Watchdog::kLedOnMs + Stwd100Watchdog::kLedOffMs == 1000u,
+              "batimento do LED LIG fora do periodo de 1 s da decisao 12 item 14");
 static_assert(Stwd100Watchdog::kIsrTickHz == 1000u, "o compasso da ISR e a base de 1 ms");
 static_assert(kKickPeriodTicks == 250u, "chute do WDI fora dos 250 ms da base comum");
 static_assert(kLivenessDeadlineTicks == 800u, "token de liveness fora dos 800 ms da base comum");
@@ -105,8 +112,11 @@ struct IsrState {
     volatile uint32_t lastBeatTick;
     volatile uint32_t countdown;
     volatile uint32_t kicks;
+    volatile uint32_t ledCountdown;
     volatile bool pulseHigh;
     volatile bool livenessArmed;
+    volatile bool ledArmed;
+    volatile bool ledOn;
 };
 
 IsrState g_isr;
@@ -137,20 +147,40 @@ void IRAM_ATTR wdiIsr() {
         g_isr.pulseHigh = false;
     }
 
-    if (g_isr.countdown != 0u) {
-        g_isr.countdown = g_isr.countdown - 1u;
-        portEXIT_CRITICAL_ISR(&g_wdiMux);
-        return;
-    }
-    g_isr.countdown = kKickPeriodTicks - 1u;
-
     // Portao: com token, vale o prazo; sem token, vale a carencia de boot - que TEM fim.
+    // Avaliado a cada tique porque o LED LIG usa o MESMO portao do WDI: os dois tem de
+    // apagar juntos quando o firmware para de dar sinal de vida.
     bool gateOpen;
     if (g_isr.livenessArmed) {
         gateOpen = (tick - g_isr.lastBeatTick) < kLivenessDeadlineTicks;
     } else {
         gateOpen = tick < kBootGraceTicks;
     }
+
+    if (g_isr.ledArmed) {
+        if (!gateOpen) {
+            GPIO.out_w1tc = kLedMask;
+            g_isr.ledOn = false;
+            g_isr.ledCountdown = 0u;
+        } else if (g_isr.ledCountdown != 0u) {
+            g_isr.ledCountdown = g_isr.ledCountdown - 1u;
+        } else if (g_isr.ledOn) {
+            GPIO.out_w1tc = kLedMask;
+            g_isr.ledOn = false;
+            g_isr.ledCountdown = kLedOffTicks - 1u;
+        } else {
+            GPIO.out_w1ts = kLedMask;
+            g_isr.ledOn = true;
+            g_isr.ledCountdown = kLedOnTicks - 1u;
+        }
+    }
+
+    if (g_isr.countdown != 0u) {
+        g_isr.countdown = g_isr.countdown - 1u;
+        portEXIT_CRITICAL_ISR(&g_wdiMux);
+        return;
+    }
+    g_isr.countdown = kKickPeriodTicks - 1u;
 
     if (gateOpen) {
         GPIO.out_w1ts = kWdiMask;
@@ -193,6 +223,9 @@ Status Stwd100Watchdog::begin() {
     g_isr.kicks = 0;
     g_isr.pulseHigh = false;
     g_isr.livenessArmed = false;
+    g_isr.ledCountdown = 0;
+    g_isr.ledArmed = false;
+    g_isr.ledOn = false;
 
     // Primeiro chute, antes de existir ISR: o objeto ainda nao esta ready_, entao nao passa
     // por kickNow(). Ele conta em kickCount() porque foi um pulso real no WDI.
@@ -276,6 +309,30 @@ Status Stwd100Watchdog::rearmPin() {
     }
     portEXIT_CRITICAL(&g_wdiMux);
     return kOk;
+}
+
+// Passo 14 da ordem de boot: so aqui o IO2 pode ser dirigido para valer. Antes disso ele e
+// strapping e um nivel alto durante o reset quebra o modo download.
+Status Stwd100Watchdog::enablePowerLed() {
+    if (board::kLedTest == board::kNoPin) {
+        return Status(Err::Param);
+    }
+    if (!ready_) {
+        return Status(Err::NotInit);
+    }
+    // pinMode fora da secao critica: ele toma travas proprias do core.
+    pinMode(static_cast<uint8_t>(board::kLedTest), OUTPUT);
+    portENTER_CRITICAL(&g_wdiMux);
+    GPIO.out_w1ts = kLedMask;
+    g_isr.ledOn = true;
+    g_isr.ledCountdown = kLedOnTicks - 1u;
+    g_isr.ledArmed = true;
+    portEXIT_CRITICAL(&g_wdiMux);
+    return kOk;
+}
+
+bool Stwd100Watchdog::powerLedArmed() const {
+    return ready_ && g_isr.ledArmed;
 }
 
 bool Stwd100Watchdog::kicking() const {
