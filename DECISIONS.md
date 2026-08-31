@@ -3,9 +3,8 @@
 Registro das decisoes de projeto do firmware de aplicacao do Supervisor de Inclinacao
 SUI-DI141388XY, modulo Unidade Remota (UR-DI151399).
 
-**Status geral: PENDENTE DE APROVACAO.** Nenhuma linha de codigo de dominio e escrita antes
-que a folha de aprovacao abaixo seja respondida. As etapas listadas em "O que ja pode comecar
-sem aprovacao" sao a unica excecao.
+**Status geral: APROVADO em 2026-08-31.** O dono do produto aprovou as recomendacoes da folha
+de aprovacao, sem desvio. O registro esta na secao "Registro de aprovacao" logo abaixo.
 
 ## De onde saiu cada coisa
 
@@ -52,6 +51,47 @@ autorizou seguir o esquematico sem medicao previa. Ja corrigido na branch
 
 ---
 
+
+## Registro de aprovacao
+
+**Data:** 2026-08-31. **Aprovado por:** Romeu (engenharia@dieletrons.com).
+**Resposta:** "aprovo as recomendacoes" — todas as 15 escolhas seguem a opcao recomendada, sem desvio.
+
+| ID | Opcao aprovada | Situacao |
+|---|---|---|
+| A1 | B — fail-safe: energizado = saudavel, desenergizado = alarme, falha, boot e queda de energia | **Condicionada a M2** |
+| A2 | A — falha em -11,00 V (codigo 3932); modo corrente proibido, `OP_MODE` fixo em tensao | Fechada |
+| A3 | B — histerese 0,3 grau, ataque 100 ms, liberacao 3000 ms, teto anti-chatter de 60000 ms apos 20 ataques em 600 s; alarme angular sem latch | **Valor da histerese condicionado a M8** |
+| A4 | A — criterio estrito: amostra saturada ou fora de +/-90,0 e invalida; 3 consecutivas levam ao alarme | Fechada, com caminho de migracao para B se M10 autorizar |
+| A5 | A — limite em `Off` vai a alarme na falha de enlace | Fechada |
+| A6 | B ajustada — filtro fixo em 0,8 s, recarga por salto de 2,0 grau sempre ativa, quatro degraus so no comissionamento atras da senha | Fechada |
+| A7 | B com rearme operacional — latch apos 5 entradas em falha em 60 s, rearme pela IHM atras da senha, sem cortar energia | Fechada |
+| A8 | C — separar os registros e travar so o que comanda rele | Fechada |
+| A9 | A — pacote de guardas, com a formula unica `leitura = clamp(dir * bruto + offset, -900, +900)`, `offset := P - dir * bruto` | Fechada |
+| A10 | A — autorizar o pacote completo de ECO de firmware da sensora | Fechada |
+| A11 | A — declarar a limitacao por escrito na folha de dados e na proposta comercial; ensaio semestral | Fechada |
+| A12 | Atuacao de rele pela assistencia tecnica atras da senha do equipamento, com registro | Fechada |
+| A13 | A — efetivacao unica no SAIR; bloqueio de senha de 60 s temporario e volatil | Fechada |
+| A14 | A — trim com offset de 5000, verificacao em -10 V, gate de plausibilidade unico | Fechada |
+| A15 | A — ECO de serigrafia mais errata; ate o ECO existir o LED nao e canal de sinalizacao valido | Fechada |
+
+### As duas que continuam abertas, e por que isso nao trava o codigo
+
+**A1 depende da medicao M2.** A recomendacao aprovada e o fail-safe, mas ela e explicitamente
+condicional: se a fonte de 5 W nao sustentar as quatro bobinas continuas (+5 V abaixo de 4,75 V,
+ou consumo acima de 4,0 W) ou o `Vce` do BC337 passar de 0,4 V a 60 C, a decisao cai para a
+opcao A com a clausula de monitoramento externo escrita no manual. Aprovar a recomendacao
+**nao** dispensa a medicao.
+
+**A3 depende da medicao M8.** Os tempos estao fechados; o valor de 0,3 grau sobe para 0,6 grau
+se o ruido residual pico a pico da estrutura passar de 0,1 grau.
+
+Nenhuma das duas trava a implementacao: a polaridade e a banda entram como as constantes
+`kRelayFailSafePolarity` e `kHysteresisDeciDeg` da base comum, com teste de dominio nos dois
+valores. O que a medicao decide e qual constante vai no build de producao, nao a estrutura do
+codigo. Enquanto M2 e M8 nao existirem, o binario de producao nao pode ser liberado.
+
+---
 
 # Parte 1 — Folha de aprovacao
 
