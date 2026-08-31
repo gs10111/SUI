@@ -39,7 +39,7 @@ using domain::Angle;
 using domain::coilLevel;
 using domain::LimitEvaluator;
 using domain::LimitInput;
-using domain::LimitOp;
+using domain::LimitOps;
 using domain::LimitRule;
 using test::FakeClock;
 
@@ -774,7 +774,7 @@ static bool windowReleases(const LimitRule& rule, int16_t angleDeci) {
            angleDeci >= rule.valueDeci() + 100 + rule.hysteresisDeci();
 }
 
-static const LimitOp kWindow{windowAttacks, windowReleases};
+static const LimitOps kWindow{windowAttacks, windowReleases};
 
 static void test_OCP_operacao_nova_entra_sem_tocar_no_avaliador(void) {
     // Janela entre A e A+10,0 graus, definida INTEIRAMENTE aqui no teste: nenhuma linha de

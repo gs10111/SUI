@@ -79,10 +79,10 @@ bool modulusReleases(const LimitRule& rule, int16_t angleDeci) {
 
 namespace ops {
 
-const LimitOp kOff{offAttacks, offReleases};
-const LimitOp kAtLeast{atLeastAttacks, atLeastReleases};
-const LimitOp kAtMost{atMostAttacks, atMostReleases};
-const LimitOp kModulus{modulusAttacks, modulusReleases};
+const LimitOps kOff{offAttacks, offReleases};
+const LimitOps kAtLeast{atLeastAttacks, atLeastReleases};
+const LimitOps kAtMost{atMostAttacks, atMostReleases};
+const LimitOps kModulus{modulusAttacks, modulusReleases};
 
 }  // namespace ops
 
