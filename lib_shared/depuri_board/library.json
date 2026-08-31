@@ -1,0 +1,8 @@
+{
+  "name": "depuri_board",
+  "version": "1.0.0",
+  "description": "Mapa de pinos e constantes eletricas da placa DE-PURI-DI261924 REV A. Fonte unica para o firmware de teste de fabrica e para o firmware de aplicacao da Unidade Remota.",
+  "build": {
+    "flags": ["-I include"]
+  }
+}
