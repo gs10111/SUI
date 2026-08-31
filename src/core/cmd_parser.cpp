@@ -35,6 +35,7 @@ int hexDigit(char c) {
 bool parse(const char* input, Line& out) {
     out.argc = 0;
     out.truncated = false;
+    out.tokenLimit = false;
     out.buf[0] = '\0';
     for (uint8_t i = 0; i < kMaxTokens; ++i) {
         out.argv[i] = nullptr;
@@ -64,6 +65,7 @@ bool parse(const char* input, Line& out) {
         }
         if (out.argc >= kMaxTokens) {
             out.truncated = true;
+            out.tokenLimit = true;
             break;
         }
         out.argv[out.argc++] = &out.buf[i];

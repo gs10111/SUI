@@ -5,7 +5,7 @@
 
 namespace cmd {
 
-constexpr uint8_t kMaxTokens = 8;
+constexpr uint8_t kMaxTokens = 36;
 constexpr uint16_t kMaxLine = 96;
 
 struct Line {
@@ -13,6 +13,7 @@ struct Line {
     const char* argv[kMaxTokens];
     uint8_t argc;
     bool truncated;
+    bool tokenLimit;
 };
 
 bool parse(const char* input, Line& out);

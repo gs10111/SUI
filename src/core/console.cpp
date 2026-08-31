@@ -184,8 +184,13 @@ void Console::handleLine(const char* line) {
         state_ = ConsoleState::Idle;
         return;
     }
-    if (parsed.truncated) {
-        ctx_.io.writeLine("aviso: linha truncada");
+    if (parsed.tokenLimit) {
+        ctx_.io.printf("aviso: linha cortada em %u palavras (limite do console)\r\n",
+                       static_cast<unsigned>(cmd::kMaxTokens));
+        ctx_.io.writeLine("dica: em 'rs485 ping', mande o hex sem espaco (um bloco so)");
+    } else if (parsed.truncated) {
+        ctx_.io.printf("aviso: linha cortada em %u caracteres\r\n",
+                       static_cast<unsigned>(cmd::kMaxLine - 1));
     }
 
     const char* const head = parsed.argv[0];

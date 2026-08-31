@@ -46,17 +46,45 @@ static void test_parseEmptyAndBlankLines(void) {
     TEST_ASSERT_EQUAL_UINT8(0, line.argc);
 }
 
+static void fillTokens(char* out, uint8_t count) {
+    uint16_t n = 0;
+    for (uint8_t i = 0; i < count; ++i) {
+        out[n++] = 'a';
+        out[n++] = ' ';
+    }
+    out[n - 1] = '\0';
+}
+
 static void test_parseTooManyTokensSetsTruncated(void) {
     cmd::Line line;
-    TEST_ASSERT_TRUE(cmd::parse("a b c d e f g h i j", line));
+    char many[cmd::kMaxLine];
+    char exact[cmd::kMaxLine];
+    fillTokens(many, static_cast<uint8_t>(cmd::kMaxTokens + 2));
+    fillTokens(exact, cmd::kMaxTokens);
+
+    TEST_ASSERT_TRUE(cmd::parse(many, line));
     TEST_ASSERT_TRUE(line.truncated);
+    TEST_ASSERT_TRUE(line.tokenLimit);
     TEST_ASSERT_EQUAL_UINT8(cmd::kMaxTokens, line.argc);
     TEST_ASSERT_EQUAL_STRING("a", line.argv[0]);
-    TEST_ASSERT_EQUAL_STRING("h", line.argv[cmd::kMaxTokens - 1]);
+    TEST_ASSERT_EQUAL_STRING("a", line.argv[cmd::kMaxTokens - 1]);
 
-    TEST_ASSERT_TRUE(cmd::parse("a b c d e f g h", line));
+    TEST_ASSERT_TRUE(cmd::parse(exact, line));
     TEST_ASSERT_FALSE(line.truncated);
+    TEST_ASSERT_FALSE(line.tokenLimit);
     TEST_ASSERT_EQUAL_UINT8(cmd::kMaxTokens, line.argc);
+}
+
+// Regressao: 'rs485 ping' com o quadro do jig byte a byte cabia em 12 palavras, mas o
+// limite antigo de 8 cortava a linha e so 6 bytes iam para o barramento.
+static void test_parsePingFrameKeepsEveryHexByte(void) {
+    cmd::Line line;
+    TEST_ASSERT_TRUE(cmd::parse("rs485 ping 02 54 04 01 00 00 00 FD F3 03", line));
+    TEST_ASSERT_FALSE(line.truncated);
+    TEST_ASSERT_FALSE(line.tokenLimit);
+    TEST_ASSERT_EQUAL_UINT8(12, line.argc);
+    TEST_ASSERT_EQUAL_STRING("02", line.argv[2]);
+    TEST_ASSERT_EQUAL_STRING("03", line.argv[11]);
 }
 
 static void test_parseLongLineSetsTruncated(void) {
@@ -230,6 +258,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_parseSplitsOnSpacesAndTabs);
     RUN_TEST(test_parseEmptyAndBlankLines);
     RUN_TEST(test_parseTooManyTokensSetsTruncated);
+    RUN_TEST(test_parsePingFrameKeepsEveryHexByte);
     RUN_TEST(test_parseLongLineSetsTruncated);
     RUN_TEST(test_equalsIgnoreCase);
     RUN_TEST(test_parseU32);
