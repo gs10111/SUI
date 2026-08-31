@@ -113,10 +113,18 @@ struct IsrState {
     volatile uint32_t countdown;
     volatile uint32_t kicks;
     volatile uint32_t ledCountdown;
+    volatile uint32_t safeStateCalls;
+    // Gancho de ESTADO SEGURO, chamado uma unica vez no tique em que o portao FECHA. Ponteiro
+    // para funcao livre, e nao despacho virtual, porque a vtable mora em .rodata (flash) e este
+    // caminho tem de valer com a cache desligada; o registro vive aqui em .bss (DRAM) e o alvo
+    // e IRAM_ATTR, exatamente como o rearmWatchdogPin de Ssd1322Display.
+    void (*safeState)();
     volatile bool pulseHigh;
     volatile bool livenessArmed;
     volatile bool ledArmed;
     volatile bool ledOn;
+    volatile bool gateWasOpen;
+    volatile bool safeStateDone;
 };
 
 IsrState g_isr;
@@ -156,6 +164,23 @@ void IRAM_ATTR wdiIsr() {
     } else {
         gateOpen = tick < kBootGraceTicks;
     }
+
+    // O PORTAO ACABOU DE FECHAR: o firmware esta comprovadamente parado (token de liveness com
+    // mais de 800 ms, ou carencia de boot vencida sem nenhum heartbeat) e a ISR vai parar de
+    // alimentar o STWD100. Entre este instante e o reset passam de 1,12 a 2,24 s de tWD, e ate
+    // aqui os quatro reles ficavam CONGELADOS no ultimo nivel permissivo - contatos dizendo "sem
+    // alarme" com o firmware ja declarado morto pelo proprio firmware. O caminho de estado seguro
+    // ja existia em IRAM (RelayBankGpio::signalAllFromIsr) e nao era chamado de lugar nenhum;
+    // este e o lugar. Uma vez so: depois disto a placa esta em falha declarada e ninguem retoma
+    // escrita normal.
+    if (g_isr.gateWasOpen && !gateOpen && !g_isr.safeStateDone) {
+        g_isr.safeStateDone = true;
+        g_isr.safeStateCalls = g_isr.safeStateCalls + 1u;
+        if (g_isr.safeState != nullptr) {
+            g_isr.safeState();
+        }
+    }
+    g_isr.gateWasOpen = gateOpen;
 
     if (g_isr.ledArmed) {
         if (!gateOpen) {
@@ -226,6 +251,11 @@ Status Stwd100Watchdog::begin() {
     g_isr.ledCountdown = 0;
     g_isr.ledArmed = false;
     g_isr.ledOn = false;
+    // O portao nasce ABERTO (carencia de boot). O gancho e o marcador de "ja disparei" nao sao
+    // zerados aqui de proposito: quem registra o gancho e o composition root, DEPOIS do begin().
+    g_isr.gateWasOpen = true;
+    g_isr.safeStateDone = false;
+    g_isr.safeStateCalls = 0;
 
     // Primeiro chute, antes de existir ISR: o objeto ainda nao esta ready_, entao nao passa
     // por kickNow(). Ele conta em kickCount() porque foi um pulso real no WDI.
@@ -329,6 +359,23 @@ Status Stwd100Watchdog::enablePowerLed() {
     g_isr.ledArmed = true;
     portEXIT_CRITICAL(&g_wdiMux);
     return kOk;
+}
+
+Status Stwd100Watchdog::setSafeStateHook(void (*hook)()) {
+    if (!ready_) {
+        return Status(Err::NotInit);
+    }
+    // O ALVO TEM DE SER IRAM_ATTR E NAO PODE SER METODO VIRTUAL. Quando este gancho e chamado a
+    // cache de flash pode estar desligada (apagamento de setor da NVS) e o firmware ja esta
+    // declarado morto: qualquer leitura de flash ali e um travamento dentro do travamento.
+    portENTER_CRITICAL(&g_wdiMux);
+    g_isr.safeState = hook;
+    portEXIT_CRITICAL(&g_wdiMux);
+    return kOk;
+}
+
+uint32_t Stwd100Watchdog::safeStateCalls() const {
+    return ready_ ? g_isr.safeStateCalls : 0u;
 }
 
 bool Stwd100Watchdog::powerLedArmed() const {

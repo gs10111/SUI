@@ -130,12 +130,19 @@ bool Parameters::fullScaleValid(int16_t deci) {
     return deci >= kCalFullScaleMinDeci && deci <= kCalFullScaleMaxDeci;
 }
 
-bool Parameters::zeroCodeValid(uint16_t code) {
-    return code >= kCalZeroCodeMin && code <= kCalZeroCodeMax;
+// GATE UNICO DE A14, UMA UNICA LINHA DE CODIGO EM TODO O AGREGADO. Nenhuma faixa e repetida
+// aqui: quem sabe o que a cadeia analogica consegue emitir e o AnalogScaler.
+bool Parameters::calTripleValid(uint16_t zeroCode, uint16_t fullScaleCode, int16_t fullScaleDeci) {
+    AnalogScaler sonda;
+    return AnalogScaler::make(zeroCode, fullScaleCode, fullScaleDeci, sonda);
 }
 
-bool Parameters::fullScaleCodeValid(uint16_t code) {
-    return code >= kCalFullScaleCodeMin && code <= kCalFullScaleCodeMax;
+bool Parameters::calPairValid(uint16_t zeroCode, uint16_t fullScaleCode) {
+    // O criterio do angulo e SEPARAVEL do criterio dos codigos dentro de make() - um olha
+    // fullScaleAngleDeci, o outro olha zero e vao - entao sondar com o angulo de fabrica
+    // responde exatamente "este par de codigos e legitimo?", sem depender de qual angulo esta
+    // programado no eixo e sem criar ordem obrigatoria entre as duas escritas.
+    return calTripleValid(zeroCode, fullScaleCode, kDefaultCalFullScaleDeci);
 }
 
 Status Parameters::setPreset(Axis axis, Angle value) {
@@ -212,37 +219,33 @@ Status Parameters::setCalFullScale(Axis axis, Angle value) {
     return kOk;
 }
 
-Status Parameters::setCalZeroCode(Axis axis, uint16_t code) {
-    if (!axisValid(axis)) {
-        return Err::Param;
-    }
-    if (!zeroCodeValid(code)) {
-        return Err::Range;
-    }
-    cal_.zeroCode[idx(axis)] = code;
-    return kOk;
-}
-
-Status Parameters::setCalFullScaleCode(Axis axis, uint16_t code) {
-    if (!axisValid(axis)) {
-        return Err::Param;
-    }
-    if (!fullScaleCodeValid(code)) {
-        return Err::Range;
-    }
-    cal_.fullScaleCode[idx(axis)] = code;
-    return kOk;
-}
-
 Status Parameters::setCalPair(Axis axis, uint16_t zeroCode, uint16_t fullScaleCode) {
     if (!axisValid(axis)) {
         return Err::Param;
     }
-    if (!zeroCodeValid(zeroCode) || !fullScaleCodeValid(fullScaleCode)) {
+    if (!calPairValid(zeroCode, fullScaleCode)) {
         return Err::Range;
     }
     cal_.zeroCode[idx(axis)] = zeroCode;
     cal_.fullScaleCode[idx(axis)] = fullScaleCode;
+    return kOk;
+}
+
+Status Parameters::setCalTriple(Axis axis, uint16_t zeroCode, uint16_t fullScaleCode,
+                                Angle fullScale) {
+    if (!axisValid(axis)) {
+        return Err::Param;
+    }
+    if (!angleValid(fullScale)) {
+        return Err::Range;
+    }
+    // UMA chamada ao gate, cobrindo os tres campos. Nenhuma escrita antes dela.
+    if (!calTripleValid(zeroCode, fullScaleCode, fullScale.deciDegrees())) {
+        return Err::Range;
+    }
+    cal_.zeroCode[idx(axis)] = zeroCode;
+    cal_.fullScaleCode[idx(axis)] = fullScaleCode;
+    cal_.fullScaleDeci[idx(axis)] = fullScale.deciDegrees();
     return kOk;
 }
 
@@ -334,8 +337,11 @@ Status Parameters::loadCal(const uint8_t* src, uint16_t len) {
         lido.fullScaleDeci[axis] = static_cast<int16_t>(get16(src + kOffCalFullScale + 2 * axis));
         lido.zeroCode[axis] = get16(src + kOffCalZeroCode + 2 * axis);
         lido.fullScaleCode[axis] = get16(src + kOffCalFullScaleCode + 2 * axis);
-        if (!fullScaleValid(lido.fullScaleDeci[axis]) || !zeroCodeValid(lido.zeroCode[axis]) ||
-            !fullScaleCodeValid(lido.fullScaleCode[axis])) {
+        // MESMO gate da escrita, aplicado aos tres campos de uma vez: um registro que vem da NVS
+        // com CRC bom nao pode entrar por uma porta mais larga do que a do assistente (A8: CRC
+        // aprovado nao autoriza valor fora de faixa).
+        if (!calTripleValid(lido.zeroCode[axis], lido.fullScaleCode[axis],
+                            lido.fullScaleDeci[axis])) {
             return Err::Range;
         }
     }

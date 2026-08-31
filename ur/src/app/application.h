@@ -128,6 +128,24 @@ public:
     // tolerado; acima disto a ctrl declara falha de enlace na hora.
     static constexpr uint32_t kNvsCommitBudgetMs = 500;
 
+    // A7, APROVADA E FECHADA (opcao B com rearme operacional): 5 ENTRADAS em falha dentro de
+    // 60000 ms travam o estado de falha, a tela mostra "FALHA TRAVADA - REARMAR NO MENU" e o
+    // rearme e feito no painel, atras da senha, sem cortar energia.
+    // O QUE EXATAMENTE FICA TRAVADO: os QUATRO RELES (em alarme) e as DUAS SAIDAS analogicas (no
+    // codigo de falha). NAO a maquina de saude do enlace: link() continua medindo e publicando a
+    // verdade, e o painel mostra a leitura corrente com o texto de rearme por cima. E a
+    // combinacao "link == Ok com linkLatched armado" que NormalScreen ja desenha e que
+    // docs/ihm-estados.md B7 descreve; travar tambem a saude do enlace esconderia do operador o
+    // unico fato que ele precisa para decidir rearmar - que o cabo voltou. Sem o latch, um enlace
+    // intermitente - conector oxidado no cais, cabo prensado, terminacao ruim - recupera sozinho
+    // para sempre e o operador so ve o painel piscando entre normal e falha, sem que nada
+    // registre a gravidade. O que conta e ENTRADA em falha, nao ciclo em falha: uma falha longa
+    // e um evento, cinco curtas em um minuto sao cinco.
+    // NAO CONFUNDIR COM O LATCH DE A8 (configuracao perdida), que e configLatched_ e vem de
+    // fora, do composition root, por outra causa e com outra saida (Reset Geral).
+    static constexpr uint8_t kFaultsToLatch = 5;
+    static constexpr uint32_t kFlapWindowMs = 60000;
+
     struct Snapshot {
         domain::Angle reading[kAppAxisCount];
         domain::Angle raw[kAppAxisCount];
@@ -142,6 +160,14 @@ public:
         uint32_t relayWriteErrors;
         uint32_t analogWriteErrors;
         bool configLatched;
+        // A7: latch de flapping do ENLACE. E o sinal que a tela principal le em
+        // NormalInput::linkLatched - nunca configLatched, que e outra decisao (A8) com outra
+        // causa e outra saida.
+        bool linkLatched;
+        // A saida analogica reprovou a escrita e o adaptador deixou de estar pronto: latch, do
+        // mesmo jeito que relayBankDead. A IHM nao pode dizer "rastreando" sobre um DAC que nao
+        // aceita escrita.
+        bool analogDead;
         // Guarda dura de idade em vigor neste ciclo (decisao 5 item 30). A IHM mostra falha de
         // enlace quando ela esta ligada: os reles ja estao em alarme e o painel nao pode dizer
         // "Ok" por cima disso.
@@ -163,6 +189,15 @@ public:
     void setFilterTimeConstant(uint16_t timeConstantMs);
     void setConfigLatched(bool latched);
     bool configLatched() const { return configLatched_; }
+
+    // REARME DE A7. A IHM publica isto sob o MESMO portMUX das outras travessias, depois de o
+    // operador passar pelo gate de senha (a mesma de A13). Liberar um latch nao e atuar rele,
+    // entao este ponto sobrevive a retirada dos comandos de atuacao das decisoes de engenharia.
+    // O rearme limpa tambem a janela de contagem: cinco eventos novos sao necessarios para
+    // travar de novo, e nao um.
+    void clearLinkLatch();
+    bool linkLatched() const { return linkLatched_; }
+    bool analogDead() const { return analogDead_; }
 
     // As duas metades que a tarefa ctrl executa SOB O MESMO portMUX da IHM. applyPublished()
     // vem antes de startCycle(); latchSnapshot() depois de finishCycle(). Nenhuma das duas faz
@@ -193,6 +228,9 @@ private:
     void applyScalers();
     bool accept(const SensorSample& sample, uint32_t nowMs) const;
     void updateHealth(bool good, uint32_t nowMs);
+    // Registra UMA entrada em falha e avalia o latch de A7. Chamada dos dois unicos pontos que
+    // declaram falha: updateHealth() e noteStall().
+    void noteFaultEntry(uint32_t nowMs);
     void driveRelays(bool fresh);
     void driveAnalog(uint32_t nowMs);
 
@@ -215,6 +253,12 @@ private:
     uint32_t faultSinceMs_;
     uint32_t lastGoodMs_;
     uint32_t overrideSinceMs_[kAppAxisCount];
+    // Anel de carimbos das ultimas kFaultsToLatch entradas em falha (mesmo padrao do anel
+    // anti-chatter do LimitEvaluator). Anel e nao contador porque a janela desliza: o que
+    // importa e se a QUINTA entrada mais recente caiu dentro dos ultimos 60000 ms.
+    uint32_t faultStampMs_[kFaultsToLatch];
+    uint8_t faultStampCount_;
+    uint8_t faultStampHead_;
     uint32_t cycles_;
     uint32_t faultEvents_;
     uint32_t relayErrors_;
@@ -233,6 +277,8 @@ private:
     bool reloadPending_;
     bool cycleOpen_;
     bool configLatched_;
+    bool linkLatched_;
+    bool analogDead_;
     bool stale_;
     bool relayBankDead_;
 };

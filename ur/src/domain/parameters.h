@@ -36,10 +36,25 @@
 // calibracao de fabrica: esta e medida unidade a unidade pelo jig e vive em ParamSlot::FactoryCal,
 // e o Reset Geral do manual 5.11 (L240) manda RESTAURA-LA. O nominal e ultimo recurso, valido
 // so quando o slot de fabrica esta ilegivel.
+//
+// GATE DE PLAUSIBILIDADE DA CALIBRACAO: UM SO, E ELE NAO MORA AQUI (A14, "com o gate de
+// plausibilidade do commit unificado em um unico criterio, porque hoje as decisoes 6, 9 e 10
+// usam tres, e uma calibracao legitima aprovada por um e recusada por outro"). Quem decide se
+// um par (zero, fundo de escala) e legitimo e domain::AnalogScaler::make(), e mais ninguem.
+// Ate a etapa 8 este agregado carregava uma SEGUNDA janela propria - zero em [27768, 37767] e
+// codigo de fundo de escala em [53982, 63981], derivada do trim de +/-5000 LSB aplicado a cada
+// ponto ISOLADO - e essa janela discordava do gate do assistente, que trima o zero e o VAO.
+// Com campoZero + campoGanho abaixo de 5000 (por exemplo 2000 e 2500, angulo de fundo 30,0
+// graus) o assistente aprovava o par 29768/53482 e este agregado o recusava em silencio,
+// gravando o angulo novo sobre os codigos velhos: MEIO PAR, que A14 declara pior que nenhuma
+// calibracao porque produz saida plausivel e errada sem assinatura observavel. A segunda janela
+// foi REMOVIDA; sobrou o criterio do AnalogScaler, e o static_assert abaixo prende a unica
+// parte do gate que este arquivo ainda precisa repetir (a faixa do angulo de fundo de escala).
 #pragma once
 
 #include <stdint.h>
 
+#include "domain/analog_scaler.h"
 #include "domain/angle.h"
 #include "status.h"
 
@@ -82,21 +97,20 @@ public:
     static constexpr uint16_t kNominalCalZeroCode = 32768;
     static constexpr uint16_t kNominalCalFullScaleCode = 58982;
 
-    // A14 opcao A: trim com neutro em 5000, faixa -5000 a +4999 LSB em torno do codigo nominal.
-    // A janela de cada ponto de calibracao e o trim aprovado, e nada alem dele.
-    static constexpr int16_t kCalTrimMin = -5000;
-    static constexpr int16_t kCalTrimMax = 4999;
-    static constexpr uint16_t kCalZeroCodeMin = static_cast<uint16_t>(kNominalCalZeroCode + kCalTrimMin);        // 27768
-    static constexpr uint16_t kCalZeroCodeMax = static_cast<uint16_t>(kNominalCalZeroCode + kCalTrimMax);        // 37767
-    static constexpr uint16_t kCalFullScaleCodeMin = static_cast<uint16_t>(kNominalCalFullScaleCode + kCalTrimMin);  // 53982
-    static constexpr uint16_t kCalFullScaleCodeMax = static_cast<uint16_t>(kNominalCalFullScaleCode + kCalTrimMax);  // 63981
+    // AMARRACAO DO GATE UNICO. A faixa do angulo de fundo de escala e a unica parte do criterio
+    // de A14 que este arquivo repete (porque setCalFullScale escreve so esse campo); as duas
+    // constantes tem de continuar sendo LITERALMENTE as do AnalogScaler, senao voltam a existir
+    // dois gates. Se alguem mexer num dos lados, o build para aqui.
+    static_assert(kCalFullScaleMinDeci == AnalogScaler::kFullScaleMinDeci,
+                  "o piso do fundo de escala tem de ser o do gate unico de A14");
+    static_assert(kCalFullScaleMaxDeci == AnalogScaler::kFullScaleMaxDeci,
+                  "o teto do fundo de escala tem de ser o do gate unico de A14");
 
-    // Monotonicidade da saida analogica (manual 5.7: "proporcional e simetrica") nao depende de
-    // checagem em tempo de execucao: as duas janelas do trim de A14 sao disjuntas e ordenadas,
-    // entao fullScaleCode > zeroCode e teorema, nao esperanca. Se alguem mexer nas janelas e
-    // quebrar isso, o build para aqui em vez de aceitar ganho negativo em campo.
-    static_assert(kCalZeroCodeMax < kCalFullScaleCodeMin,
-                  "janelas de trim sobrepostas permitiriam calibracao degenerada ou invertida");
+    // Monotonicidade da saida analogica (manual 5.7: "proporcional e simetrica") tambem sai do
+    // gate unico e nao de janelas disjuntas: make() exige vao >= kSpanMin = 20971 codigos, logo
+    // fullScaleCode > zeroCode por construcao, e par degenerado ou invertido nunca e aceito.
+    static_assert(AnalogScaler::kSpanMin > 0,
+                  "vao minimo positivo e o que proibe par degenerado ou invertido");
 
     // Tabela 2, L250 a L267.
     static constexpr int16_t kDefaultPresetDeci = 0;
@@ -160,13 +174,28 @@ public:
     Status setLimitOp(LimitId id, LimitOp op);
     Status setPassword(uint16_t value);
     Status setCalFullScale(Axis axis, Angle value);
-    Status setCalZeroCode(Axis axis, uint16_t code);
-    Status setCalFullScaleCode(Axis axis, uint16_t code);
 
-    // Commit do assistente de A14: zero e ganho gravados de uma vez so. Se um dos dois for
-    // recusado, NENHUM dos dois e escrito - meio par de calibracao e pior que nenhuma
-    // calibracao, porque nao tem assinatura observavel (A14, sub-item do timeout de 120 s).
+    // NAO EXISTEM setCalZeroCode() E setCalFullScaleCode(). Eram escritores de MEIO PAR: cada um
+    // movia uma ponta da reta de calibracao sozinho, sob uma janela que nao olhava a outra ponta.
+    // O sub-item de A14 ("meio par gravado e pior que nenhuma calibracao") proibe justamente
+    // isso, e nenhum caminho de produto precisava deles - so os testes os chamavam. Quem escreve
+    // calibracao escreve o par (setCalPair) ou o trio (setCalTriple), sempre por inteiro.
+
+    // Commit do assistente de A14: zero e ganho gravados de uma vez so. Se o par for recusado
+    // pelo gate unico, NENHUM dos dois e escrito.
     Status setCalPair(Axis axis, uint16_t zeroCode, uint16_t fullScaleCode);
+
+    // O UNICO ponto de escrita que o produto usa (composition root: fim da Auto Calibracao e
+    // Reset Geral). Os TRES campos que descrevem a reta de um eixo - codigo de zero, codigo de
+    // fundo de escala e angulo de fundo de escala - sao validados por UMA chamada a
+    // AnalogScaler::make() e gravados de uma vez ou nenhuma. Enquanto existirem duas escritas
+    // separadas com dois Status, existe um caminho em que uma passa e a outra reprova e o eixo
+    // fica com angulo novo sobre codigos velhos.
+    Status setCalTriple(Axis axis, uint16_t zeroCode, uint16_t fullScaleCode, Angle fullScale);
+
+    // O gate unico, exposto para quem precisa PERGUNTAR antes de escrever (e para o teste de
+    // grade que prova que tudo que AnalogCalibration::commit() aceita este agregado aceita).
+    static bool calPairValid(uint16_t zeroCode, uint16_t fullScaleCode);
 
     // Escreve o registro inteiro no buffer do chamador. Err::Param se cap nao couber.
     Status serializeParams(uint8_t* dst, uint16_t cap, uint16_t& outLen) const;
@@ -206,8 +235,7 @@ private:
     static bool sensorDirValid(uint8_t raw);
     static bool passwordValid(uint16_t value);
     static bool fullScaleValid(int16_t deci);
-    static bool zeroCodeValid(uint16_t code);
-    static bool fullScaleCodeValid(uint16_t code);
+    static bool calTripleValid(uint16_t zeroCode, uint16_t fullScaleCode, int16_t fullScaleDeci);
 
     RelayGroup rel_;
     CalGroup cal_;

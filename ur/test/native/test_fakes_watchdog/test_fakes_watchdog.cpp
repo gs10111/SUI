@@ -202,6 +202,100 @@ static void test_wdt_prazos_publicados_cabem_sob_o_tWD_minimo(void) {
     TEST_ASSERT_TRUE(wdt.heartbeatTimeoutMs() + wdt.kickPeriodMs() < wdt.minTimeoutMs());
 }
 
+// --- gancho de estado seguro (o caminho IRAM que estava construido e desligado) ----------
+
+namespace {
+
+// O gancho do alvo e um ponteiro para funcao LIVRE marcada IRAM_ATTR - a vtable mora em flash e
+// a cache pode estar desligada quando ele dispara. Aqui, no host, a mesma assinatura: nada de
+// captura, nada de std::function, nada que alocasse.
+uint32_t g_ganchoChamadas = 0;
+void ganchoDeEstadoSeguro() { ++g_ganchoChamadas; }
+
+}  // namespace
+
+static void test_wdt_o_portao_que_FECHA_dispara_o_estado_seguro_uma_vez_so(void) {
+    // O QUE ESTE TESTE COBRE. RelayBankGpio::signalAllFromIsr() existe, e IRAM_ATTR, tem teste
+    // de contrato no fake - e ate a etapa 8 NAO ERA CHAMADA DE LUGAR NENHUM. O gancho foi
+    // construido exatamente para este instante: a ISR do WDI fecha o portao (token de liveness
+    // com mais de 800 ms, firmware comprovadamente travado) e para de alimentar o STWD100. Dali
+    // ate o reset passam de 1120 a 2240 ms de tWD, e nesse intervalo os quatro reles ficavam
+    // congelados no ultimo nivel permissivo - contatos dizendo "sem alarme" com o firmware ja
+    // declarado morto pelo proprio firmware. Mecanismo de seguranca construido e nao ligado e
+    // pior que ausente, porque parece cobertura.
+    g_ganchoChamadas = 0;
+    FakeWatchdog wdt;
+    TEST_ASSERT_TRUE(wdt.begin().ok());
+    TEST_ASSERT_TRUE(wdt.setSafeStateHook(&ganchoDeEstadoSeguro).ok());
+
+    wdt.heartbeat();  // token armado: o portao passa a valer os 800 ms
+    TEST_ASSERT_TRUE(wdt.kicking());
+    TEST_ASSERT_EQUAL_UINT32(0u, g_ganchoChamadas);
+
+    // 799 ms de silencio: o portao ainda esta aberto e nada foi disparado.
+    wdt.advanceMs(799u);
+    TEST_ASSERT_TRUE(wdt.kicking());
+    TEST_ASSERT_EQUAL_UINT32(0u, g_ganchoChamadas);
+    TEST_ASSERT_EQUAL_UINT32(0u, wdt.safeStateCalls());
+
+    // O tique de 800 ms fecha o portao: e ESTE o instante do estado seguro.
+    wdt.advanceMs(1u);
+    TEST_ASSERT_FALSE(wdt.kicking());
+    TEST_ASSERT_EQUAL_UINT32(1u, g_ganchoChamadas);
+    TEST_ASSERT_EQUAL_UINT32(1u, wdt.safeStateCalls());
+
+    // UMA VEZ SO. Depois disto a placa esta em falha declarada e o que vem e o reset: repetir a
+    // escrita a cada tique seria 1000 escritas de GPIO por segundo dentro de uma ISR, durante os
+    // ate 2240 ms de tWD, sem nada a ganhar.
+    wdt.advanceMs(FakeWatchdog::kMinTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(1u, g_ganchoChamadas);
+    TEST_ASSERT_EQUAL_UINT32(1u, wdt.safeStateCalls());
+    TEST_ASSERT_TRUE(wdt.wouldHaveReset());
+}
+
+static void test_wdt_a_carencia_de_boot_vencida_tambem_dispara_o_estado_seguro(void) {
+    // Modo de falha "a tarefa ctrl nunca nasceu" (xTaskCreate reprovado por heap, ou a tarefa
+    // morta antes do primeiro heartbeat): o portao fecha pela carencia de boot, sem token
+    // nenhum. E fechamento de portao igual ao outro, e os reles nao podem ficar de fora - sob a
+    // polaridade do manual (A1 em false) o nivel de boot NAO e o de alarme.
+    g_ganchoChamadas = 0;
+    FakeWatchdog wdt;
+    TEST_ASSERT_TRUE(wdt.begin().ok());
+    TEST_ASSERT_TRUE(wdt.setSafeStateHook(&ganchoDeEstadoSeguro).ok());
+
+    wdt.advanceMs(FakeWatchdog::kBootGraceMs - 1u);
+    TEST_ASSERT_TRUE(wdt.kicking());
+    TEST_ASSERT_EQUAL_UINT32(0u, g_ganchoChamadas);
+
+    wdt.advanceMs(1u);
+    TEST_ASSERT_FALSE(wdt.kicking());
+    TEST_ASSERT_EQUAL_UINT32(1u, g_ganchoChamadas);
+}
+
+static void test_wdt_sem_begin_nao_ha_gancho_para_registrar(void) {
+    // Mesma guarda de todo o resto da porta: instancia sem begin() bem-sucedido nao mexe no
+    // cachorro e nao guarda gancho nenhum - no alvo o estado da ISR e global e um objeto orfao
+    // que registrasse um gancho estaria armando um caminho de escrita de rele sem dono.
+    g_ganchoChamadas = 0;
+    FakeWatchdog wdt;
+    TEST_ASSERT_TRUE(wdt.setSafeStateHook(&ganchoDeEstadoSeguro).err == Err::NotInit);
+    wdt.advanceMs(FakeWatchdog::kBootGraceMs + 1000u);
+    TEST_ASSERT_EQUAL_UINT32(0u, g_ganchoChamadas);
+    TEST_ASSERT_EQUAL_UINT32(0u, wdt.safeStateCalls());
+}
+
+static void test_wdt_o_portao_que_fecha_sem_gancho_registrado_nao_quebra(void) {
+    // O composition root registra o gancho DEPOIS do begin() do banco de reles; entre um e
+    // outro existe uma janela real em que a ISR ja corre sem gancho. Ponteiro nulo nesse
+    // instante nao pode ser um salto para o endereco zero de dentro de uma ISR.
+    FakeWatchdog wdt;
+    TEST_ASSERT_TRUE(wdt.begin().ok());
+    wdt.heartbeat();
+    wdt.advanceMs(800u);
+    TEST_ASSERT_FALSE(wdt.kicking());
+    TEST_ASSERT_EQUAL_UINT32(1u, wdt.safeStateCalls());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_wdt_sem_begin_nao_alimenta_o_cachorro);
@@ -215,5 +309,9 @@ int main(int, char**) {
     RUN_TEST(test_wdt_heartbeat_periodico_nunca_deixa_resetar);
     RUN_TEST(test_wdt_ultimo_chute_sai_na_cadencia_e_o_portao_fecha_no_prazo);
     RUN_TEST(test_wdt_prazos_publicados_cabem_sob_o_tWD_minimo);
+    RUN_TEST(test_wdt_o_portao_que_FECHA_dispara_o_estado_seguro_uma_vez_so);
+    RUN_TEST(test_wdt_a_carencia_de_boot_vencida_tambem_dispara_o_estado_seguro);
+    RUN_TEST(test_wdt_sem_begin_nao_ha_gancho_para_registrar);
+    RUN_TEST(test_wdt_o_portao_que_fecha_sem_gancho_registrado_nao_quebra);
     return UNITY_END();
 }

@@ -135,6 +135,22 @@ public:
     Status enablePowerLed();
     bool powerLedArmed() const;
 
+    // GANCHO DE ESTADO SEGURO, chamado UMA UNICA VEZ no tique em que o portao fecha - isto e, no
+    // instante em que esta ISR declara o firmware morto e para de alimentar o STWD100. Dali ate
+    // o reset passam de 1,12 a 2,24 s de tWD, e sem este gancho os quatro reles ficam congelados
+    // no ultimo nivel permissivo durante todo esse tempo, apresentando "sem alarme" com o
+    // firmware ja declarado morto pelo proprio firmware. Existia caminho pronto para isso
+    // (RelayBankGpio::signalAllFromIsr, IRAM_ATTR e nao virtual) e ele nao era chamado de lugar
+    // nenhum ate a etapa 8: mecanismo de seguranca construido e nao ligado e pior que ausente,
+    // porque parece cobertura.
+    // CONTRATO DO ALVO, e nao ha como o compilador cobra-lo: funcao livre marcada IRAM_ATTR, sem
+    // despacho virtual, sem acesso a .rodata e sem chamada de biblioteca - as mesmas regras da
+    // propria ISR, porque a cache de flash pode estar desligada. Depois de disparado, a placa
+    // esta em falha declarada e ninguem retoma escrita normal: o que vem a seguir e o reset.
+    // Registrar exige begin() bem-sucedido (Err::NotInit em caso contrario); nullptr desliga.
+    Status setSafeStateHook(void (*hook)());
+    uint32_t safeStateCalls() const;
+
     bool kicking() const override;
     uint32_t kickPeriodMs() const override;
     uint32_t heartbeatTimeoutMs() const override;

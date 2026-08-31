@@ -80,6 +80,117 @@ struct Rig {
 
 }  // namespace
 
+// --- os numeros e os textos, literais -----------------------------------------------------
+
+static void test_os_prazos_publicados_sao_os_numeros_da_decisao(void) {
+    // POR QUE ESTE TESTE EXISTE. Toda a suite abaixo referencia BootSequence::kResetHoldMs,
+    // kResetMessageMs, kStuckKeyDeadlineMs e kOnDemandCeilingMs em vez dos numeros - o que e
+    // legivel e TAUTOLOGICO: mutar a constante move junto a referencia do teste, e a suite fica
+    // verde com qualquer valor. Provado por mutacao pela reconferencia da etapa 8: kResetHoldMs
+    // 3000 -> 2000, kResetMessageMs 2000 -> 500, kStuckKeyDeadlineMs 13000 -> 5000 e
+    // kOnDemandCeilingMs 30000 -> 3000 passavam TODAS. E nao era hipotese: o repositorio estava
+    // com kResetHoldMs = 2000, contra os 3000 ms do item 23 e contra o comentario do proprio
+    // boot_sequence.cpp, e nenhum teste reprovava. Daqui em diante os numeros do manual e da
+    // decisao estao escritos AQUI, uma unica vez, e os simbolos podem ser usados a vontade nos
+    // passos temporais.
+    //
+    // Fonte de cada numero:
+    //  - 3000 ms de ▲ prensada, contados da ENTRADA do setup(): decisao 1 item 23.
+    //  - 2000 ms de permanencia minima da tela `RESET DE FABRICA`: decisao 1 item 24 (L246).
+    //  - 13000 ms = 3000 + 10000 para o aborto por tecla presa, e 3000 ms de `TECLA PRESA`:
+    //    decisao 1 item 26.
+    //  - 600 ms de autoteste em quatro padroes de 150 ms e 600 ms de logomarca: decisao 12
+    //    itens 6 e 7. Os 2000 + 1500 ms do rascunho estao mortos (violavam o tWD de 1,12 s).
+    //  - teto de 30000 ms do autoteste sob demanda: decisao 12 item 8.
+    TEST_ASSERT_EQUAL_UINT32(3000u, BootSequence::kResetHoldMs);
+    TEST_ASSERT_EQUAL_UINT32(2000u, BootSequence::kResetMessageMs);
+    TEST_ASSERT_EQUAL_UINT32(13000u, BootSequence::kStuckKeyDeadlineMs);
+    TEST_ASSERT_EQUAL_UINT32(3000u, BootSequence::kStuckKeyMessageMs);
+    TEST_ASSERT_EQUAL_UINT32(30000u, BootSequence::kOnDemandCeilingMs);
+    TEST_ASSERT_EQUAL_UINT32(600u, BootSequence::kSelfTestMs);
+    TEST_ASSERT_EQUAL_UINT32(600u, BootSequence::kLogoMs);
+    TEST_ASSERT_EQUAL_UINT32(150u, BootSequence::kPatternMs);
+
+    // Item 26 nao da os 13000 ms soltos: da "10000 ms APOS o surgimento da mensagem". A relacao
+    // e parte da decisao e tem de sobreviver a qualquer mexida nos dois prazos.
+    TEST_ASSERT_EQUAL_UINT32(10000u,
+                             BootSequence::kStuckKeyDeadlineMs - BootSequence::kResetHoldMs);
+    // Item 6 da decisao 12: quatro padroes de 150 ms cabem exatamente nos 600 ms do autoteste.
+    TEST_ASSERT_EQUAL_UINT32(4u, BootSequence::kSelfTestMs / BootSequence::kPatternMs);
+}
+
+static void test_as_telas_sao_as_strings_do_manual_byte_a_byte(void) {
+    // L246 imprime `RESET DE FABRICA` em caixa alta e sem acento; `TECLA PRESA` e DESVIO
+    // declarado (decisao 1 item 26, tela inventada), aprovado na mesma grafia. Escritas aqui
+    // como literal: com o simbolo dos dois lados, trocar a string por "xx" mantinha a suite
+    // verde - mutacao aplicada e confirmada pela reconferencia.
+    TEST_ASSERT_EQUAL_STRING("RESET DE FABRICA", BootSequence::kTextFactoryReset);
+    TEST_ASSERT_EQUAL_STRING("TECLA PRESA", BootSequence::kTextStuckKey);
+    TEST_ASSERT_EQUAL_STRING("DI-ELETRONS", BootSequence::kTextBrand);
+    TEST_ASSERT_EQUAL_STRING("SUI-DI141388XY  UR DE-PURI-DI261924", BootSequence::kTextModel);
+}
+
+static void test_D1_item23_a_tela_aparece_aos_3000_ms_e_nao_aos_2900(void) {
+    // O mesmo prazo do item 23, agora provado pelo COMPORTAMENTO e com os numeros escritos, nao
+    // referenciados. Sem esta metade, mudar kResetHoldMs continuaria passando por qualquer
+    // teste que usasse o simbolo nos dois lados da conta.
+    Rig antes;
+    antes.keypad.press(Key::Up);
+    antes.power(BootSequence::kMaskUp);
+    antes.stepUntilMs(antes.bootAtMs + 2900u);
+    TEST_ASSERT_FALSE_MESSAGE(antes.display.showsExactly("RESET DE FABRICA"),
+                              "aos 2900 ms o gesto ainda nao venceu");
+    TEST_ASSERT_TRUE(antes.boot.stage() != BootSequence::Stage::ResetMessage);
+
+    Rig depois;
+    depois.keypad.press(Key::Up);
+    depois.power(BootSequence::kMaskUp);
+    depois.stepUntilMs(depois.bootAtMs + 3060u);
+    TEST_ASSERT_TRUE_MESSAGE(depois.boot.stage() == BootSequence::Stage::ResetMessage,
+                             "aos 3000 ms a tela do item 24 tem de estar no ar");
+    TEST_ASSERT_TRUE(depois.display.showsExactly("RESET DE FABRICA"));
+}
+
+static void test_D1_item26_o_aborto_e_aos_13000_ms_e_nao_antes(void) {
+    // Item 26 com os numeros escritos: 12800 ms ainda e a mensagem de reset, 13060 ms ja e
+    // `TECLA PRESA`, e ela fica 3000 ms.
+    Rig rig;
+    rig.keypad.press(Key::Up);
+    rig.power(BootSequence::kMaskUp);
+
+    rig.stepUntilMs(rig.bootAtMs + 12800u);
+    TEST_ASSERT_TRUE(rig.boot.stage() == BootSequence::Stage::ResetMessage);
+
+    rig.stepUntilMs(rig.bootAtMs + 13060u);
+    TEST_ASSERT_TRUE(rig.boot.stage() == BootSequence::Stage::StuckKey);
+    TEST_ASSERT_TRUE(rig.display.showsExactly("TECLA PRESA"));
+
+    const uint32_t presaEm = rig.clock.nowMs();
+    rig.stepUntilMs(presaEm + 2900u);
+    TEST_ASSERT_TRUE_MESSAGE(rig.boot.stage() == BootSequence::Stage::StuckKey,
+                             "a tela de tecla presa fica 3000 ms, nao menos");
+    rig.stepUntilMs(presaEm + 3060u);
+    TEST_ASSERT_TRUE(rig.boot.finished());
+    TEST_ASSERT_FALSE(rig.boot.takeFactoryReset());
+}
+
+static void test_D12_item8_o_teto_do_autoteste_sob_demanda_e_30000_ms(void) {
+    // Numero escrito: 29800 ms ainda no ar, 30060 ms fechado.
+    Rig rig;
+    rig.power(0);
+    rig.stepUntilMs(rig.bootAtMs + 2000u);
+
+    rig.keypad.press(Key::Down);
+    rig.boot.beginOnDemand();
+    const uint32_t abriuEm = rig.clock.nowMs();
+    rig.keypad.release(Key::Down);
+
+    rig.stepUntilMs(abriuEm + 29800u);
+    TEST_ASSERT_TRUE_MESSAGE(rig.boot.ownsDisplay(), "antes de 30000 ms a tela continua no ar");
+    rig.stepUntilMs(abriuEm + 30060u);
+    TEST_ASSERT_TRUE(rig.boot.finished());
+}
+
 // --- splash ------------------------------------------------------------------------------
 
 static void test_D12_o_splash_percorre_os_quatro_padroes_e_termina_em_1200_ms(void) {
@@ -306,6 +417,11 @@ static void test_o_autoteste_sob_demanda_nunca_arma_o_reset_de_fabrica(void) {
 
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_os_prazos_publicados_sao_os_numeros_da_decisao);
+    RUN_TEST(test_as_telas_sao_as_strings_do_manual_byte_a_byte);
+    RUN_TEST(test_D1_item23_a_tela_aparece_aos_3000_ms_e_nao_aos_2900);
+    RUN_TEST(test_D1_item26_o_aborto_e_aos_13000_ms_e_nao_antes);
+    RUN_TEST(test_D12_item8_o_teto_do_autoteste_sob_demanda_e_30000_ms);
     RUN_TEST(test_D12_o_splash_percorre_os_quatro_padroes_e_termina_em_1200_ms);
     RUN_TEST(test_D1_item22_mascara_de_tres_teclas_aborta_o_gesto);
     RUN_TEST(test_D1_item22_menu_junto_com_UP_tambem_aborta);

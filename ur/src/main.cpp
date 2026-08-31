@@ -92,6 +92,7 @@
 #include "adapters/xtr300_analog_output.h"
 #include "app/application.h"
 #include "app/boot_sequence.h"
+#include "app/persist_queue.h"
 #include "board_pins.h"
 #include "domain/analog_calibration.h"
 #include "domain/parameters.h"
@@ -129,6 +130,9 @@ constexpr uint8_t kDisplayContrast = 255;
 constexpr const char* kMsgConfigLost = "CONFIG PERDIDA - REPROGRAMAR";
 constexpr const char* kMsgConfigLostHint = "Reset Geral: 5.11";
 constexpr const char* kMsgSaveFailed = "Falha de gravacao!";
+// D6 item 12, APROVADO (DECISIONS.md L1638), 2000 ms de permanencia - a mesma grafia que o
+// assistente ja usa em domain/ui/calibration_wizard.cpp. Nenhuma tela nova foi inventada aqui.
+constexpr const char* kMsgCalRejected = "CALIBRACAO REJEITADA";
 constexpr const char* kMsgPsetOk = "PSET aplicado!";
 constexpr const char* kMsgFactoryReset = "RESET DE FABRICA";
 
@@ -142,6 +146,16 @@ GpioKeypad g_keypad(g_clock);
 
 void rearmWatchdogPin() {
     g_wdt.rearmPin();
+}
+
+// GANCHO DE ESTADO SEGURO DA ISR DO WDI. Chamado de dentro da ISR de timer de hardware, com a
+// cache de flash possivelmente desligada, no tique em que o portao fecha - firmware
+// comprovadamente travado, o cachorro deixa de ser alimentado e o reset vem em 1,12 a 2,24 s.
+// IRAM_ATTR e chamada NAO VIRTUAL sobre o tipo concreto: signalAllFromIsr() existe exatamente
+// porque signalAll() e virtual e a vtable mora em flash. Uma unica coisa acontece aqui, os
+// quatro reles vao ao estado sinalizado; nada mais e seguro nesse instante.
+void IRAM_ATTR relaysToSafeStateFromIsr() {
+    g_relays.signalAllFromIsr();
 }
 
 adapters::Ssd1322Display g_display(&rearmWatchdogPin);
@@ -167,10 +181,12 @@ constexpr uint32_t kOriginShiftMs = 900000;
 uint32_t g_originMs = 0;
 uint8_t g_originPhase = 0;
 
-// Slots sujos de NVS. Uma escrita por passagem do loop() (ver o bloco ARMAZENAMENTO).
-constexpr uint8_t kDirtyParams = 1u << 0;
-constexpr uint8_t kDirtyCal = 1u << 1;
-uint8_t g_dirtySlots = 0;
+// Slots sujos de NVS. Uma escrita por passagem do loop() (ver o bloco ARMAZENAMENTO). A maquina
+// mora em src/app/persist_queue.h, coberta por test/native/test_persist: aqui fica so a
+// gravacao, que e a parte que toca hardware.
+app::PersistQueue g_persist;
+constexpr app::PersistQueue::Slot kDirtyParams = app::PersistQueue::Slot::Params;
+constexpr app::PersistQueue::Slot kDirtyCal = app::PersistQueue::Slot::Cal;
 
 // Status do g_link.begin() executado dentro da tarefa ctrl (passo 12), publicado para o
 // console do core 1 poder imprimi-lo uma unica vez.
@@ -184,6 +200,9 @@ bool g_configLostDrawn = false;
 bool g_calActive = false;
 bool g_presetEditing = false;
 bool g_wasProgramming = false;
+// Borda de "o operador ja passou pelo gate de senha nesta visita ao Modo Programacao": e nela
+// que o latch de A7 e rearmado, uma unica vez por visita e nao a cada volta do submenu.
+bool g_menuAuthed = false;
 domain::Axis g_calAxis = domain::Axis::X;
 domain::Axis g_presetAxis = domain::Axis::X;
 uint32_t g_hmiMs = 0;
@@ -303,6 +322,13 @@ void publishConfigLatch(bool latched) {
     taskEXIT_CRITICAL(&g_pubMux);
 }
 
+// REARME DE A7, publicado como qualquer outra travessia de nucleo: sob o MESMO portMUX.
+void publishLinkLatchClear() {
+    taskENTER_CRITICAL(&g_pubMux);
+    g_app.clearLinkLatch();
+    taskEXIT_CRITICAL(&g_pubMux);
+}
+
 app::Application::Snapshot takeSnapshot() {
     taskENTER_CRITICAL(&g_pubMux);
     const app::Application::Snapshot snap = g_app.snapshot();
@@ -317,25 +343,37 @@ void showMessage(const char* text) {
 
 // Publica AGORA (a tarefa ctrl aplica no ciclo seguinte, <= 50 ms) e so marca a flash como
 // suja. Quem grava e servicePersist(), no maximo um slot por passagem do loop().
-void publishAndPersist(uint8_t slots) {
+void publishAndPersist(app::PersistQueue::Slot slot) {
     publishParameters();
-    g_dirtySlots = static_cast<uint8_t>(g_dirtySlots | slots);
+    g_persist.markDirty(slot);
+}
+
+const __FlashStringHelper* slotName(app::PersistQueue::Slot slot) {
+    return (slot == kDirtyParams) ? F("parametros") : F("calibracao");
 }
 
 void servicePersist() {
-    if (g_dirtySlots == 0u) {
-        return;
+    app::PersistQueue::Slot slot = kDirtyParams;
+    if (g_persist.nextSlot(slot)) {
+        const bool ok = (slot == kDirtyParams) ? persistParams() : persistCal();
+        g_persist.noteResult(slot, ok);
+        if (!ok) {
+            // Diagnostico por slot no console (decisao de engenharia 2: o console de leitura
+            // continua no produto). A tela guarda a mensagem para a DESISTENCIA, para nao
+            // piscar "Falha de gravacao!" numa tentativa que a proxima passagem ainda vai
+            // recuperar.
+            Serial.print(F("nvs falha slot="));
+            Serial.print(slotName(slot));
+            Serial.print(F(" tentativa="));
+            Serial.println(g_persist.attempts(slot));
+        }
     }
-    bool ok = true;
-    if ((g_dirtySlots & kDirtyParams) != 0u) {
-        g_dirtySlots = static_cast<uint8_t>(g_dirtySlots & ~kDirtyParams);
-        ok = persistParams();
-    } else {
-        g_dirtySlots = static_cast<uint8_t>(g_dirtySlots & ~kDirtyCal);
-        ok = persistCal();
-    }
-    if (!ok) {
-        g_dirtySlots = 0;
+    // Um slot que esgotou as tentativas: o OUTRO continua sujo e sera tentado na proxima
+    // passagem - era exatamente isso que a mascara zerada de antes jogava fora.
+    app::PersistQueue::Slot desistiu = kDirtyParams;
+    if (g_persist.takeGaveUp(desistiu)) {
+        Serial.print(F("NVS DESISTIU DO SLOT "));
+        Serial.println(slotName(desistiu));
         showMessage(kMsgSaveFailed);
     }
 }
@@ -350,10 +388,24 @@ void applyFactoryReset() {
         calRestored = defaults.loadCal(blob, len).ok();
     }
     if (!calRestored && !g_configLost) {
+        // Copia da calibracao CORRENTE por cima dos nominais, quando nao existe registro de
+        // fabrica legivel (decisao 1 item 27: o Reset Geral restaura, nao apaga, a calibracao).
+        // TRANSACAO POR EIXO: os tres campos entram juntos ou o eixo fica com o trio nominal
+        // INTEIRO da Tabela 2 (32768, 58982, 45,0 graus). O par corrente pode ser implausivel
+        // (registro herdado de firmware anterior, ou eixo nunca calibrado), e o Reset Geral e
+        // justamente o unico caminho que tira o equipamento de CONFIG PERDIDA: entregar meio par
+        // aqui - angulo do cliente sobre codigos de fabrica - seria trocar um estado ruidoso e
+        // visivel por um erro de ganho silencioso.
         for (uint8_t i = 0; i < domain::Parameters::kAxisCount; ++i) {
             const domain::Axis axis = static_cast<domain::Axis>(i);
-            defaults.setCalPair(axis, g_params.calZeroCode(axis), g_params.calFullScaleCode(axis));
-            defaults.setCalFullScale(axis, g_params.calFullScale(axis));
+            if (defaults
+                    .setCalTriple(axis, g_params.calZeroCode(axis), g_params.calFullScaleCode(axis),
+                                  g_params.calFullScale(axis))
+                    .failed()) {
+                Serial.print(F("reset geral: calibracao corrente recusada no eixo "));
+                Serial.print(i == 0 ? F("X") : F("Y"));
+                Serial.println(F(" - vale o par nominal da Tabela 2"));
+            }
         }
     }
     g_params = defaults;
@@ -363,7 +415,9 @@ void applyFactoryReset() {
     // Reset Geral e o unico caminho que suja os dois slots. Fatiado em duas passagens do
     // loop(), nunca as tres escritas de 250 ms em sequencia que encostariam nos 800 ms do
     // token de liveness.
-    publishAndPersist(kDirtyParams | kDirtyCal);
+    publishParameters();
+    g_persist.markDirty(kDirtyParams);
+    g_persist.markDirty(kDirtyCal);
     g_configLostDrawn = false;
     showMessage(kMsgFactoryReset);
 }
@@ -413,9 +467,11 @@ domain::NormalInput buildNormalInput(const app::Application::Snapshot& snap) {
         in.presetActive[i] = in.presetOffsetDeci[i] != 0;
         if (snap.overriding[i]) {
             in.analog[i] = domain::NormalAnalogMode::Calibrating;
-        } else if (snap.link == app::LinkHealth::Ok && !snap.stale) {
+        } else if (snap.link == app::LinkHealth::Ok && !snap.stale && !snap.analogDead) {
             in.analog[i] = domain::NormalAnalogMode::Tracking;
         } else {
+            // snap.analogDead entra aqui de proposito: com o DAC recusando escrita a saida esta
+            // encostada no POR do DAC8562 e o painel nao pode dizer "rastreando" sobre ela.
             in.analog[i] = domain::NormalAnalogMode::Fault;
         }
     }
@@ -424,7 +480,12 @@ domain::NormalInput buildNormalInput(const app::Application::Snapshot& snap) {
         in.limit[i].value = g_params.limitValue(static_cast<domain::LimitId>(i));
     }
     in.link = mapLink(snap.link, snap.stale);
-    in.linkLatched = snap.configLatched;
+    // A7, e NAO A8. Ate a etapa 8 esta linha lia snap.configLatched, que e o latch de
+    // configuracao perdida - outro sinal, outra decisao, outra saida (Reset Geral). Pior: com
+    // configLatched true o loop() retorna no ramo de CONFIG PERDIDA antes de chegar aqui, entao
+    // a tela principal nunca era desenhada com o latch ligado e a string
+    // NormalScreen::kTextLatched era codigo morto.
+    in.linkLatched = snap.linkLatched;
     in.heartbeatPhase = static_cast<uint8_t>((snap.cycles / 10u) % domain::NormalScreen::kHeartbeatPhases);
     return in;
 }
@@ -457,13 +518,25 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
     }
 }
 
+// UMA escrita, UM Status, e NADA e publicado nem marcado como sujo se ele reprovar. As duas
+// escritas separadas de antes (setCalPair + setCalFullScale) descartavam os dois retornos: com
+// os gates ainda desalinhados, um par que o assistente aceitava era recusado pelo Parameters e
+// o angulo de fundo de escala entrava sozinho por cima dos codigos velhos - MEIO PAR gravado,
+// com "Alteracao bem sucedida!" na tela e erro de ganho na unica saida que o CLP le. O gate
+// agora e unico (A14), entao esta recusa e inalcancavel por construcao; ela permanece porque
+// gate unico e uma propriedade que se pode perder num refactor, e sair anunciando sucesso sem
+// ter gravado e o modo de falha que nao tem assinatura observavel nenhuma.
 void finishCalibration() {
     const domain::AnalogScaler& scaler = g_calibration.scaler();
     if (g_calWizard.step() == domain::CalibrationWizard::Step::Done) {
-        g_params.setCalPair(g_calAxis, scaler.zeroCode(), scaler.fullScaleCode());
-        g_params.setCalFullScale(g_calAxis,
-                                 domain::Angle::fromDeciDegrees(scaler.fullScaleAngleDeci()));
-        publishAndPersist(kDirtyCal);
+        const Status st = g_params.setCalTriple(
+            g_calAxis, scaler.zeroCode(), scaler.fullScaleCode(),
+            domain::Angle::fromDeciDegrees(scaler.fullScaleAngleDeci()));
+        if (st.ok()) {
+            publishAndPersist(kDirtyCal);
+        } else {
+            showMessage(kMsgCalRejected);
+        }
     }
     publishOverrideClear(g_calAxis);
     g_calActive = false;
@@ -626,6 +699,22 @@ void serviceHmi() {
         if (g_menu.takeAction(action)) {
             startAssistant(action, snap);
         }
+        // REARME DE A7, na borda de ATRAVESSAR O GATE DE SENHA. MenuState::Menu so e alcancavel
+        // depois de Login aprovado (com kRequirePassword true; na Emenda 1 deste build de
+        // bancada o Modo Programacao inteiro abre sem senha, e o rearme herda essa condicao,
+        // como todo o resto do modo). A7 pede "rearme pela IHM atras da senha do equipamento,
+        // sem cortar energia", e docs/ihm-estados.md B7 registra a tela de login como "unica
+        // rota ate o rearme com o latch armado" - e esta a borda.
+        // PENDENCIA DECLARADA PARA O BIGBOSS: a string aprovada diz "REARMAR NO MENU", o que
+        // sugere um ITEM de menu proprio. O menu impresso tem dez itens e nenhum deles e o
+        // rearme; acrescentar um decimo primeiro e tela nova e errata de manual, e nenhuma tela
+        // pode ser inventada em silencio. Ate essa assinatura, o rearme acontece na entrada
+        // autenticada do Modo Programacao, que satisfaz a letra de A7 (painel, atras da senha,
+        // sem cortar energia) sem inventar item de menu.
+        if (g_menu.state() == domain::MenuState::Menu && !g_menuAuthed) {
+            g_menuAuthed = true;
+            publishLinkLatchClear();
+        }
         g_wasProgramming = programming;
         return;
     }
@@ -635,6 +724,7 @@ void serviceHmi() {
         publishAndPersist(kDirtyParams);
     }
     g_wasProgramming = false;
+    g_menuAuthed = false;
 
     if (g_messageText != nullptr) {
         if (static_cast<int32_t>(g_clock.nowMs() - g_messageUntilMs) < 0) {
@@ -727,6 +817,13 @@ void setup() {
     // fora a unica prova que existe.
     const Status relayStatus = g_relays.begin();
 
+    // So agora: o gancho leva os quatro reles ao estado seguro, e antes do begin() acima os
+    // pinos ainda nao existem como saida (signalAllFromIsr e no-op sem configured_). A ordem
+    // watchdog -> reles -> gancho e a unica em que o gancho nunca aponta para pino nao
+    // configurado. Se g_wdt.begin() reprovou, este registro devolve NotInit e nao ha ISR para
+    // chamar gancho nenhum - o que ja esta coberto pela linha de diagnostico do wdt.
+    g_wdt.setSafeStateHook(&relaysToSafeStateFromIsr);
+
     pinMode(static_cast<uint8_t>(board::kLedTest), OUTPUT);
     digitalWrite(static_cast<uint8_t>(board::kLedTest), LOW);
 
@@ -758,6 +855,14 @@ void setup() {
     if (relayStatus.failed()) {
         Serial.println(F("BANCO DE RELES NAO COMANDAVEL - escritas vao reprovar e o STWD100 "
                          "reseta a placa"));
+    }
+    if (analogStatus.failed()) {
+        // Simetrico ao banco de reles, e pelo mesmo motivo: begin() reprovado deixa ready_ em
+        // false e TODA writeBoth() devolve NotInit para o resto da vida do equipamento. O
+        // Application latcha analogDead no primeiro ciclo e a tela principal passa a marcar as
+        // duas saidas como falha; esta linha e a unica que diz POR QUE.
+        Serial.println(F("SAIDA ANALOGICA NAO COMANDAVEL - as duas saidas ficam no POR do "
+                         "DAC8562 (fora de banda) e o painel marca falha"));
     }
 
     const Status storeStatus = g_store.begin();

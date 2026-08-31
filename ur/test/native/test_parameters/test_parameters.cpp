@@ -19,6 +19,7 @@
 #include <string.h>
 #include <unity.h>
 
+#include "domain/analog_calibration.h"
 #include "domain/parameters.h"
 #include "proto/crc16.h"
 
@@ -60,12 +61,8 @@ static Parameters parametrosDoCliente(void) {
     ASSERT_ERR(Err::Ok, p.setSensorDir(Axis::X, SensorDir::CounterClockwise));
     ASSERT_ERR(Err::Ok, p.setSensorDir(Axis::Y, SensorDir::Clockwise));
     ASSERT_ERR(Err::Ok, p.setPassword(9007));
-    ASSERT_ERR(Err::Ok, p.setCalFullScale(Axis::X, Angle::fromDeciDegrees(300)));
-    ASSERT_ERR(Err::Ok, p.setCalFullScale(Axis::Y, Angle::fromDeciDegrees(900)));
-    ASSERT_ERR(Err::Ok, p.setCalZeroCode(Axis::X, 32700));
-    ASSERT_ERR(Err::Ok, p.setCalZeroCode(Axis::Y, 32900));
-    ASSERT_ERR(Err::Ok, p.setCalFullScaleCode(Axis::X, 58000));
-    ASSERT_ERR(Err::Ok, p.setCalFullScaleCode(Axis::Y, 58982));
+    ASSERT_ERR(Err::Ok, p.setCalTriple(Axis::X, 32700, 58000, Angle::fromDeciDegrees(300)));
+    ASSERT_ERR(Err::Ok, p.setCalTriple(Axis::Y, 32900, 58982, Angle::fromDeciDegrees(900)));
     return p;
 }
 
@@ -224,9 +221,9 @@ static void test_PRM_seletor_invalido_e_recusado_sem_tocar_em_memoria(void) {
         ASSERT_ERR(Err::Param, caixa.p.setPresetOffset(eixo, 100));
         ASSERT_ERR(Err::Param, caixa.p.setSensorDir(eixo, SensorDir::CounterClockwise));
         ASSERT_ERR(Err::Param, caixa.p.setCalFullScale(eixo, Angle::fromDeciDegrees(450)));
-        ASSERT_ERR(Err::Param, caixa.p.setCalZeroCode(eixo, 32768));
-        ASSERT_ERR(Err::Param, caixa.p.setCalFullScaleCode(eixo, 58982));
         ASSERT_ERR(Err::Param, caixa.p.setCalPair(eixo, 32768, 58982));
+        ASSERT_ERR(Err::Param,
+                   caixa.p.setCalTriple(eixo, 32768, 58982, Angle::fromDeciDegrees(450)));
         // Getter sem canal de erro devolve o valor SEGURO, nunca memoria vizinha.
         TEST_ASSERT_FALSE(caixa.p.preset(eixo).valid());
         TEST_ASSERT_FALSE(caixa.p.calFullScale(eixo).valid());
@@ -349,46 +346,108 @@ static void test_PRM_fundo_de_escala_recusa_zero_e_negativo(void) {
     ASSERT_ERR(Err::Range, p.setCalFullScale(Axis::X, Angle::invalid()));
 }
 
-static void test_A14_codigo_de_dac_fica_dentro_da_janela_de_trim(void) {
-    // A14 opcao A: trim de -5000 a +4999 LSB em torno do codigo NOMINAL de cada ponto. Zero em
-    // [27768, 37767] e ganho em [53982, 63981]. A janela do ganho tem de deixar passar codigo
-    // ACIMA do nominal (erro de ganho negativo do DAC/referencia): 63981 vale cerca de +11,9 V,
-    // dentro do trilho de +/-15 V, e sem isso a unidade simplesmente nao calibra.
-    TEST_ASSERT_EQUAL_UINT16(27768, Parameters::kCalZeroCodeMin);
-    TEST_ASSERT_EQUAL_UINT16(37767, Parameters::kCalZeroCodeMax);
-    TEST_ASSERT_EQUAL_UINT16(53982, Parameters::kCalFullScaleCodeMin);
-    TEST_ASSERT_EQUAL_UINT16(63981, Parameters::kCalFullScaleCodeMax);
+static void test_A14_o_gate_de_plausibilidade_e_UNICO_e_e_o_do_AnalogScaler(void) {
+    // A14, RECOMENDACAO APROVADA: "com o gate de plausibilidade do commit unificado em um unico
+    // criterio, porque hoje as decisoes 6, 9 e 10 usam tres, e uma calibracao legitima aprovada
+    // por um e recusada por outro". Este agregado NAO tem mais janela propria: quem decide e
+    // AnalogScaler::make(), e os tres numeros abaixo sao os literais das decisoes que ele carrega
+    // (D6 item 12 para o vao minimo, D9 item 11 para o piso do espelho, D6 item 7 para o teto).
+    // Escritos como NUMERO e nao como simbolo: com o simbolo dos dois lados, mudar a constante
+    // moveria a assercao junto e o teste seria tautologia.
+    TEST_ASSERT_EQUAL_INT32(20971, domain::AnalogScaler::kSpanMin);
+    TEST_ASSERT_EQUAL_INT32(5243, domain::AnalogScaler::kCodeMin);
+    TEST_ASSERT_EQUAL_INT32(61342, domain::AnalogScaler::kCodeMax);
 
     Parameters p = Parameters::factoryDefaults();
-    ASSERT_ERR(Err::Ok, p.setCalZeroCode(Axis::X, 27768));
-    ASSERT_ERR(Err::Ok, p.setCalZeroCode(Axis::X, 37767));
-    ASSERT_ERR(Err::Range, p.setCalZeroCode(Axis::X, 27767));
-    ASSERT_ERR(Err::Range, p.setCalZeroCode(Axis::X, 37768));
-    ASSERT_ERR(Err::Range, p.setCalZeroCode(Axis::X, 0));
-    // Manual 5.7 L254: 0,0 grau vale 0,00 Vcc. O codigo de -10,00 V (6554) nunca e zero.
-    ASSERT_ERR(Err::Range, p.setCalZeroCode(Axis::X, 6554));
 
-    ASSERT_ERR(Err::Ok, p.setCalFullScaleCode(Axis::X, 53982));
-    ASSERT_ERR(Err::Ok, p.setCalFullScaleCode(Axis::X, 63981));
-    ASSERT_ERR(Err::Range, p.setCalFullScaleCode(Axis::X, 53981));
-    ASSERT_ERR(Err::Range, p.setCalFullScaleCode(Axis::X, 63982));
-    ASSERT_ERR(Err::Range, p.setCalFullScaleCode(Axis::X, 65535));
+    // (b) vao minimo de 20971 codigos: -20 % de erro de escala sobre os 26214 nominais.
+    ASSERT_ERR(Err::Ok, p.setCalPair(Axis::X, 32768, 53739));    // vao = 20971, na borda
+    ASSERT_ERR(Err::Range, p.setCalPair(Axis::X, 32768, 53738));  // vao = 20970
+
+    // (c) piso do espelho de -10,00 V em 5243 = codigo de falha 3932 + 1311 (0,500 V). Abaixo
+    // dele o marcador de -11,00 V cairia DENTRO da faixa util e a distincao de A2 morreria.
+    ASSERT_ERR(Err::Ok, p.setCalPair(Axis::X, 31457, 57671));    // zero - vao = 5243, na borda
+    ASSERT_ERR(Err::Range, p.setCalPair(Axis::X, 31456, 57670));  // zero - vao = 5242
+
+    // (c) teto de 61342, o grampo de D6 item 7: acima dele o ponto de fundo de escala nunca foi
+    // MEDIDO pelo tecnico, porque a saida ja estava presa no grampo enquanto o campo contava.
+    ASSERT_ERR(Err::Ok, p.setCalPair(Axis::X, 33300, 61342));    // zero + vao = 61342, na borda
+    ASSERT_ERR(Err::Range, p.setCalPair(Axis::X, 33300, 61350));  // zero + vao = 61350
+
+    // (a) fundo de escala em 1..900 decimos (Tabela 1, L119/L120), a unica parte do gate que
+    // este agregado repete - e o static_assert de parameters.h prende as duas pontas.
+    TEST_ASSERT_EQUAL_INT16(1, Parameters::kCalFullScaleMinDeci);
+    TEST_ASSERT_EQUAL_INT16(900, Parameters::kCalFullScaleMaxDeci);
+    TEST_ASSERT_EQUAL_INT16(1, domain::AnalogScaler::kFullScaleMinDeci);
+    TEST_ASSERT_EQUAL_INT16(900, domain::AnalogScaler::kFullScaleMaxDeci);
+}
+
+static void test_A14_todo_par_que_o_assistente_aceita_o_agregado_grava(void) {
+    // O ACHADO CRITICO DA RECONFERENCIA, virado teste. Ate a etapa 8 este agregado tinha uma
+    // SEGUNDA janela (zero em [27768,37767] e codigo de fundo de escala em [53982,63981]),
+    // derivada do trim de +/-5000 aplicado a cada ponto ISOLADO, enquanto o assistente trima o
+    // zero e o VAO. Consequencia medida por execucao: campoZero = 2000 e campoGanho = 2500 com
+    // fundo de escala 30,0 graus produziam commit() = kOk com o par 29768/53482, e setCalPair
+    // devolvia Err::Range - descartado em silencio por main.cpp, com setCalFullScale passando e
+    // gravando o angulo novo sobre os codigos velhos. MEIO PAR, "Alteracao bem sucedida!" na
+    // tela e 50 % de erro de ganho na unica saida que o CLP le.
+    //
+    // A grade percorre os dois campos de 4 digitos de 250 em 250 (1681 combinacoes, todas as
+    // bordas incluidas) e exige a IMPLICACAO: se o assistente aceitou, o agregado grava.
+    unsigned aceitos = 0;
+    unsigned recusadosPelosDois = 0;
+    for (uint32_t campoZero = 0; campoZero <= 9999u; campoZero += 250u) {
+        for (uint32_t campoGanho = 0; campoGanho <= 9999u; campoGanho += 250u) {
+            const uint16_t cz = static_cast<uint16_t>((campoZero > 9999u) ? 9999u : campoZero);
+            const uint16_t cg = static_cast<uint16_t>((campoGanho > 9999u) ? 9999u : campoGanho);
+            domain::AnalogCalibration cal;
+            ASSERT_ERR(Err::Ok, cal.begin());
+            ASSERT_ERR(Err::Ok, cal.setZeroField(cz));
+            ASSERT_ERR(Err::Ok, cal.confirmZero());
+            ASSERT_ERR(Err::Ok, cal.setFullScaleAngle(300));
+            ASSERT_ERR(Err::Ok, cal.confirmFullScaleAngle());
+            ASSERT_ERR(Err::Ok, cal.setGainField(cg));
+            const Status commit = cal.commit();
+
+            Parameters p = Parameters::factoryDefaults();
+            const domain::AnalogScaler& e = cal.scaler();
+            const Status gravou =
+                p.setCalTriple(Axis::X, e.zeroCode(), e.fullScaleCode(),
+                               Angle::fromDeciDegrees(e.fullScaleAngleDeci()));
+            if (commit.ok()) {
+                ++aceitos;
+                TEST_ASSERT_TRUE_MESSAGE(gravou.ok(),
+                                         "assistente aceitou e o agregado recusou: MEIO PAR");
+                TEST_ASSERT_EQUAL_UINT16(e.zeroCode(), p.calZeroCode(Axis::X));
+                TEST_ASSERT_EQUAL_UINT16(e.fullScaleCode(), p.calFullScaleCode(Axis::X));
+                TEST_ASSERT_EQUAL_INT16(300, p.calFullScale(Axis::X).deciDegrees());
+            } else {
+                ++recusadosPelosDois;
+                // Recusado pelo assistente: o par anterior permanece INTEIRO nos dois lados.
+                TEST_ASSERT_EQUAL_UINT16(Parameters::kNominalCalZeroCode, p.calZeroCode(Axis::X));
+                TEST_ASSERT_EQUAL_UINT16(Parameters::kNominalCalFullScaleCode,
+                                         p.calFullScaleCode(Axis::X));
+                TEST_ASSERT_EQUAL_INT16(450, p.calFullScale(Axis::X).deciDegrees());
+            }
+        }
+    }
+    // A grade tem de exercitar os DOIS lados, senao ela nao provou nada: o par (2000, 2500) do
+    // achado esta entre os aceitos, e os cantos extremos entre os recusados.
+    TEST_ASSERT_TRUE_MESSAGE(aceitos > 0u, "grade sem nenhum par aceito nao prova implicacao");
+    TEST_ASSERT_TRUE_MESSAGE(recusadosPelosDois > 0u, "grade sem recusa nao exercita o gate");
 }
 
 static void test_A14_par_de_calibracao_degenerado_ou_invertido_e_recusado(void) {
     // Manual 5.7: a saida tem de ser "proporcional e simetrica". Par degenerado (zero igual ao
     // ganho) prende a saida num unico valor para qualquer angulo; par invertido faz a saida
-    // decrescer quando o angulo cresce. As duas janelas do trim de A14 sao disjuntas e
-    // ordenadas, entao nenhum dos dois casos tem como ser aceito.
-    TEST_ASSERT_TRUE(Parameters::kCalZeroCodeMax < Parameters::kCalFullScaleCodeMin);
-
+    // decrescer quando o angulo cresce. Sob o gate unico os dois caem pelo vao minimo de 20971
+    // codigos, que e positivo por definicao - nao ha caminho para ganho nulo ou negativo.
     Parameters p = Parameters::factoryDefaults();
     // Degenerado: zero e ganho no mesmo codigo.
-    ASSERT_ERR(Err::Range, p.setCalFullScaleCode(Axis::Y, 32768));
     ASSERT_ERR(Err::Range, p.setCalPair(Axis::Y, 32768, 32768));
+    ASSERT_ERR(Err::Range,
+               p.setCalTriple(Axis::Y, 32768, 32768, Angle::fromDeciDegrees(450)));
     // Invertido: ganho abaixo do zero.
-    ASSERT_ERR(Err::Range, p.setCalZeroCode(Axis::Y, 58982));
-    ASSERT_ERR(Err::Range, p.setCalFullScaleCode(Axis::Y, 6554));
     ASSERT_ERR(Err::Range, p.setCalPair(Axis::Y, 58982, 6554));
     TEST_ASSERT_EQUAL_UINT16(Parameters::kNominalCalZeroCode, p.calZeroCode(Axis::Y));
     TEST_ASSERT_EQUAL_UINT16(Parameters::kNominalCalFullScaleCode, p.calFullScaleCode(Axis::Y));
@@ -409,19 +468,27 @@ static void test_A14_par_de_calibracao_e_gravado_de_uma_vez_ou_nenhuma(void) {
     // Sub-item de A14: meio par de calibracao e pior que nenhuma calibracao, porque nao tem
     // assinatura observavel. O commit do assistente grava zero e ganho juntos.
     Parameters p = Parameters::factoryDefaults();
-    ASSERT_ERR(Err::Ok, p.setCalPair(Axis::X, 30000, 60000));
+    ASSERT_ERR(Err::Ok, p.setCalPair(Axis::X, 30000, 52000));
     TEST_ASSERT_EQUAL_UINT16(30000, p.calZeroCode(Axis::X));
-    TEST_ASSERT_EQUAL_UINT16(60000, p.calFullScaleCode(Axis::X));
+    TEST_ASSERT_EQUAL_UINT16(52000, p.calFullScaleCode(Axis::X));
 
-    // Ganho fora da janela: NENHUM dos dois campos pode mudar.
+    // Vao curto demais: NENHUM dos dois campos pode mudar.
     ASSERT_ERR(Err::Range, p.setCalPair(Axis::X, 31000, 40000));
     TEST_ASSERT_EQUAL_UINT16(30000, p.calZeroCode(Axis::X));
-    TEST_ASSERT_EQUAL_UINT16(60000, p.calFullScaleCode(Axis::X));
+    TEST_ASSERT_EQUAL_UINT16(52000, p.calFullScaleCode(Axis::X));
 
-    // Zero fora da janela: idem.
+    // Espelho de -10,00 V abaixo do piso: idem.
     ASSERT_ERR(Err::Range, p.setCalPair(Axis::X, 60000, 61000));
     TEST_ASSERT_EQUAL_UINT16(30000, p.calZeroCode(Axis::X));
-    TEST_ASSERT_EQUAL_UINT16(60000, p.calFullScaleCode(Axis::X));
+    TEST_ASSERT_EQUAL_UINT16(52000, p.calFullScaleCode(Axis::X));
+
+    // E o TRIO tambem e transacao: angulo bom com par ruim nao pode gravar so o angulo. Este e
+    // literalmente o MEIO PAR que A14 proibe, agora fechado num unico Status.
+    ASSERT_ERR(Err::Range,
+               p.setCalTriple(Axis::X, 31000, 40000, Angle::fromDeciDegrees(300)));
+    TEST_ASSERT_EQUAL_UINT16(30000, p.calZeroCode(Axis::X));
+    TEST_ASSERT_EQUAL_UINT16(52000, p.calFullScaleCode(Axis::X));
+    TEST_ASSERT_EQUAL_INT16(450, p.calFullScale(Axis::X).deciDegrees());
 
     // E o eixo Y ficou intocado o tempo todo.
     TEST_ASSERT_EQUAL_UINT16(Parameters::kNominalCalZeroCode, p.calZeroCode(Axis::Y));
@@ -700,10 +767,15 @@ static void test_A8_cada_campo_fora_de_faixa_sob_crc_bom_e_recusado(void) {
         {6, 2, 0, "calFullScaleDeci X = 0,0"},
         {8, 2, 901, "calFullScaleDeci Y = +90,1"},
         {10, 2, 0, "calZeroCode X = 0"},
-        {10, 2, 27767, "calZeroCode X abaixo do trim"},
-        {12, 2, 37768, "calZeroCode Y acima do trim"},
-        {14, 2, 53981, "calFullScaleCode X abaixo do trim"},
-        {16, 2, 65535, "calFullScaleCode Y = 0xFFFF"},
+        // Os quatro casos abaixo sao do GATE UNICO de A14 (AnalogScaler::make), nao de uma
+        // janela propria deste agregado: com o par do cliente (X 32700/58000, Y 32900/58982),
+        // 27767 poe o espelho de -10,00 V abaixo do piso de 5243; 38500 encurta o vao para
+        // 20482, abaixo dos 20971; 53670 faz o mesmo no eixo X com 20970; e 0xFFFF estoura o
+        // teto de 61342. Todos com CRC bom: A8 manda recusar mesmo assim.
+        {10, 2, 27767, "calZeroCode X poe o espelho de -10 V abaixo de 5243"},
+        {12, 2, 38500, "calZeroCode Y encurta o vao abaixo de 20971"},
+        {14, 2, 53670, "calFullScaleCode X encurta o vao abaixo de 20971"},
+        {16, 2, 65535, "calFullScaleCode Y = 0xFFFF, acima do teto de 61342"},
     };
 
     for (unsigned i = 0; i < sizeof(kCasosPar) / sizeof(kCasosPar[0]); ++i) {
@@ -866,7 +938,8 @@ int main(int, char**) {
     RUN_TEST(test_PRM_sentido_do_sensor_recusa_codigo_desconhecido);
     RUN_TEST(test_PRM_senha_recusa_acima_de_quatro_digitos);
     RUN_TEST(test_PRM_fundo_de_escala_recusa_zero_e_negativo);
-    RUN_TEST(test_A14_codigo_de_dac_fica_dentro_da_janela_de_trim);
+    RUN_TEST(test_A14_o_gate_de_plausibilidade_e_UNICO_e_e_o_do_AnalogScaler);
+    RUN_TEST(test_A14_todo_par_que_o_assistente_aceita_o_agregado_grava);
     RUN_TEST(test_A14_par_de_calibracao_degenerado_ou_invertido_e_recusado);
     RUN_TEST(test_A14_par_de_calibracao_e_gravado_de_uma_vez_ou_nenhuma);
     RUN_TEST(test_PRM_campo_recusado_preserva_o_valor_anterior);

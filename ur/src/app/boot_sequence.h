@@ -67,7 +67,12 @@ public:
     static constexpr uint32_t kSelfTestMs = 600;
     static constexpr uint32_t kLogoMs = 600;
     static constexpr uint32_t kPatternMs = 150;
-    static constexpr uint32_t kResetHoldMs = 2000;
+    // Decisao 1 item 23: "▲ prensada CONTINUAMENTE ... desde o passo 4 ate t = 3000 ms contados
+    // da entrada no setup()". O valor 2000 que estava aqui divergia da decisao E do comentario
+    // do proprio .cpp (linha "bem antes dos kResetHoldMs = 3000 ms"); nenhum teste reprovava
+    // porque a suite de boot referenciava o SIMBOLO em vez do numero do manual. Agora ha
+    // static_assert e assercao literal em test/native/test_boot.
+    static constexpr uint32_t kResetHoldMs = 3000;
     static constexpr uint32_t kResetMessageMs = 2000;
     static constexpr uint32_t kStuckKeyDeadlineMs = 13000;
     static constexpr uint32_t kStuckKeyMessageMs = 3000;

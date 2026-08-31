@@ -23,6 +23,13 @@
 //    wouldHaveReset() passa a valer: e o modo de falha "a tarefa ctrl nunca nasceu".
 // 5. O ULTIMO CHUTE SAI NA CADENCIA, NAO NO PRAZO. Parado o heartbeat, o ultimo pulso sai no
 //    maximo em 750 ms (ticks de 250, 500 e 750 ms ainda veem idade < 800 ms), e nao em 799.
+// 6. O PORTAO QUE FECHA DISPARA O ESTADO SEGURO, UMA VEZ SO. Espelha o gancho IRAM de
+//    Stwd100Watchdog::setSafeStateHook(): no tique em que o portao passa de aberto para fechado,
+//    o firmware esta declarado morto e o cachorro deixa de ser alimentado - dali ate o reset
+//    passam de 1,12 a 2,24 s de tWD, e nesse intervalo os quatro reles nao podem continuar
+//    congelados no ultimo nivel permissivo. Um fake que nao dispare o gancho deixaria a suite
+//    dizer que o caminho de estado seguro existe quando ninguem o chama, que e exatamente o
+//    defeito que ele passou a etapa 8 inteira tendo.
 //
 // Os numeros sao os da base comum (DECISIONS.md Parte 2 item 6 e 2.5) e do datasheet, os
 // mesmos de Stwd100Watchdog; o teste de contrato em test/native/test_fakes_watchdog/ prende
@@ -56,7 +63,8 @@ public:
     FakeWatchdog()
         : beginResult_(kOk), tickMs_(0), lastBeatTick_(0), countdown_(kKickPeriodMs - 1u),
           isrKicks_(0), manualKicks_(0), heartbeats_(0), rearms_(0), msSinceKick_(0),
-          maxKickGapMs_(0), ready_(false), owner_(false), livenessArmed_(false) {}
+          maxKickGapMs_(0), safeStateCalls_(0), ready_(false), owner_(false),
+          livenessArmed_(false), gateWasOpen_(true), safeStateDone_(false) {}
 
     ~FakeWatchdog() override {
         if (owner_) {
@@ -89,6 +97,9 @@ public:
         livenessArmed_ = false;
         msSinceKick_ = 0;
         maxKickGapMs_ = 0;
+        gateWasOpen_ = true;  // o portao nasce aberto: carencia de boot
+        safeStateDone_ = false;
+        safeStateCalls_ = 0;
 
         manualKicks_ = 1u;  // o pulso imediato do passo 1 da ordem de boot conta
         singletonArmed() = true;
@@ -149,6 +160,18 @@ public:
     // Injeta a falha de begin() do alvo (timer ausente, ISR nao instalada, ISR sem tique).
     void setBeginResult(Status result) { beginResult_ = result; }
 
+    // Espelho de Stwd100Watchdog::setSafeStateHook(). No alvo o gancho e um ponteiro para funcao
+    // livre IRAM_ATTR (a vtable mora em flash e a cache pode estar desligada); aqui, no host, a
+    // mesma assinatura de funcao livre - nada de std::function, que alocaria.
+    Status setSafeStateHook(void (*hook)()) {
+        if (!ready_) {
+            return Status(Err::NotInit);
+        }
+        safeState_ = hook;
+        return kOk;
+    }
+    uint32_t safeStateCalls() const { return ready_ ? safeStateCalls_ : 0u; }
+
     bool ready() const { return ready_; }
     bool livenessArmed() const { return ready_ && livenessArmed_; }
     uint32_t livenessAgeMs() const { return ready_ ? (tickMs_ - lastBeatTick_) : 0u; }
@@ -187,6 +210,16 @@ private:
             maxKickGapMs_ = msSinceKick_;
         }
 
+        const bool open = gateOpen();
+        if (gateWasOpen_ && !open && !safeStateDone_) {
+            safeStateDone_ = true;
+            safeStateCalls_ += 1u;
+            if (safeState_ != nullptr) {
+                safeState_();
+            }
+        }
+        gateWasOpen_ = open;
+
         if (countdown_ != 0u) {
             countdown_ -= 1u;
             return;
@@ -209,9 +242,13 @@ private:
     uint32_t rearms_;
     uint32_t msSinceKick_;
     uint32_t maxKickGapMs_;
+    uint32_t safeStateCalls_;
+    void (*safeState_)() = nullptr;
     bool ready_;
     bool owner_;
     bool livenessArmed_;
+    bool gateWasOpen_;
+    bool safeStateDone_;
 };
 
 }  // namespace test

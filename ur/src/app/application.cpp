@@ -35,6 +35,9 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       faultSinceMs_(clockRef.nowMs()),
       lastGoodMs_(clockRef.nowMs()),
       overrideSinceMs_{clockRef.nowMs(), clockRef.nowMs()},
+      faultStampMs_(),
+      faultStampCount_(0),
+      faultStampHead_(0),
       cycles_(0),
       faultEvents_(0),
       relayErrors_(0),
@@ -53,6 +56,8 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       reloadPending_(true),
       cycleOpen_(false),
       configLatched_(false),
+      linkLatched_(false),
+      analogDead_(false),
       stale_(false),
       relayBankDead_(false) {
     // O buffer publicado nasce coerente com o estado seguro: a IHM pode chamar snapshot()
@@ -114,6 +119,34 @@ void Application::setConfigLatched(bool latched) {
     configLatched_ = latched;
 }
 
+void Application::clearLinkLatch() {
+    linkLatched_ = false;
+    // A janela tambem zera. Rearmar e dizer "vi e tratei"; deixar quatro carimbos velhos no anel
+    // faria a proxima falha isolada travar de novo na hora, e o operador teria de rearmar a cada
+    // evento - que e o ponteamento em campo que A11 descreve.
+    faultStampCount_ = 0;
+    faultStampHead_ = 0;
+}
+
+void Application::noteFaultEntry(uint32_t nowMs) {
+    ++faultEvents_;
+    faultStampMs_[faultStampHead_] = nowMs;
+    faultStampHead_ = static_cast<uint8_t>((faultStampHead_ + 1u) % kFaultsToLatch);
+    if (faultStampCount_ < kFaultsToLatch) {
+        ++faultStampCount_;
+    }
+    if (faultStampCount_ < kFaultsToLatch) {
+        return;
+    }
+    // faultStampHead_ aponta agora para a entrada MAIS ANTIGA das cinco guardadas. Se as cinco
+    // couberem na janela, trava. elapsedMs() e a subtracao unsigned de ports/i_clock.h, entao a
+    // conta atravessa o wrap de 2^32 ms sem caso especial.
+    const uint32_t oldestMs = faultStampMs_[faultStampHead_];
+    if (elapsedMs(oldestMs, nowMs) <= kFlapWindowMs) {
+        linkLatched_ = true;
+    }
+}
+
 void Application::setFilterTimeConstant(uint16_t timeConstantMs) {
     for (uint8_t i = 0; i < kAppAxisCount; ++i) {
         filter_[i].setTimeConstant(timeConstantMs);
@@ -163,11 +196,12 @@ void Application::noteStall(uint32_t delayMs) {
         // idade continua valendo por cima disso e e ela que protege o rele.
         return;
     }
+    const uint32_t nowMs = clock_.nowMs();
     if (link_state_ != LinkHealth::CommFault) {
-        ++faultEvents_;
+        noteFaultEntry(nowMs);
     }
     link_state_ = LinkHealth::CommFault;
-    faultSinceMs_ = clock_.nowMs();
+    faultSinceMs_ = nowMs;
     reloadPending_ = true;
     goodRun_ = 0;
     badRun_ = kFailsToFault;
@@ -257,7 +291,7 @@ void Application::updateHealth(bool good, uint32_t nowMs) {
     link_state_ = (verdict_ == LinkPoll::Fresh) ? LinkHealth::SensorFault : LinkHealth::CommFault;
     faultSinceMs_ = nowMs;
     reloadPending_ = true;
-    ++faultEvents_;
+    noteFaultEntry(nowMs);
 }
 
 void Application::driveRelays(bool fresh) {
@@ -272,7 +306,21 @@ void Application::driveRelays(bool fresh) {
     // os 3 ciclos de kInvalidCyclesToFault (150 ms) que o avaliador exige, e sao justamente
     // esses 150 ms que a guarda existe para nao pagar depois de um bloqueio.
     RelayMask wanted = evaluator_.update(in);
-    if (stale_) {
+    // A7: o LATCH DE FLAPPING passa por cima do veredito exatamente como a guarda dura de idade,
+    // e pela MESMA razao - sem ele o alarme ainda esperaria os 3 ciclos (150 ms) que o avaliador
+    // leva para declarar falha por conta propria, e sao justamente esses 150 ms que uma falha ja
+    // TRAVADA nao pode pagar. O avaliador continua rodando com dado fresco de verdade (nao ha
+    // "&& !linkLatched_" na linha do in.fresh acima): assim os prazos de ataque e liberacao de A3
+    // seguem medindo o angulo real durante todo o tempo em que o latch estiver armado, e no
+    // instante do rearme o veredito dele ja e o correto, em vez de ter ficado congelado.
+    // Repare no que este latch NAO faz: nao segura link_state_ em falha. A saude do enlace continua
+    // sendo medida e publicada com honestidade - o operador precisa ver que o cabo voltou - e o
+    // que fica travado sao os QUATRO RELES e as duas saidas, ate o rearme humano. E isso que
+    // NormalScreen desenha na combinacao "link == Ok com linkLatched armado" (normal_screen.cpp,
+    // o texto de rearme subindo para a primeira linha) e o que docs/ihm-estados.md B7 descreve:
+    // "com o enlace ja recuperado e o latch ainda armado ... a tela continua sendo B7, porque os
+    // quatro reles continuam em alarme ate o rearme".
+    if (stale_ || linkLatched_) {
         wanted = kRelayMaskAllSignalled;
     }
     if (relays_.applyMask(wanted).failed()) {
@@ -302,7 +350,8 @@ void Application::driveAnalog(uint32_t nowMs) {
             analogCode_[i] = analog_.faultCode();
         } else if (overrideActive_[i]) {
             analogCode_[i] = overrideCode_[i];
-        } else if (stale_ || link_state_ != LinkHealth::Ok || !reading_[i].valid()) {
+        } else if (stale_ || linkLatched_ || link_state_ != LinkHealth::Ok ||
+                   !reading_[i].valid()) {
             analogCode_[i] = analog_.faultCode();
         } else {
             analogCode_[i] = scaler_[i].codeFor(reading_[i]);
@@ -310,6 +359,16 @@ void Application::driveAnalog(uint32_t nowMs) {
     }
     if (analog_.writeBoth(analogCode_[0], analogCode_[1]).failed()) {
         ++analogErrors_;
+        // NEM TODA REPROVACAO E MORTE, e confundir as duas seria pior que nao olhar. O adaptador
+        // devolve Err::Range quando GRAMPEOU um codigo na faixa util e escreveu assim mesmo: a
+        // escrita valeu, o DAC esta vivo, e latchar ali derrubaria o canal por um grampo
+        // legitimo. Morte e o adaptador deixar de estar PRONTO - begin() que nao conseguiu
+        // provar a cadeia SPI/DAC8562 - e dai em diante toda escrita devolve NotInit para
+        // sempre. ready() da porta e exatamente essa pergunta, e este e o unico lugar do
+        // produto que precisa faze-la.
+        if (!analog_.ready()) {
+            analogDead_ = true;
+        }
     }
 }
 
@@ -391,6 +450,8 @@ void Application::latchSnapshot() {
     out.relayWriteErrors = relayErrors_;
     out.analogWriteErrors = analogErrors_;
     out.configLatched = configLatched_;
+    out.linkLatched = linkLatched_;
+    out.analogDead = analogDead_;
     out.stale = stale_;
     out.relayBankDead = relayBankDead_;
     pub_ = out;
