@@ -8,9 +8,15 @@ import os
 import re
 import sys
 
-Import("env")  # noqa: F821  (injetado pelo SCons do PlatformIO)
-
-PROJECT_DIR = env["PROJECT_DIR"]  # noqa: F821
+# Roda de dois jeitos, porque o "pio test" do PlatformIO NAO executa extra_scripts:
+#   - como pre-script do "pio run", via Import("env") do SCons;
+#   - como script solto, "python3 scripts/check_hexagonal.py", que e como o scripts/check.sh
+#     e a integracao continua o chamam antes de "pio test".
+try:
+    Import("env")  # noqa: F821  (so existe dentro do SCons do PlatformIO)
+    PROJECT_DIR = env["PROJECT_DIR"]  # noqa: F821
+except NameError:
+    PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VIGIADOS = ("src/domain", "src/app", "src/ports")
 
 PROIBIDOS = (
