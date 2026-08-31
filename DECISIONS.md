@@ -75,6 +75,35 @@ autorizou seguir o esquematico sem medicao previa. Ja corrigido na branch
 | A14 | A — trim com offset de 5000, verificacao em -10 V, gate de plausibilidade unico | Fechada |
 | A15 | A — ECO de serigrafia mais errata; ate o ECO existir o LED nao e canal de sinalizacao valido | Fechada |
 
+### Emenda 1 a A13 - senha fora do escopo do MVP (2026-08-31)
+
+**Pedido do dono do produto:** "nao e necessario para o MVP senha no marco 2".
+
+**O que muda.** O marco 2 (MVP funcional de bancada) entrega o Modo Programacao SEM exigir a
+senha de acesso. Menu, preset, auto calibracao, limites, sentido do sensor e persistencia
+continuam no escopo; so o portao de entrada sai.
+
+**O que NAO muda.** Nada e apagado. `src/domain/password.{h,cpp}` e os testes de PWD-01 a
+PWD-05 permanecem no repositorio e na suite. O que muda e quem decide se o portao esta armado.
+
+**Como fica implementado.** O portao vira PARAMETRO da maquina de menu, no mesmo padrao de
+`kRelayFailSafePolarity` de A1: uma constante de composicao, nao um `#ifdef` espalhado pelo
+dominio. `MenuMachine` recebe `requirePassword` no construtor, o dominio e testado nos dois
+valores, e quem escolhe e o composition root:
+
+- binario de producao: `requirePassword = true`  (A13 como aprovada)
+- binario de MVP/bancada: `requirePassword = false`
+
+**Ressalva registrada.** A senha e o unico portao do modo que altera setpoint de rele. Com ela
+desarmada, qualquer pessoa com acesso as tres teclas frontais muda o ponto de atuacao dos quatro
+reles de um supervisor de inclinacao. Isso e aceitavel numa bancada sob controle da engenharia e
+NAO e aceitavel em unidade instalada. O binario de campo tem de sair com `requirePassword = true`,
+e isso entra na lista de verificacao de liberacao junto com as medicoes M2 e M8.
+
+**Efeito em REQ.** PWD-01 a PWD-05 continuam cobertos por teste de dominio, mas deixam de ser
+exercidos no caminho de integracao do marco 2. A matriz de rastreabilidade tem de marcar essa
+diferenca em vez de dar o REQ por verificado ponta a ponta.
+
 ### As duas que continuam abertas, e por que isso nao trava o codigo
 
 **A1 depende da medicao M2.** A recomendacao aprovada e o fail-safe, mas ela e explicitamente
