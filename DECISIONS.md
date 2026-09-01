@@ -59,7 +59,7 @@ autorizou seguir o esquematico sem medicao previa. Ja corrigido na branch
 
 | ID | Opcao aprovada | Situacao |
 |---|---|---|
-| A1 | B — fail-safe: energizado = saudavel, desenergizado = alarme, falha, boot e queda de energia | **Condicionada a M2** |
+| A1 | **A — fidelidade ao manual: energizado = limite atingido.** Alarme acende o LED e fecha o rele; repouso desenergiza | **Fechada (bigboss, 2026-09-01, em bancada)** |
 | A2 | A — falha em -11,00 V (codigo 3932); modo corrente proibido, `OP_MODE` fixo em tensao | Fechada |
 | A3 | B — histerese 0,3 grau, ataque 100 ms, liberacao 3000 ms, teto anti-chatter de 60000 ms apos 20 ataques em 600 s; alarme angular sem latch | **Valor da histerese condicionado a M8** |
 | A4 | A — criterio estrito: amostra saturada ou fora de +/-90,0 e invalida; 3 consecutivas levam ao alarme | Fechada, com caminho de migracao para B se M10 autorizar |
@@ -237,6 +237,18 @@ Fato ja fechado pelo cliente e fora de discussao nesta folha: a cadeia analogica
 **Opcoes**
 
 - **A — Fidelidade ao manual: energizado = limite atingido.** Bobinas so puxam corrente em alarme (0 W em repouso), LED apagado em condicao normal, o texto de 5.9 e a Tabela 4 permanecem validos. Em contrapartida, queda de energia e travamento do ESP32 aparecem para o CLP como 'estrutura nivelada, nenhum limite atingido' em todos os quatro canais. Obriga clausula contratual em negrito: o intertravamento do cliente tem de monitorar a alimentacao da UR por canal externo.
+**DECIDIDA EM 2026-09-01, EM BANCADA: OPCAO A.** A opcao B estava em vigor no binario e o
+bigboss viu o resultado no painel - os quatro LEDs acesos o tempo todo, apagando quando o limite
+dispara - e recusou: "troca tudo para acender quando ativar o alarme, nao ao contrario, e os
+reles tambem". O que a decisao aceita junto, e que TEM de entrar na nota de release: a UR deixa
+de conseguir sinalizar a propria morte, entao queda de energia, fonte queimada, cabo solto ou
+ESP32 travado chegam ao CLP como "estrutura nivelada, nenhum limite atingido" nos quatro canais,
+e o intertravamento do cliente passa a exigir monitoramento externo da alimentacao da UR. M2
+deixa de ser bloqueante para A1: o consumo continuo de bobina que ela mediria era custo da
+opcao B. O boot NAO mudou - RelayBankGpio::begin() escreve nivel baixo nas duas polaridades.
+A15 continua valendo: a serigrafia esta cruzada e o LED so vira canal de sinalizacao valido
+depois do ECO.
+
 - **B — Fail-safe: energizado = saudavel; desenergizado = alarme, falha, boot e queda de energia.** Unico arranjo em que a UR sinaliza a propria morte. Custa 0,72 W continuos de bobina (a margem da fonte de 5 W cai para cerca de 18 %), BC337 em conducao continua com beta forcado de aproximadamente 144 a 60 C, os quatro LEDs acesos o tempo todo em condicao normal, e reescrita de 5.9, da legenda dos LEDs e da Tabela 4. Uma UR de campo atualizada passa a indicar o oposto do que a fiacao existente espera: exige nota de release e reinspecao de instalacao.
 - **C — Opcao A mais um quinto canal de saude por ECO de placa.** Resolve o problema sem consumo continuo, mas nao existe rele nem GPIO livre na revisao atual: e revisao de placa, custo de ECO e nova rodada de homologacao. Nao entrega nada nas unidades ja montadas.
 

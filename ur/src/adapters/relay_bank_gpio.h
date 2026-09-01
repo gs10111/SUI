@@ -39,16 +39,21 @@
 // depois do watchdog e ANTES de NVS, display, botoes e RS-485 - os quatro GPIOs assumem nivel
 // seguro antes de qualquer init lento. Conforme o contrato de IRelayBank::begin(), o nivel
 // escrito e o de Signalled, antes e depois do pinMode(OUTPUT).
-// DIVERGENCIA DECLARADA, E COMO ELA PARA O BUILD: com kRelayFailSafePolarity = true (recomendada)
-// Signalled e nivel BAIXO e coincide com kRelayBootLevel = false do passo 2; com a polaridade do
-// manual (false) Signalled e nivel ALTO e begin() energiza as quatro bobinas durante todo o boot,
-// que e o que a porta manda e o oposto do que o passo 2 descreve. O comentario nao e a barreira:
-// o composition root da etapa 8 tem de escrever, com o header real da base comum,
+// DIVERGENCIA QUE ESTE COMENTARIO DESCREVIA, E COMO ELA FOI RESOLVIDA (nota de 2026-09-01).
+// O texto original mandava o composition root escrever
 //   static_assert(RelayBankGpio::signalledCoilLevel(urbase::kRelayFailSafePolarity)
-//                     == urbase::kRelayBootLevel,
-//                 "passo 2 do boot: nivel de Signalled tem de coincidir com kRelayBootLevel");
-// de modo que fechar A1 em false QUEBRE a compilacao e obrigue o bigboss a assinar a divergencia,
-// em vez de descobri-la na bancada com as quatro bobinas quentes no inrush da fonte de 5 W.
+//                     == urbase::kRelayBootLevel, ...);
+// para que fechar A1 na polaridade do manual QUEBRASSE a compilacao. Esse static_assert nunca
+// foi escrito, e hoje ele estaria ERRADO: begin() nao escreve o nivel de "Signalled", escreve o
+// nivel de BOOT, que e LOW NAS DUAS POLARIDADES por decisao explicita (ver o bloco em
+// begin(), relay_bank_gpio.cpp, e DECISIONS.md 2.3: "em ambas as opcoes, o boot mantem os
+// quatro reles desenergizados"). E o pull-down de 1K na base do BC337 que garante isso no
+// reset de hardware, antes de qualquer linha de firmware.
+//
+// Ou seja: o perigo que o assert existia para barrar - quatro bobinas energizadas durante todo
+// o boot, 144 mA de surto na fonte de 5 W e os quatro contatos de alarme fechando sem alarme
+// angular - ja esta barrado pelo proprio begin(), e nas duas polaridades. A1 foi fechada na
+// opcao A pelo bigboss em 2026-09-01 (bancada), e o boot nao mudou por causa disso.
 //
 // BLOQUEIO (base comum, tick de 50 ms): nenhum. Nao ha delay(), espera de barramento nem acesso a
 // flash em nenhum metodo. Pior caso de begin() (8 chamadas ao HAL mais quatro stores e a releitura

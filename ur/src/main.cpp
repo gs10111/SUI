@@ -110,10 +110,40 @@ namespace {
 // PRODUCAO USA true, e a troca e esta unica linha.
 constexpr bool kRequirePassword = false;
 
-// A1 / DECISIONS.md 2.3, recomendacao condicionada as medicoes 6, 7 e 12: true = fail-safe
-// (bobina energizada e o estado saudavel; queda de energia sinaliza alarme). Uma unica constante
-// inverte os quatro reles e os quatro LEDs do painel.
-constexpr bool kRelayFailSafePolarity = true;
+// A1 / DECISIONS.md 2.3. DECISAO DO BIGBOSS, 2026-09-01, EM BANCADA: OPCAO A, fidelidade ao
+// manual. Alarme ENERGIZA a bobina e ACENDE o LED; repouso desenergiza. A opcao B (fail-safe)
+// estava em vigor e produzia o oposto - os quatro LEDs acesos o tempo todo e apagando no alarme
+// -, comportamento que o bigboss viu na bancada e recusou.
+//
+// O QUE SE PERDE, E TEM DE ESTAR NO RELEASE: com a opcao A a UR NAO consegue sinalizar a
+// propria morte. Queda de energia, fonte queimada, cabo solto ou ESP32 travado chegam ao CLP
+// como 'estrutura nivelada, nenhum limite atingido' nos QUATRO canais. O intertravamento do
+// cliente passa a depender de monitorar a alimentacao da UR por um canal externo, e isso vira
+// clausula contratual em negrito (texto ja escrito em DECISIONS.md 2.3, opcao A).
+//
+// O QUE SE GANHA: 0 W de bobina em repouso (a opcao B custava 0,72 W continuos e derrubava a
+// margem da fonte de 5 W para cerca de 18 %), BC337 fora de conducao continua, e o manual 5.9,
+// a Tabela 4 e a legenda dos LEDs permanecem validos sem errata.
+//
+// O BOOT NAO MUDA. RelayBankGpio::begin() escreve nivel BAIXO nas duas polaridades - e o estado
+// do reset de hardware, garantido pelo pull-down de 1K na base do BC337 - justamente para que
+// fechar em A nao energize as quatro bobinas em toda energizacao. A direcao segura nao se
+// perde: o LimitEvaluator nasce todo Signalled e o primeiro ciclo da ctrl, no maximo 50 ms
+// depois, leva os reles ao estado que ele quer.
+//
+// A15 CONTINUA VALENDO, e independe desta troca: a serigrafia do CN3 esta cruzada (LIM1 acende
+// o LED serigrafado 'LED LIM3'), e ate o ECO existir o LED nao e canal de sinalizacao valido.
+// Trocar a polaridade nao corrige rotulo.
+constexpr bool kRelayFailSafePolarity = false;
+
+// A decisao presa no codigo, e nao so no comentario. Nao impede a troca: obriga quem trocar a
+// mexer TAMBEM nesta frase, para que a decisao e o binario nao possam divergir em silencio -
+// que e como a bancada descobriu, com o LED apagando no alarme, que a opcao em vigor nao era a
+// que o operador esperava.
+static_assert(domain::coilLevel(RelayState::Signalled, kRelayFailSafePolarity),
+              "A1 opcao A (2026-09-01): alarme tem de ENERGIZAR a bobina e ACENDER o LED");
+static_assert(!domain::coilLevel(RelayState::Clear, kRelayFailSafePolarity),
+              "A1 opcao A (2026-09-01): repouso tem de deixar a bobina desenergizada");
 
 constexpr uint32_t kHmiPeriodMs = 50;
 constexpr uint32_t kLoopSliceMs = 2;
