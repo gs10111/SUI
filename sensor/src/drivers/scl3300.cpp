@@ -366,6 +366,10 @@ Status Scl3300::selfTest() {
     lastSto_ = sto;
     lastErrFlag1_ = flag1;
     lastErrFlag2_ = flag2;
+    // Sem isto o console imprime "NAO LIDO" para ERR_FLAG1 e ERR_FLAG2 logo depois de um
+    // selftest que acabou de le-los - e sao exatamente os dois registradores que dizem POR QUE
+    // o autoteste reprovou. O operador ficava com a luz vermelha e sem o motivo na tela.
+    flagsRead_ = true;
     selfTestFailed_ = ((summary & scl::kStatusFault) != 0) || (flag1 != 0) || (flag2 != 0);
     if (selfTestFailed_) {
         return Status(Err::HwFault);

@@ -466,7 +466,11 @@ void SensorConsole::cmdStatus() {
             ctx_.io.writeLine("core analogico o front-end satura, e por isso SAT acende parado.");
         }
     }
-    ctx_.io.printf("STO          : 0x%04X\r\n", static_cast<unsigned>(diag.sto));
+    // STO e o Self-Test Output do SCL3300, e e um valor COM SINAL: em hexadecimal cru, 0xFFEE
+    // parece enorme e e -18. Impresso so em hex, o unico registrador que mede de verdade o
+    // autoteste vira ruido visual.
+    ctx_.io.printf("STO          : 0x%04X  (%d com sinal)\r\n", static_cast<unsigned>(diag.sto),
+                   static_cast<int>(static_cast<int16_t>(diag.sto)));
     if (diag.status == 0 && diag.errFlag1 == 0 && diag.errFlag2 == 0 && !diag.ready) {
         ctx_.io.writeLine("registradores zerados e driver nao inicializado: nenhum quadro valido ainda");
         ctx_.io.writeLine("veja docs/bringup_sensora.md - a essa altura o suspeito e alimentacao/solda");
