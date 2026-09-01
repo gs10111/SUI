@@ -1,6 +1,7 @@
 // Comandos do console disponiveis no simulador de host (os de producao dependem de Arduino).
 #include <stdio.h>
 
+#include "board_pins.h"
 #include "core/cmd_parser.h"
 #include "core/command.h"
 #include "core/ctx.h"
@@ -112,18 +113,18 @@ public:
     void execute(Ctx& ctx, uint8_t argc, const char* const* argv) override {
         (void)argc;
         (void)argv;
-        const calmath::Point volt1 = {6553u, 1.0f};
-        const calmath::Point volt2 = {58982u, 9.0f};
-        const calmath::Point curr1 = {13107u, 4.0f};
-        const calmath::Point curr2 = {65535u, 20.0f};
+        const calmath::Point volt1 = {6554u, -10.0f};
+        const calmath::Point volt2 = {58982u, 10.0f};
+        const calmath::Point curr1 = {6554u, -20.0f};
+        const calmath::Point curr2 = {58982u, 20.0f};
         for (uint8_t axis = 0; axis < board::kAxisCount; ++axis) {
             ctx.cal.setFromPoints(axis, AoMode::Voltage, volt1, volt2);
             ctx.cal.setFromPoints(axis, AoMode::Current, curr1, curr2);
         }
         const Status st = ctx.cal.save();
-        ctx.io.printf("calibracao simulada gravada (%s): 0-10 V em 0x0000..0xFFFF e 4-20 mA com live\r\n"
-                      "zero digital (4 mA no codigo 13107, 20 mA em 0xFFFF), o que da RSET coerente\r\n",
-                      errName(st.err));
+        ctx.io.printf("calibracao simulada gravada (%s): malha bipolar, -10 a +10 V e -20 a +20 mA,\r\n"
+                      "com o zero no codigo 0x%04X, o que da R_OS coerente com o esquematico\r\n",
+                      errName(st.err), static_cast<unsigned>(board::kDacZeroCode));
     }
 };
 
