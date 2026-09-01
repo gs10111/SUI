@@ -14,6 +14,20 @@
 
 namespace app {
 
+domain::NormalLinkState mapLinkToScreen(LinkHealth health, bool stale) {
+    if (stale && (health == LinkHealth::Ok || health == LinkHealth::Awaiting)) {
+        return domain::NormalLinkState::CommFault;
+    }
+    switch (health) {
+        case LinkHealth::Ok: return domain::NormalLinkState::Ok;
+        case LinkHealth::Awaiting: return domain::NormalLinkState::Awaiting;
+        case LinkHealth::SensorFault: return domain::NormalLinkState::SensorFault;
+        case LinkHealth::CommFault: break;
+    }
+    return domain::NormalLinkState::CommFault;
+}
+
+
 Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBank& relayRef,
                          IAnalogOutput& analogRef, IWatchdog& watchdogRef)
     : clock_(clockRef),

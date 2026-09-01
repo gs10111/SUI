@@ -89,6 +89,8 @@
 #include "ports/i_watchdog.h"
 #include "status.h"
 
+#include "domain/ui/normal_screen.h"
+
 namespace app {
 
 constexpr uint8_t kAppAxisCount = 2;
@@ -105,6 +107,15 @@ enum class LinkHealth : uint8_t {
     CommFault,     // 3 transacoes mudas ou mal enquadradas consecutivas
     SensorFault,   // quadro integro, status reprovado pela sensora
 };
+
+// Traducao de saude do enlace em estado de TELA. Vive aqui, e nao no composition root, porque e
+// a funcao que decide o que o operador le quando algo reprova - e no main.cpp ela era invisivel
+// ao env native, ou seja, sem teste nenhum. Foi ali que "sensora respondendo e se declarando
+// doente" virou "falha de comunicacao" na tela, mandando procurar defeito num cabo perfeito.
+//
+// stale so impede o "Ok": quando updateHealth() ja classificou a falha pelo verdict_ do enlace,
+// quem manda e a classificacao, nao a idade.
+domain::NormalLinkState mapLinkToScreen(LinkHealth health, bool stale);
 
 class Application {
 public:

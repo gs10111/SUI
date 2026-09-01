@@ -199,6 +199,15 @@ void scriptGood(FakeSensorLink& link, int16_t xDeci, int16_t yDeci, uint16_t bea
     link.replySample(FakeSensorLink::goodSample(xDeci, yDeci, beat), 18);
 }
 
+// Transporte perfeito, conteudo reprovado: e o caso da sensora que responde todo quadro no prazo
+// e com CRC bom, mas se declara doente no proprio status.
+void scriptStatus(FakeSensorLink& link, int16_t xDeci, int16_t yDeci, uint16_t status,
+                  uint16_t beat) {
+    SensorSample sample = FakeSensorLink::goodSample(xDeci, yDeci, beat);
+    sample.status = status;
+    link.replySample(sample, 18);
+}
+
 // Leva o enlace a Ok e o avaliador a sair do alarme de boot: a liberacao confirmada de A3 e de
 // 3000 ms depois da primeira leitura valida.
 void settleClear(Rig& rig, int16_t deci = kQuietDeci) {
@@ -837,6 +846,53 @@ static void test_A8_latch_de_configuracao_atravessa_o_publish(void) {
                                     "configuracao perdida mantem os quatro reles em alarme");
 }
 
+// A TELA TEM DE NOMEAR A CAUSA CERTA.
+//
+// lastGoodMs_ so avanca em amostra ACEITA, e accept() exige status == 0x0001. Uma sensora que
+// responde TODO quadro, no prazo e com CRC bom, mas se declara doente, deixa stale ligar em
+// 250 ms. Ate este conserto, stale forcava CommFault na tela - "falha de comunicacao" - e mandava
+// o operador procurar defeito num cabo perfeito. Aconteceu em bancada duas vezes.
+//
+// updateHealth() ja separa os dois casos pelo verdict_ do enlace. stale so pode impedir o "Ok".
+static void test_sensora_respondendo_e_doente_mostra_falha_do_SENSOR_nao_do_cabo(void) {
+    using domain::NormalLinkState;
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::SensorFault, true) == NormalLinkState::SensorFault);
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::SensorFault, false) == NormalLinkState::SensorFault);
+}
+
+static void test_enlace_mudo_continua_mostrando_falha_de_comunicacao(void) {
+    using domain::NormalLinkState;
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::CommFault, true) == NormalLinkState::CommFault);
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::CommFault, false) == NormalLinkState::CommFault);
+}
+
+static void test_stale_nunca_deixa_a_tela_dizer_Ok(void) {
+    // O ciclo que volta de um bloqueio: a saude ainda diz Ok porque nenhuma transacao reprovou,
+    // mas os quatro reles ja estao em alarme pela guarda de idade. A tela nao pode dizer Ok.
+    using domain::NormalLinkState;
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::Ok, true) == NormalLinkState::CommFault);
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::Awaiting, true) == NormalLinkState::CommFault);
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::Ok, false) == NormalLinkState::Ok);
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::Awaiting, false) == NormalLinkState::Awaiting);
+}
+
+// Ponta a ponta: sensora respondendo com status reprovado leva a saude a SensorFault, e nao a
+// CommFault - e portanto a tela nomeia o sensor.
+static void test_status_reprovado_com_quadro_chegando_classifica_como_SensorFault(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    for (uint8_t i = 0; i < 10u; ++i) {
+        scriptStatus(rig.link, kQuietDeci, kQuietDeci, 0x0008u, static_cast<uint16_t>(910u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(rig.app.link() == LinkHealth::SensorFault,
+                             "quadro chegando e status reprovado e falha do SENSOR");
+    TEST_ASSERT_TRUE(app::mapLinkToScreen(rig.app.link(), rig.app.stale()) ==
+                     domain::NormalLinkState::SensorFault);
+}
+
 static void test_guarda_dura_de_250_ms_leva_os_reles_a_alarme_apos_um_bloqueio(void) {
     // Cenario concreto: o loop() entra na NVS, a cache de flash e desabilitada e a tarefa ctrl
     // fica parada 300 ms. Nenhuma transacao e TENTADA, entao o contador de 3 falhas nao avanca;
@@ -1092,6 +1148,10 @@ int main(int, char**) {
     RUN_TEST(test_o_credito_da_janela_de_commit_vale_um_unico_ciclo);
     RUN_TEST(test_bloqueio_alem_do_orcamento_declarado_nao_e_creditado);
     RUN_TEST(test_A8_latch_de_configuracao_atravessa_o_publish);
+    RUN_TEST(test_sensora_respondendo_e_doente_mostra_falha_do_SENSOR_nao_do_cabo);
+    RUN_TEST(test_enlace_mudo_continua_mostrando_falha_de_comunicacao);
+    RUN_TEST(test_stale_nunca_deixa_a_tela_dizer_Ok);
+    RUN_TEST(test_status_reprovado_com_quadro_chegando_classifica_como_SensorFault);
     RUN_TEST(test_guarda_dura_de_250_ms_leva_os_reles_a_alarme_apos_um_bloqueio);
     RUN_TEST(test_bloqueio_abaixo_de_250_ms_nao_dispara_a_guarda);
     RUN_TEST(test_noteStall_acima_do_orcamento_do_commit_declara_falha_na_hora);

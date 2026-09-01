@@ -455,20 +455,10 @@ void renderConfigLost() {
     g_display.present();
 }
 
+// A traducao mora em app::mapLinkToScreen(), no dominio testavel. Aqui fica so o encaminhamento:
+// esta funcao nao compila no env native e nao pode ser dona de decisao de tela.
 domain::NormalLinkState mapLink(app::LinkHealth health, bool stale) {
-    // Guarda dura de idade ligada = os quatro reles ja estao em alarme e as duas saidas em
-    // 3932. O painel nao pode dizer "Ok" por cima disso: e a mesma mentira que a base rejeitou
-    // ao proibir 0,00 V como nivel de falha da analogica.
-    if (stale) {
-        return domain::NormalLinkState::CommFault;
-    }
-    switch (health) {
-        case app::LinkHealth::Ok: return domain::NormalLinkState::Ok;
-        case app::LinkHealth::Awaiting: return domain::NormalLinkState::Awaiting;
-        case app::LinkHealth::SensorFault: return domain::NormalLinkState::SensorFault;
-        case app::LinkHealth::CommFault: break;
-    }
-    return domain::NormalLinkState::CommFault;
+    return app::mapLinkToScreen(health, stale);
 }
 
 domain::NormalInput buildNormalInput(const app::Application::Snapshot& snap) {
