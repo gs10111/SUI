@@ -15,8 +15,6 @@ const char kLabelBack[] = "Voltar";
 const char kLabelPresetX[] = "Preset X";
 const char kLabelPresetY[] = "Preset Y";
 
-const DigitFieldSpec kPresetField = {4, 1, true, Angle::kMinDeciDeg, Angle::kMaxDeciDeg,
-                                     PresetWizard::kOutOfRangeText};
 
 int16_t absDeci(int16_t value) { return value < 0 ? static_cast<int16_t>(-value) : value; }
 
@@ -24,16 +22,20 @@ int16_t absDeci(int16_t value) { return value < 0 ? static_cast<int16_t>(-value)
 
 PresetWizard::PresetWizard(const IClock& clock)
     : clock_(clock),
-      editor_(),
       item_(PresetMenuItem::Back),
       editing_(false),
       editAxis_(Axis::X),
       visited_(false),
       armWindowOpen_(false),
       armedAtMs_(0),
-      sample_{{0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}},
-      sampleHead_(0),
-      sampleCount_(0),
+      staticSinceMs_(0),
+      minDeci_{0, 0},
+      maxDeci_{0, 0},
+      lastDeci_{0, 0},
+      validCount_(0),
+      windowCount_(0),
+      haveSample_(false),
+      capturing_(false),
       pending_(false),
       pendingSinceMs_(0),
       pendingOffsetDeci_{0, 0},
@@ -94,71 +96,50 @@ const char* PresetWizard::itemLabel(PresetMenuItem which) {
     }
 }
 
-bool PresetWizard::beginEdit(Axis axis, const Parameters& params) {
-    editing_ = false;
+// --- CAPTURA -------------------------------------------------------------------------------
+
+bool PresetWizard::beginCapture(Axis axis) {
     if (!Parameters::axisValid(axis)) {
         return false;
     }
-    const Angle atual = params.preset(axis);
-    const int16_t inicial = atual.valid() ? atual.deciDegrees() : static_cast<int16_t>(0);
-    if (!editor_.open(kPresetField, inicial)) {
-        return false;
-    }
     editAxis_ = axis;
-    editing_ = true;
+    capturing_ = true;
+    editing_ = false;
+    // Mesmo armamento do editor antigo: ter passado pelo Preset e o que autoriza o duplo toque
+    // em CIMA na tela principal depois de sair do Modo Programacao.
     visited_ = true;
+    clearPending();
     return true;
 }
 
-void PresetWizard::editMenu() {
-    if (editing_) {
-        editor_.menu();
-    }
+void PresetWizard::cancelCapture() {
+    capturing_ = false;
 }
 
-void PresetWizard::editUp() {
-    if (editing_) {
-        editor_.up();
+PsetOutcome PresetWizard::commitCapture(Parameters& params) {
+    if (!capturing_) {
+        return PsetOutcome::Ignored;
     }
+    if (!dataValid()) {
+        return PsetOutcome::RefusedNoData;
+    }
+    if (!stable()) {
+        return PsetOutcome::RefusedUnstable;
+    }
+    int16_t novos[Parameters::kAxisCount] = {0, 0};
+    if (!computeOffsets(params, novos)) {
+        return PsetOutcome::RefusedNoData;
+    }
+    if (!offsetsWritable(novos[idx(Axis::X)], novos[idx(Axis::Y)])) {
+        return PsetOutcome::RefusedNoData;
+    }
+    if (!applyOffsets(params, novos)) {
+        return PsetOutcome::RefusedNoData;
+    }
+    capturing_ = false;
+    return PsetOutcome::Applied;
 }
 
-void PresetWizard::editDown() {
-    if (editing_) {
-        editor_.down();
-    }
-}
-
-bool PresetWizard::formatEdit(char* out, uint8_t cap) const {
-    if (!editing_) {
-        return false;
-    }
-    return editor_.format(out, cap);
-}
-
-uint8_t PresetWizard::editCursorTextIndex() const { return editor_.cursorTextIndex(); }
-
-ConfirmResult PresetWizard::editConfirm() const {
-    return editing_ ? editor_.confirm() : ConfirmResult::OutOfRange;
-}
-
-const char* PresetWizard::editOutOfRangeMessage() const { return editor_.outOfRangeMessage(); }
-
-Status PresetWizard::commitEdit(Parameters& params) {
-    if (!editing_) {
-        return Err::NotInit;
-    }
-    if (editor_.confirm() != ConfirmResult::Ok) {
-        return Err::Range;
-    }
-    const Status gravado = params.setPreset(editAxis_, Angle::fromDeciDegrees(editor_.value()));
-    if (gravado.failed()) {
-        return gravado;
-    }
-    editing_ = false;
-    return kOk;
-}
-
-void PresetWizard::cancelEdit() { editing_ = false; }
 
 void PresetWizard::clearPending() {
     pending_ = false;
@@ -198,8 +179,10 @@ void PresetWizard::disarm() {
 }
 
 void PresetWizard::clearSamples() {
-    sampleHead_ = 0;
-    sampleCount_ = 0;
+    validCount_ = 0;
+    windowCount_ = 0;
+    haveSample_ = false;
+    staticSinceMs_ = 0;
 }
 
 void PresetWizard::sample(Angle rawX, Angle rawY) {
@@ -207,48 +190,82 @@ void PresetWizard::sample(Angle rawX, Angle rawY) {
         clearSamples();
         return;
     }
-    sample_[idx(Axis::X)][sampleHead_] = rawX.deciDegrees();
-    sample_[idx(Axis::Y)][sampleHead_] = rawY.deciDegrees();
-    sampleHead_ = static_cast<uint8_t>((sampleHead_ + 1u) % kStabilityWindow);
-    if (sampleCount_ < kStabilityWindow) {
-        ++sampleCount_;
+    const int16_t agoraDeci[Parameters::kAxisCount] = {rawX.deciDegrees(), rawY.deciDegrees()};
+    const uint32_t agora = clock_.nowMs();
+
+    if (validCount_ < kMinSamples) {
+        ++validCount_;
+    }
+    if (!haveSample_) {
+        abrirJanela(agoraDeci, agora);
+        return;
+    }
+
+    for (uint8_t i = 0; i < Parameters::kAxisCount; ++i) {
+        lastDeci_[i] = agoraDeci[i];
+        if (agoraDeci[i] < minDeci_[i]) {
+            minDeci_[i] = agoraDeci[i];
+        }
+        if (agoraDeci[i] > maxDeci_[i]) {
+            maxDeci_[i] = agoraDeci[i];
+        }
+    }
+    for (uint8_t i = 0; i < Parameters::kAxisCount; ++i) {
+        if (static_cast<int32_t>(maxDeci_[i]) - static_cast<int32_t>(minDeci_[i]) >
+            static_cast<int32_t>(kStabilityPeakToPeakDeci)) {
+            // Saiu da banda: a janela recomeca AQUI, com a amostra que a rompeu. Nao ha
+            // credito parcial - "parado por 3 s" volta a contar do zero.
+            abrirJanela(agoraDeci, agora);
+            return;
+        }
+    }
+    if (windowCount_ < kMinSamples) {
+        ++windowCount_;
     }
 }
 
-bool PresetWizard::dataValid() const { return sampleCount_ >= kStabilityWindow; }
+void PresetWizard::abrirJanela(const int16_t (&deci)[Parameters::kAxisCount], uint32_t nowMs) {
+    for (uint8_t i = 0; i < Parameters::kAxisCount; ++i) {
+        minDeci_[i] = deci[i];
+        maxDeci_[i] = deci[i];
+        lastDeci_[i] = deci[i];
+    }
+    staticSinceMs_ = nowMs;
+    windowCount_ = 1;
+    haveSample_ = true;
+}
 
-int16_t PresetWizard::peakToPeakDeci(Axis axis) const {
-    if (!Parameters::axisValid(axis) || sampleCount_ == 0) {
+bool PresetWizard::dataValid() const { return haveSample_ && validCount_ >= kMinSamples; }
+
+uint32_t PresetWizard::staticForMs() const {
+    if (!haveSample_) {
         return 0;
     }
-    const int16_t* janela = sample_[idx(axis)];
-    int16_t menor = janela[0];
-    int16_t maior = janela[0];
-    for (uint8_t i = 1; i < sampleCount_; ++i) {
-        if (janela[i] < menor) {
-            menor = janela[i];
-        }
-        if (janela[i] > maior) {
-            maior = janela[i];
-        }
+    return elapsedMs(staticSinceMs_, clock_.nowMs());
+}
+
+int16_t PresetWizard::peakToPeakDeci(Axis axis) const {
+    if (!Parameters::axisValid(axis) || !haveSample_) {
+        return 0;
     }
-    return static_cast<int16_t>(maior - menor);
+    return static_cast<int16_t>(maxDeci_[idx(axis)] - minDeci_[idx(axis)]);
 }
 
 bool PresetWizard::stable() const {
     if (!dataValid()) {
         return false;
     }
-    return peakToPeakDeci(Axis::X) <= kStabilityPeakToPeakDeci &&
-           peakToPeakDeci(Axis::Y) <= kStabilityPeakToPeakDeci;
+    // A banda ja e garantida pela janela: sair dela reinicia a contagem. Faltam o TEMPO e um
+    // piso de amostras DENTRO da janela corrente, para que duas leituras separadas por 3 s nao
+    // passem por "parado".
+    return windowCount_ >= kMinSamples && staticForMs() >= kStaticHoldMs;
 }
 
 Angle PresetWizard::lastRaw(Axis axis) const {
-    if (!Parameters::axisValid(axis) || sampleCount_ == 0) {
+    if (!Parameters::axisValid(axis) || !haveSample_) {
         return Angle::invalid();
     }
-    const uint8_t ultimo = static_cast<uint8_t>((sampleHead_ + kStabilityWindow - 1u) % kStabilityWindow);
-    return Angle::fromDeciDegrees(sample_[idx(axis)][ultimo]);
+    return Angle::fromDeciDegrees(lastDeci_[idx(axis)]);
 }
 
 bool PresetWizard::computeOffsets(const Parameters& params,

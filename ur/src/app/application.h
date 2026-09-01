@@ -342,8 +342,11 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
 // unica tela que grava o offset dos quatro pontos de atuacao de um eixo nao tinha teste nenhum.
 // Mesma armadilha de buildNormalInput, mesma correcao - desce para uma camada que a suite
 // alcanca, e o composition root vira encaminhamento de uma linha.
-void renderPresetEdit(IDisplay& display, const domain::ui::PresetWizard& preset,
-                      domain::Axis axis);
+// Tela de CAPTURA do Preset (decisao do bigboss, 2026-09-01). Titulo do eixo escolhido no menu,
+// leitura AO VIVO dos dois eixos e o estado do portao de quietude. Substituiu o editor numerico:
+// nao ha mais campo de digitos, o alvo e sempre zero e o gesto e posicionar e segurar parado.
+void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& preset,
+                         domain::Axis axis);
 
 // Confirmacao do PSET: o valor pendente mais o gesto que grava. Mesma razao de estar aqui.
 void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& preset,

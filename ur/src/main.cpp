@@ -495,7 +495,7 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
         case domain::MenuAction::AjustaPresetY:
             g_presetAxis = (action == domain::MenuAction::AjustaPresetX) ? domain::Axis::X
                                                                         : domain::Axis::Y;
-            g_presetEditing = g_preset.beginEdit(g_presetAxis, g_params);
+            g_presetEditing = g_preset.beginCapture(g_presetAxis);
             if (!g_presetEditing) {
                 g_menu.reclaimDisplay();
             }
@@ -569,46 +569,41 @@ void serviceCalibration() {
     }
 }
 
-void renderPresetEdit() {
-    // A tela mora em src/app/application.cpp: aqui ela nao compila no env native e nenhum teste
-    // a alcanca. Este e o encaminhamento de uma linha.
-    app::renderPresetEdit(g_display, g_preset, g_presetAxis);
+void renderPresetCapture() {
+    app::renderPresetCapture(g_display, g_preset, g_presetAxis);
 }
 
-void servicePresetEdit() {
+// CAPTURA DO PRESET (decisao do bigboss, 2026-09-01). O operador posiciona a estrutura onde bem
+// entender, segura parado e grava. Hold de MENU tenta gravar; hold de BAIXO desiste. Nao ha
+// tecla que edite numero: o alvo e sempre zero.
+void servicePresetCapture() {
     domain::Gesture gesture{};
     while (g_gesture.takeGesture(gesture)) {
         if (gesture.kind == domain::GestureKind::Hold && gesture.key == Key::Menu) {
-            if (g_preset.editConfirm() != domain::ConfirmResult::Ok) {
-                showMessage(g_preset.editOutOfRangeMessage());
-                continue;
-            }
-            const Status st = g_preset.commitEdit(g_params);
-            g_presetEditing = false;
-            if (st.ok()) {
+            const domain::ui::PsetOutcome fim = g_preset.commitCapture(g_params);
+            if (fim == domain::ui::PsetOutcome::Applied) {
+                g_presetEditing = false;
                 publishAndPersist(kDirtyParams);
-            } else {
-                showMessage(kMsgSaveFailed);
+                showMessage(kMsgPsetOk);
+                g_menu.reclaimDisplay();
+                return;
             }
-            g_menu.reclaimDisplay();
-            return;
-        }
-        if (gesture.kind == domain::GestureKind::Hold && gesture.key == Key::Down) {
-            g_preset.cancelEdit();
-            g_presetEditing = false;
-            g_menu.reclaimDisplay();
-            return;
-        }
-        if (gesture.kind != domain::GestureKind::ShortTap) {
+            // Recusa NAO fecha a tela: o tecnico esta com a mao na estrutura e a acao dele e
+            // segurar mais firme, nao reabrir o menu. A mensagem diz qual dos dois portoes
+            // reprovou - sem dado e instavel pedem coisas diferentes.
+            showMessage(fim == domain::ui::PsetOutcome::RefusedUnstable
+                            ? domain::ui::PresetWizard::kRefusedUnstableText
+                            : domain::ui::PresetWizard::kRefusedNoDataText);
             continue;
         }
-        switch (gesture.key) {
-            case Key::Menu: g_preset.editMenu(); break;
-            case Key::Up: g_preset.editUp(); break;
-            case Key::Down: g_preset.editDown(); break;
+        if (gesture.kind == domain::GestureKind::Hold && gesture.key == Key::Down) {
+            g_preset.cancelCapture();
+            g_presetEditing = false;
+            g_menu.reclaimDisplay();
+            return;
         }
     }
-    renderPresetEdit();
+    renderPresetCapture();
 }
 
 void servicePsetConfirm() {
@@ -657,7 +652,7 @@ void serviceHmi() {
         return;
     }
     if (g_presetEditing) {
-        servicePresetEdit();
+        servicePresetCapture();
         return;
     }
 

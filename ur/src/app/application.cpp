@@ -629,49 +629,42 @@ void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& pres
     display.present();
 }
 
-void renderPresetEdit(IDisplay& display, const domain::ui::PresetWizard& preset,
-                      domain::Axis axis) {
-    char campo[domain::DigitEditor::kTextCap];
-    if (!preset.formatEdit(campo, domain::DigitEditor::kTextCap)) {
-        return;
-    }
+void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& preset,
+                         domain::Axis axis) {
+    const int16_t largura = static_cast<int16_t>(display.widthPx());
+    const char* titulo = (axis == domain::Axis::Y) ? "Preset Y" : "Preset X";
 
-    constexpr uint8_t kLineCap = 40;
-    // A linha inteira sobe para Medium: "Preset X:+000,0" tem 15 caracteres e da 133 px dos 256
-    // do painel, entao aqui nao existe o aperto de largura que segura o editor de Valor Limite
-    // em Small.
-    constexpr TextFont kFonte = TextFont::Medium;
-    constexpr int16_t kLinhaY = 24;
+    // Leitura AO VIVO dos DOIS eixos: uma captura zera os dois, entao esconder um deles deixaria
+    // o operador sem ver metade do que esta prestes a congelar. Sem amostra sai traco, nunca
+    // zero - zero seria uma medicao.
+    char linha[40];
+    uint8_t n = 0;
+    const domain::Axis eixos[2] = {domain::Axis::X, domain::Axis::Y};
+    for (uint8_t i = 0; i < 2u; ++i) {
+        if (i != 0u && n + 1u < sizeof(linha)) {
+            linha[n++] = ' ';
+        }
+        if (n + 2u < sizeof(linha)) {
+            linha[n++] = (i == 0u) ? 'X' : 'Y';
+            linha[n++] = ':';
+        }
+        char campo[domain::Angle::kTextCap];
+        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap);
+        for (uint8_t k = 0; campo[k] != '\0' && (n + 1u) < sizeof(linha); ++k) {
+            linha[n++] = campo[k];
+        }
+    }
+    linha[n] = '\0';
 
-    char linha[kLineCap];
-    const char* prefixo = (axis == domain::Axis::X) ? "Preset X:" : "Preset Y:";
-    uint8_t usado = 0;
-    for (; prefixo[usado] != '\0' && usado < (kLineCap - 1u); ++usado) {
-        linha[usado] = prefixo[usado];
-    }
-    const uint8_t tamanhoPrefixo = usado;
-    for (uint8_t i = 0; campo[i] != '\0' && usado < (kLineCap - 1u); ++i, ++usado) {
-        linha[usado] = campo[i];
-    }
-    linha[usado] = '\0';
+    const char* estado = preset.stable() ? domain::ui::PresetWizard::kCaptureReadyText
+                                         : domain::ui::PresetWizard::kCaptureWaitText;
 
     display.clear();
-    display.drawText(0, kLinhaY, linha, kFonte, TextInk::Normal);
-
-    // REQ-DSP-04: o digito em edicao em video reverso, por cima da linha. A largura da cabeca e
-    // medida na MESMA fonte que desenhou a linha - com fontes diferentes o realce aterrissa em
-    // cima do digito errado e o operador grava outro valor.
-    const uint8_t cursor = static_cast<uint8_t>(tamanhoPrefixo + preset.editCursorTextIndex());
-    if (cursor < usado) {
-        char cabeca[kLineCap];
-        for (uint8_t i = 0; i < cursor; ++i) {
-            cabeca[i] = linha[i];
-        }
-        cabeca[cursor] = '\0';
-        const char glifo[2] = {linha[cursor], '\0'};
-        display.drawText(static_cast<int16_t>(display.textWidthPx(kFonte, cabeca)), kLinhaY,
-                         glifo, kFonte, TextInk::Inverse);
-    }
+    display.drawText(0, 0, titulo, TextFont::Small, TextInk::Normal);
+    display.drawText(0, 18, linha, domain::ui::fontThatFits(display, linha, largura),
+                     TextInk::Normal);
+    display.drawText(0, 44, estado, domain::ui::fontThatFits(display, estado, largura),
+                     TextInk::Normal);
     display.present();
 }
 

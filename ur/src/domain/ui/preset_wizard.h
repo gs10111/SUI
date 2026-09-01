@@ -145,8 +145,18 @@ public:
     static constexpr uint32_t kDirWarningMs = 3000;
 
     static constexpr int16_t kConfirmThresholdDeci = 50;
-    static constexpr uint8_t kStabilityWindow = 8;
+
+    // ESTABILIDADE POR TEMPO, e nao por contagem de amostras (decisao do bigboss, 2026-09-01).
+    // O criterio anterior eram 8 amostras dentro de 0,5 grau: a 50 ms por ciclo, 400 ms. Num
+    // portico 400 ms de quietude acontecem no MEIO de um movimento lento, e congelar ali a
+    // referencia dos quatro reles e o erro que este portao existe para impedir. Agora sao
+    // 3000 ms continuos dentro da mesma banda, medidos por pico a pico desde o inicio da
+    // janela; sair da banda REINICIA a contagem.
+    static constexpr uint32_t kStaticHoldMs = 3000;
     static constexpr int16_t kStabilityPeakToPeakDeci = 5;
+    // Piso de amostras, para que uma rajada de duas leituras separadas por 3 s nao passe por
+    // "parado". A 50 ms por ciclo, 3000 ms entregam 60; oito e folga larga.
+    static constexpr uint8_t kMinSamples = 8;
 
     static constexpr uint8_t kItemCount = 3;
 
@@ -166,6 +176,11 @@ public:
     static constexpr const char* kRefusedUnstableText = "Instavel, refaca!";
     static constexpr const char* kConfirmHintText = "Segure MENU 3s";
     static constexpr const char* kOutOfRangeText = "FORA DA FAIXA +/-090,0";
+    // Telas da CAPTURA (decisao do bigboss, 2026-09-01): o operador posiciona a estrutura onde
+    // quiser, segura parado e grava. Nao existe mais campo numerico de Preset.
+    static constexpr const char* kCaptureHintText = "segure MENU 3s parado";
+    static constexpr const char* kCaptureWaitText = "aguarde estabilizar";
+    static constexpr const char* kCaptureReadyText = "PRONTO - segure MENU";
 
     explicit PresetWizard(const IClock& clock);
 
@@ -195,23 +210,30 @@ public:
 
     // Abre a edicao no valor VIGENTE do eixo, faixa -900 a +900 decimos, passo de 1 decimo.
     // Abrir a tela tambem e a "visita" que o armamento do item 6 exige.
-    bool beginEdit(Axis axis, const Parameters& params);
-    bool editing() const { return editing_; }
-    Axis editAxis() const { return editAxis_; }
-    void editMenu();
-    void editUp();
-    void editDown();
-    bool formatEdit(char* out, uint8_t cap) const;
-    uint8_t editCursorTextIndex() const;
+    // --- CAPTURA (substitui o editor numerico, decisao do bigboss 2026-09-01) ---
+    //
+    // O operador entra pelo menu, posiciona a estrutura onde bem entender, segura parado e
+    // grava. A posicao capturada passa a ler +000,0 nos DOIS eixos: o alvo e sempre zero e o
+    // campo numerico de Preset deixou de existir na IHM. Parameters::preset() continua no
+    // registro, fixo em zero, para nao mexer no formato gravado em NVS.
+    //
+    // O eixo do item de menu e so o TITULO da tela: uma captura zera X e Y juntos, que e o
+    // gesto natural de nivelamento e ja era o comportamento do duplo toque em CIMA.
+    bool beginCapture(Axis axis);
+    bool capturing() const { return capturing_; }
+    void cancelCapture();
+    Axis captureAxis() const { return editAxis_; }
+    // Ha quanto tempo a leitura esta dentro da banda. Zero quando nao ha amostra valida.
+    uint32_t staticForMs() const;
+    // Applied, RefusedNoData, RefusedUnstable ou Ignored (captura nao aberta). Nunca grava
+    // meia captura: ou os dois offsets entram, ou nenhum.
+    PsetOutcome commitCapture(Parameters& params);
 
-    // Consulta pura, como manda A13: informa a recusa e nao toca no valor nem no cursor.
-    ConfirmResult editConfirm() const;
-    const char* editOutOfRangeMessage() const;
-
-    // PST-02, primeira etapa: grava SO o valor programado. O offset em vigor nao e tocado, e
-    // por isso a leitura nao se move ao gravar. Err::Range quando o valor nao cabe na faixa.
-    Status commitEdit(Parameters& params);
-    void cancelEdit();
+    // O EDITOR NUMERICO DE PRESET FOI REMOVIDO em 2026-09-01. O alvo passou a ser sempre zero e
+    // a IHM CAPTURA a posicao em vez de receber um numero digitado; manter os metodos vivos
+    // deixaria um caminho inalcancavel capaz de gravar o parametro que desloca os quatro pontos
+    // de atuacao de um eixo. Parameters::setPreset() continua existindo para a carga de NVS e
+    // para o Reset Geral - so nao ha mais tecla que chegue nele.
 
     // --- Prazos (D1 itens 6 e 11, D14 item 7) ---
 
@@ -290,12 +312,12 @@ private:
     static uint8_t idx(Axis axis) { return static_cast<uint8_t>(axis); }
     static int16_t directed(Angle raw, SensorDir dir);
     void clearPending();
+    void abrirJanela(const int16_t (&deci)[Parameters::kAxisCount], uint32_t nowMs);
 
     bool computeOffsets(const Parameters& params, int16_t (&outOffsets)[Parameters::kAxisCount]) const;
     bool applyOffsets(Parameters& params, const int16_t (&offsets)[Parameters::kAxisCount]) const;
 
     const IClock& clock_;
-    DigitEditor editor_;
 
     PresetMenuItem item_;
     bool editing_;
@@ -305,9 +327,21 @@ private:
     bool armWindowOpen_;
     uint32_t armedAtMs_;
 
-    int16_t sample_[Parameters::kAxisCount][kStabilityWindow];
-    uint8_t sampleHead_;
-    uint8_t sampleCount_;
+    // Janela de quietude: extremos desde staticSinceMs_. Sair da banda reinicia os tres.
+    uint32_t staticSinceMs_;
+    int16_t minDeci_[Parameters::kAxisCount];
+    int16_t maxDeci_[Parameters::kAxisCount];
+    int16_t lastDeci_[Parameters::kAxisCount];
+    // DOIS contadores, e a separacao importa: validCount_ conta leituras VALIDAS desde o
+    // ultimo corte de dado e responde "existe medida?"; windowCount_ conta amostras da janela
+    // de quietude CORRENTE e responde "esta parado?". Com um contador so, uma estrutura em
+    // movimento continuo reiniciava a janela a cada amostra e a IHM dizia "PSET recusado!"
+    // (sem dado) no lugar de "Instavel, refaca!" - diagnostico errado na mao do operador.
+    uint8_t validCount_;
+    uint8_t windowCount_;
+    bool haveSample_;
+
+    bool capturing_;
 
     bool pending_;
     uint32_t pendingSinceMs_;

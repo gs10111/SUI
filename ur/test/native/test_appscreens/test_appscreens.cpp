@@ -104,12 +104,15 @@ static void test_confirmacao_de_pset_mostra_valor_e_gesto(void) {
     Parameters params = Parameters::factoryDefaults();
 
     // Deslocamento acima de kConfirmThresholdDeci (5,0 graus) e o que exige confirmacao.
-    TEST_ASSERT_TRUE(preset.beginEdit(Axis::X, params));
-    preset.cancelEdit();
+    TEST_ASSERT_TRUE(preset.beginCapture(Axis::X));
+    preset.cancelCapture();
     preset.onProgrammingExit();
     TEST_ASSERT_TRUE(preset.armed());
-    for (uint8_t i = 0; i < PresetWizard::kStabilityWindow; ++i) {
+    // Estabilidade agora e TEMPORAL: 3000 ms dentro de 0,5 grau.
+    const uint32_t passo = 50;
+    for (uint32_t t = 0; t <= PresetWizard::kStaticHoldMs + passo; t += passo) {
         preset.sample(domain::Angle::fromDeciDegrees(300), domain::Angle::fromDeciDegrees(0));
+        relogio.advanceMs(passo);
     }
 
     TEST_ASSERT_TRUE(preset.requestPset(params) == domain::ui::PsetOutcome::NeedsConfirm);
