@@ -159,6 +159,14 @@ void SensorConsole::printBanner() {
         ctx_.io.writeLine(kRule);
     }
     printPinout();
+    // O protocolo ativo no banner: sensora e supervisora falando idiomas diferentes aparece como
+    // "falha de comunicacao" com o cabo perfeito, e nada na tela da UR diz qual e a causa. Uma
+    // linha aqui custa nada e resolve o diagnostico na primeira energizacao.
+    if (ctx_.protocol != nullptr && *ctx_.protocol != nullptr) {
+        ctx_.io.printf("protocolo    : %s a %lu bps (troca com 'proto')\r\n",
+                       protoName(*ctx_.protocol),
+                       static_cast<unsigned long>(board::kRs485DefaultBaud));
+    }
     ctx_.io.writeLine("digite help para os comandos");
 }
 
