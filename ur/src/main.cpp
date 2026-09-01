@@ -107,8 +107,16 @@
 namespace {
 
 // Emenda 1 a A13: neste build de bancada o Modo Programacao abre sem senha. O BINARIO DE
-// PRODUCAO USA true, e a troca e esta unica linha.
-constexpr bool kRequirePassword = false;
+// PORTAO DE SENHA. Decisao do bigboss, 2026-09-01: LIGADO.
+//
+// A Emenda 1 a A13 tinha tirado a senha do escopo do MVP e o binario de bancada rodou com
+// false. Com o portao desarmado, qualquer pessoa com acesso as tres teclas frontais muda o
+// ponto de atuacao dos quatro reles - aceitavel numa bancada, nao numa unidade instalada.
+//
+// CONSEQUENCIA OPERACIONAL IMEDIATA: o hold de MENU passa a abrir "Senha de acesso:0000" em vez
+// do menu. A senha de fabrica e 1234 (Tabela 1, L131), editavel em Menu > Senha. Cinco erros
+// bloqueiam por 60 s - bloqueio temporario e volatil, que some no ciclo de energia.
+constexpr bool kRequirePassword = true;
 
 // A1 / DECISIONS.md 2.3. DECISAO DO BIGBOSS, 2026-09-01, EM BANCADA: OPCAO A, fidelidade ao
 // manual. Alarme ENERGIZA a bobina e ACENDE o LED; repouso desenergiza. A opcao B (fail-safe)

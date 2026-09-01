@@ -34,7 +34,30 @@ SPIClass g_sclSpi(VSPI);
 SpiBus g_sclBus(g_sclSpi, board::kSclSclk, board::kSclMiso, board::kSclMosi, "VSPI/SCL3300");
 
 ExtWatchdog g_wdt;
-Scl3300 g_tilt(g_sclBus, board::kSclCs);
+// MODO DE OPERACAO DO SCL3300. Decisao do bigboss, 2026-09-01: MODO 3.
+//
+// O modo 1 (padrao do chip, e o que este firmware usava) tem fundo de escala de +-1,2 g e
+// filtro de 40 Hz. Num portico, choque e impacto de carga passam de 1,2 g com facilidade, e ali
+// o front-end satura: o bit SAT sobe, a leitura e recusada e os quatro reles vao a alarme por
+// A5 - alarme falso disparado pelo proprio movimento que o equipamento existe para supervisionar.
+//
+// O modo 3 e "inclination mode": nao tem fundo de escala fixo em g (a faixa dinamica depende da
+// orientacao na gravidade) e o filtro passa-baixa cai para 10 Hz, que e a banda de interesse de
+// uma estrutura portuaria. NAO se perde resolucao angular: a Tabela 12 do datasheet da 182 LSB
+// por grau na saida de INCLINACAO nos QUATRO modos - o que muda entre eles e a saida de
+// aceleracao e o filtro, nao o angulo.
+//
+// O que a troca traz junto, e ja esta tratado:
+//   - acomodacao de 100 ms no start-up em vez de 25 (scl::modeSettleMs);
+//   - o bit MODE_CHANGE passa a subir no ERR_FLAG2, porque agora o modo pedido difere do de
+//     reset - tolerado desde o fix do criterio de autoteste (scl3300_math.h);
+//   - o limiar do STO passa de +-1800 para +-3600 LSB (Tabela 23), pela propria stoThreshold().
+//
+// SUJEITO A MEDICAO M8, que e quem mede o espectro real da estrutura e diz se 10 Hz e a banda
+// certa e se o modo 4 (mesmo modo com low noise) se paga.
+constexpr uint8_t kSclOperationMode = 3;
+
+Scl3300 g_tilt(g_sclBus, board::kSclCs, Scl3300::kSpiDefaultHz, kSclOperationMode);
 Rs485Transport g_link;
 JigFrameSlave g_jigSlave;
 ModbusRtuSlave g_modbusSlave(board::kModbusSlaveId);

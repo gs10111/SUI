@@ -2956,14 +2956,14 @@ reconstruidos a partir do log de commits.
 > canal proprio. Unidades ja instaladas com a polaridade anterior indicam o
 > OPOSTO: exige reinspecao de instalacao antes da atualizacao.
 
-## 8.4 O que continua precisando de assinatura
+## 8.4 Assinado em 2026-09-01, no fim da sessao
 
-| Item | Por que nao foi decidido sozinho |
-|---|---|
-| **Modo do SCL3300: 1 ou 3/4** | Hoje abre em modo 1 (+-1,2 g, filtro 40 Hz). Modos 3 e 4 sao *inclination mode* com filtro de 10 Hz e sem fundo de escala em g, que e o que um portico pede - choque passa de 1,2 g e acende SAT. A sensibilidade de inclinacao e IGUAL nos quatro modos (182 LSB/grau), entao nao se perde resolucao. Amarrado a MEDICAO M8 |
-| **Duplo toque em CIMA continua existindo?** | O manual o publica (L152) e ele agora convive com a captura pelo menu. Dois caminhos para a mesma coisa e superficie a mais |
-| **`kRequirePassword = true`** | O binario de bancada esta com `false` (Emenda 1). Producao precisa de `true`, e a troca e uma linha |
-| **`kStoFaultRun = 20`** | 200 ms continuos. Numero deste produto, nao do datasheet; M8 e quem mede o espectro real da estrutura |
+| # | Item | Decisao |
+|---|---|---|
+| B8 | **Modo do SCL3300** | **MODO 3** (*inclination mode*, filtro de 10 Hz). O modo 1 tinha fundo de escala de +-1,2 g e num portico o choque de carga passa disso, satura o front-end e dispara alarme falso pelos quatro reles. Nao se perde resolucao: a Tabela 12 da 182 LSB/grau na saida de inclinacao nos QUATRO modos. Continua sujeito a M8, que dira se 10 Hz e a banda certa e se o modo 4 (low noise) se paga |
+| B9 | **Duplo toque em CIMA** | **MANTIDO.** Convive com a captura pelo menu, com as mesmas regras (3 s parado, confirmacao acima de 5 graus) e com o portao de armamento de 120 s que o menu abre |
+| B10 | **`kRequirePassword`** | **`true`.** A Emenda 1 a A13 (senha fora do MVP) fica encerrada. O hold de MENU passa a abrir "Senha de acesso:0000"; senha de fabrica 1234, cinco erros bloqueiam por 60 s |
+| B11 | **`kStoFaultRun = 20`** | **MANTIDO** (200 ms continuos), com a ressalva de que o numero e deste produto e nao do datasheet, e que M8 e quem mede o espectro real |
 
 ## 8.5 Medicoes que continuam nao feitas
 
