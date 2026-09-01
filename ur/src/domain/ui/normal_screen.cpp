@@ -40,7 +40,6 @@ namespace {
 constexpr int16_t kStatusGapPx = 6;
 
 // Coluna do valor no detalhe: "+045,0" em fonte grande ocupa 108 px e fecha em 248.
-constexpr int16_t kDetailValueX = 140;
 
 constexpr int16_t kMargin = 1;
 
@@ -270,8 +269,57 @@ void NormalScreen::renderMain(const NormalInput& in) {
     }
 }
 
+// Onde o numero grande do eixo comeca: encostado na borda direita, medido na propria fonte
+// grande. Deixa para as linhas de texto toda a largura que sobra, e acompanha a fonte se ela
+// mudar - com um X fixo, as duas se encontrariam no meio da tela.
+int16_t NormalScreen::detailValueX() const {
+    const int16_t largura = static_cast<int16_t>(display_.textWidthPx(TextFont::Large, "-180,0"));
+    return static_cast<int16_t>(display_.widthPx() - largura - kMargin);
+}
+
+// Fonte das linhas da tela de eixo. Mesma regra da coluna de estado: a fonte maior NUNCA custa
+// informacao. O orcamento e apertado - cabecalho de 12 px mais N linhas de 16 px em 64 px de
+// painel deixa N = 3, que sao as tres linhas que a tela sempre tem (dois limites e o modo da
+// saida). Com o indicador de PSET no ar sao quatro, e a tela inteira volta para a fonte pequena
+// em vez de esconder justamente a prova visivel de que a leitura e relativa.
+TextFont NormalScreen::detailFont(const NormalInput& in, uint8_t eixo) const {
+    const int16_t largura =
+        static_cast<int16_t>(detailValueX() - kMargin - kStatusGapPx);
+    if (largura <= 0) {
+        return TextFont::Small;
+    }
+    // Pior caso literal de cada linha, pelo mesmo motivo de statusFont(): as linhas ainda nao
+    // existem quando a fonte precisa ser escolhida.
+    const uint16_t maiorLimite = display_.textWidthPx(TextFont::Medium, "X1:AL +090,0");
+    const uint16_t maiorSaida = display_.textWidthPx(TextFont::Medium, "SAIDA X:MEDICAO");
+    const uint16_t maiorPreset = display_.textWidthPx(TextFont::Medium, "PSET X:+180,0");
+    uint16_t maior = maiorLimite;
+    if (maiorSaida > maior) {
+        maior = maiorSaida;
+    }
+    if (maiorPreset > maior) {
+        maior = maiorPreset;
+    }
+    if (maior > static_cast<uint16_t>(largura)) {
+        return TextFont::Small;
+    }
+
+    const uint8_t linhas = static_cast<uint8_t>(3u + (in.presetActive[eixo] ? 1u : 0u));
+    const int16_t alturaCabecalho = rowHeight(TextFont::Small);
+    const int16_t ultimaBase =
+        static_cast<int16_t>(alturaCabecalho + (linhas - 1) * rowHeight(TextFont::Medium));
+    const int16_t fim =
+        static_cast<int16_t>(ultimaBase + display_.lineHeightPx(TextFont::Medium));
+    if (fim > static_cast<int16_t>(display_.heightPx())) {
+        return TextFont::Small;
+    }
+    return TextFont::Medium;
+}
+
 void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
-    const int16_t passo = smallRowHeight();
+    const uint8_t eixoFonte = (axis == kNormalAxisY) ? kNormalAxisY : kNormalAxisX;
+    const TextFont fonte = detailFont(in, eixoFonte);
+    const int16_t passo = rowHeight(fonte);
     const uint8_t eixo = (axis == kNormalAxisY) ? kNormalAxisY : kNormalAxisX;
     const char* nome = (eixo == kNormalAxisY) ? "Y" : "X";
     const uint8_t primeiroCanal = (eixo == kNormalAxisY) ? 2u : 0u;
@@ -283,7 +331,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
 
     Line valor;
     valor.add(in.reading[eixo]);
-    drawAt(kDetailValueX, passo, valor.text(), TextFont::Large);
+    drawAt(detailValueX(), passo, valor.text(), TextFont::Large);
 
     int16_t linha = passo;
     for (uint8_t i = 0; i < 2u; ++i) {
@@ -294,7 +342,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
         limite.add(stateToken(in.limit[canal].state));
         limite.add(" ");
         limite.add(in.limit[canal].value);
-        drawAt(kMargin, linha, limite.text(), TextFont::Small);
+        drawAt(kMargin, linha, limite.text(), fonte);
         linha = static_cast<int16_t>(linha + passo);
     }
 
@@ -305,7 +353,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
     saida.add(nome);
     saida.add(":");
     saida.add(analogText(in.analog[eixo]));
-    drawAt(kMargin, linha, saida.text(), TextFont::Small);
+    drawAt(kMargin, linha, saida.text(), fonte);
     linha = static_cast<int16_t>(linha + passo);
 
     // Decisao 1 item 17 com a faixa de A9: o offset vai a +/-1800 decimos e o texto e o mesmo
@@ -317,7 +365,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
         preset.add(nome);
         preset.add(":");
         preset.addPresetOffset(in.presetOffsetDeci[eixo]);
-        drawAt(kMargin, linha, preset.text(), TextFont::Small);
+        drawAt(kMargin, linha, preset.text(), fonte);
     }
 }
 

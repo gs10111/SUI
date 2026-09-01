@@ -1005,6 +1005,77 @@ static void test_layout_coluna_de_estado_nao_invade_a_area_de_medicao(void) {
     verificarQuadro(bancada.painel);
 }
 
+// --- TELAS DEDICADAS AO EIXO (detalhe X / detalhe Y) -----------------------------------------
+//
+// Pedido do bigboss em 2026-09-01: crescer tambem as telas de eixo. Vale aqui a mesma regra da
+// coluna de estado - a fonte maior NUNCA custa informacao. O orcamento e apertado: cabecalho
+// pequeno de 12 px mais N linhas de conteudo de 16 px em 64 px de painel deixa N = 3. Sao
+// exatamente as tres que a tela sempre tem (dois limites e o modo da saida); a quarta, o
+// indicador de PSET, so aparece com offset ligado - e ai a tela inteira volta para a fonte
+// pequena em vez de esconder o indicador, que e a prova visivel de que a leitura e relativa.
+
+static void test_layout_tela_de_eixo_cresce_quando_nao_ha_preset(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+
+    bancada.ciclo(entrada);
+    tocar(bancada, Key::Down);
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("EIXO X"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("EIXO X") == TextFont::Small);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:") == TextFont::Medium);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("SAIDA X:") == TextFont::Medium);
+    verificarQuadro(bancada.painel);
+}
+
+static void test_layout_tela_de_eixo_encolhe_para_nao_esconder_o_preset(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = 120;
+
+    bancada.ciclo(entrada);
+    tocar(bancada, Key::Down);
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    // a quarta linha continua no ar - e ela que diz que a leitura e relativa
+    TEST_ASSERT_TRUE(bancada.painel.shows("PSET X:"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:") == TextFont::Small);
+    verificarQuadro(bancada.painel);
+}
+
+static void test_layout_valor_grande_do_eixo_nao_monta_sobre_as_linhas(void) {
+    // O X do numero grande sai da largura MEDIDA, e nao de uma constante: com a fonte das
+    // linhas mudando, um X fixo deixaria as duas se encontrarem no meio da tela.
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(-900, 900);
+
+    bancada.ciclo(entrada);
+    tocar(bancada, Key::Down);
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("-090,0"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("-090,0") == TextFont::Large);
+    verificarQuadro(bancada.painel);
+}
+
+static void test_layout_tela_do_eixo_y_segue_a_mesma_regra(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+
+    bancada.ciclo(entrada);
+    tocar(bancada, Key::Down);
+    bancada.ciclo(entrada);
+    tocar(bancada, Key::Down);
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("EIXO Y"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("Y1:") == TextFont::Medium);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("SAIDA Y:") == TextFont::Medium);
+    verificarQuadro(bancada.painel);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
@@ -1025,6 +1096,10 @@ int main(int, char**) {
     RUN_TEST(test_layout_coluna_de_estado_sobe_de_fonte_com_os_dois_eixos_no_mesmo_modo);
     RUN_TEST(test_layout_coluna_de_estado_volta_para_a_fonte_pequena_quando_nao_cabe);
     RUN_TEST(test_layout_coluna_de_estado_nao_invade_a_area_de_medicao);
+    RUN_TEST(test_layout_tela_de_eixo_cresce_quando_nao_ha_preset);
+    RUN_TEST(test_layout_tela_de_eixo_encolhe_para_nao_esconder_o_preset);
+    RUN_TEST(test_layout_valor_grande_do_eixo_nao_monta_sobre_as_linhas);
+    RUN_TEST(test_layout_tela_do_eixo_y_segue_a_mesma_regra);
     RUN_TEST(test_D3_NRM_02_down_percorre_as_telas_de_detalhe_e_volta);
     RUN_TEST(test_NRM_04_toque_simples_em_cima_nao_faz_nada_no_modo_normal);
     RUN_TEST(test_MAN_5_6_L152_duplo_toque_em_cima_chega_como_pset_e_nao_como_dois_toques);

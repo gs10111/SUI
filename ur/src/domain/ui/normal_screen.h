@@ -266,6 +266,9 @@ private:
     // Fonte da coluna de estado NESTE quadro: Medium quando toda linha necessaria cabe em
     // largura e em altura, Small quando nao cabe. Nunca esconde linha para caber fonte maior.
     TextFont statusFont(const NormalInput& in) const;
+    // Tela dedicada ao eixo: onde comeca o numero grande, e a fonte das linhas de texto.
+    int16_t detailValueX() const;
+    TextFont detailFont(const NormalInput& in, uint8_t eixo) const;
     uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo) const;
 
     void keep(Status status);
