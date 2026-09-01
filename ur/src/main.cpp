@@ -195,6 +195,9 @@ volatile bool g_linkBeginDone = false;
 bool g_linkReported = false;
 
 uint8_t g_bootKeyMask = 0;
+// Ultima mascara de tecla impressa no console. 0xFF = nada impresso ainda, para que a primeira
+// passagem sempre publique o estado de repouso das tres linhas.
+uint8_t g_lastKeyMask = 0xFFu;
 bool g_configLost = false;
 bool g_configLostDrawn = false;
 bool g_calActive = false;
@@ -862,8 +865,35 @@ void setup() {
     g_originMs = g_clock.nowMs();
 }
 
+// DIAGNOSTICO DE TECLA NO CONSOLE. DOWN (IO34) e MENU (IO35) sao INPUT-ONLY: ignoram o
+// pull-up interno em silencio, e o nivel de repouso deles depende do pull-up da placa de IHM
+// (MEDICAO M5, ainda em aberto). Sem pull-up a linha flutua, e da bancada isso e
+// INDISTINGUIVEL de firmware quebrado - "nenhuma opcao do menu funciona" e exatamente o que se
+// ve quando a tecla MENU, que confirma toda opcao, nao chega ao firmware.
+//
+// Imprime SO na mudanca da mascara, entao com o painel parado custa uma comparacao por
+// passagem e nenhum byte no console. Com isto o veredito sai em trinta segundos: aperta a
+// tecla e ou aparece linha (a tecla chega, o defeito e software) ou nao aparece (a tecla nao
+// chega, o defeito e pull-up, conector ou cabo).
+void traceKeys() {
+    const uint8_t mask = g_keypad.pressedMask();
+    if (mask == g_lastKeyMask) {
+        return;
+    }
+    g_lastKeyMask = mask;
+    Serial.print(F("tecla mask=0x"));
+    Serial.print(mask, HEX);
+    Serial.print(F("  MENU="));
+    Serial.print(g_keypad.pressed(Key::Menu) ? '1' : '0');
+    Serial.print(F(" UP="));
+    Serial.print(g_keypad.pressed(Key::Up) ? '1' : '0');
+    Serial.print(F(" DOWN="));
+    Serial.println(g_keypad.pressed(Key::Down) ? '1' : '0');
+}
+
 void loop() {
     g_keypad.poll();
+    traceKeys();
     g_gesture.update();
 
     const uint32_t nowMs = g_clock.nowMs();
