@@ -505,11 +505,17 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
             g_calAxis = (action == domain::MenuAction::AutoCalibracaoX) ? domain::Axis::X
                                                                        : domain::Axis::Y;
             const bool signalled = snap.relayMask != kRelayMaskAllClear;
-            if (g_calWizard.begin(g_calAxis, signalled).failed()) {
+            // QUEM DECIDE SE O ASSISTENTE E DONO DO DISPLAY E active(), NUNCA o Status de
+            // begin(). Com limite sinalizado o begin() REPROVA e mesmo assim deixa o assistente
+            // ativo, porque a recusa tem tela: "CALIBRACAO BLOQUEADA" por 2000 ms (D6 item 13).
+            // Ler so o Status devolvia o display ao menu na hora, e clicar em Auto Calibracao
+            // nao fazia nada visivel - foi assim que a bancada encontrou isto.
+            (void)g_calWizard.begin(g_calAxis, signalled);
+            g_calActive = g_calWizard.active();
+            if (!g_calActive) {
                 g_menu.reclaimDisplay();
                 break;
             }
-            g_calActive = true;
             g_gesture.flush();
             break;
         }

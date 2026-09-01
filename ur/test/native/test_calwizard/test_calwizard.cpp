@@ -1129,6 +1129,37 @@ static void test_realce_do_digito_acompanha_a_fonte_da_tela(void) {
     conferirGeometria(display);
 }
 
+// CONTRATO QUE O COMPOSITION ROOT TEM DE HONRAR, e que ele NAO honrava ate 2026-09-01.
+//
+// begin() com limite sinalizado devolve Status REPROVADO - e mesmo assim o assistente fica
+// ATIVO, porque a recusa TEM TELA: "CALIBRACAO BLOQUEADA" por 2000 ms (D6 item 13). O main.cpp
+// lia so o Status, tratava como "nao abriu" e devolvia o display ao menu na hora. Resultado na
+// bancada: clicar em Auto Calibracao nao fazia absolutamente nada visivel, e o requisito da
+// tela de bloqueio nunca era cumprido.
+//
+// Quem decide se o assistente e do display e active(), NUNCA o Status de begin().
+static void test_recusa_por_limite_deixa_o_assistente_ATIVO_para_desenhar_a_tela(void) {
+    FakeClock clock;
+    FakeDisplay display;
+    AnalogCalibration cal;
+    CalibrationWizard assistente(cal, clock);
+
+    const Status abertura = assistente.begin(Axis::X, true);
+
+    TEST_ASSERT_TRUE(abertura.failed());
+    // ... e AINDA ASSIM dono do display:
+    TEST_ASSERT_TRUE(assistente.active());
+    TEST_ASSERT_TRUE(assistente.step() == Step::Blocked);
+    // sem jamais ter tomado a saida analogica
+    TEST_ASSERT_FALSE(assistente.overriding());
+    TEST_ASSERT_TRUE(telaMostra(assistente, display, kTelaBloqueada));
+
+    // e devolve o display sozinho quando o prazo vence
+    clock.advanceMs(CalibrationWizard::kBlockedMs);
+    assistente.tick();
+    TEST_ASSERT_FALSE(assistente.active());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_CAL_05_as_telas_literais_na_ordem_e_o_retorno_ao_modo_normal);
@@ -1155,6 +1186,7 @@ int main(int, char**) {
     RUN_TEST(test_A14_o_espelho_abaixo_de_6554_e_grampeado_em_6554);
     RUN_TEST(test_D6_item12_tela_CALIBRACAO_REJEITADA_por_2000_ms_e_aborto);
     RUN_TEST(test_D6_item13_tela_CALIBRACAO_BLOQUEADA_por_2000_ms);
+    RUN_TEST(test_recusa_por_limite_deixa_o_assistente_ATIVO_para_desenhar_a_tela);
     RUN_TEST(test_D6_item13_reentrada_e_gate_de_limite_tem_codigos_distintos);
     RUN_TEST(test_ihm_F5_e_F6_ignoram_toda_tecla_e_nao_reiniciam_o_prazo);
     RUN_TEST(test_key_gesture_flush_e_pedido_em_toda_troca_de_tela_e_de_modo);
