@@ -38,7 +38,14 @@ Scl3300 g_tilt(g_sclBus, board::kSclCs);
 Rs485Transport g_link;
 JigFrameSlave g_jigSlave;
 ModbusRtuSlave g_modbusSlave(board::kModbusSlaveId);
-ISlaveProtocol* g_activeProtocol = &g_jigSlave;
+// PADRAO DE BOOT = MODBUS RTU, que e o protocolo do PRODUTO: e o que a Unidade Remota
+// DE-PURI-DI261924 fala em operacao (FC03, id 1, 8 registradores de sensor_map.h, 19200 8N1).
+// O quadro do jig existe so para o firmware de teste de fabrica da supervisora, no item t3, e
+// entra por comando de console. O padrao anterior era o jig, e o efeito era este: sensora e
+// Unidade Remota subiam falando idiomas diferentes e a UR mostrava falha de comunicacao com o
+// cabo perfeito. "proto" e ponteiro em RAM e nao sobrevive ao ciclo de energia, entao trocar
+// pelo console resolvia ate a proxima energizacao - o padrao e que tinha de mudar.
+ISlaveProtocol* g_activeProtocol = &g_modbusSlave;
 SerialSensorIO g_io;
 
 uint16_t g_registers[sensormap::kRegCount];
