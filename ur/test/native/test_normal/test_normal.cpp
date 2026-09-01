@@ -409,15 +409,24 @@ static void test_A7_os_quatro_estados_de_falha_tem_a_propria_primeira_linha(void
     verificarQuadro(bancada.painel);
 }
 
-// Regra 3 do cabecalho de normal_screen.cpp: com a metrica do painel nenhuma das quatro
-// primeiras linhas de A7 cabe em fonte grande ("FALHA DO SENSOR", a mais curta, da 270 px em
-// 256 px de painel), entao a linha de falha e SEMPRE pequena e nao existe seletor de fonte.
+// Regra 3 do cabecalho de normal_screen.cpp, com o motivo CORRIGIDO em 2026-09-01. O motivo
+// escrito antes era largura, e vinha de uma metrica de fake errada: medido contra o u8g2 real,
+// "FALHA DO SENSOR" da 212 px em fonte grande e CABERIA nos 256 px do painel.
+//
+// O que realmente impede e a ALTURA. A tela de falha empilha cinco faixas - titulo, dica ou
+// rearme, leitura, rodape de contatos e rodape de saida - e o rodape e ancorado no pe da tela
+// porque contato de rele e informacao de seguranca que nao pode ser empurrada para fora. Cinco
+// linhas pequenas somam 5*13 = 65 px de passo em 64 px de painel, ja no limite; trocar a
+// primeira por uma de 28 px estoura em 16 px e apaga justamente o rodape.
 static void test_A7_a_linha_de_falha_e_desenhada_em_fonte_pequena(void) {
     Bancada bancada;
 
     bancada.ciclo(enlaceEmFalha(NormalLinkState::SensorFault));
 
-    TEST_ASSERT_EQUAL_UINT16(270u, bancada.painel.textWidthPx(TextFont::Large, "FALHA DO SENSOR"));
+    const uint16_t alturaGrande = bancada.painel.lineHeightPx(TextFont::Large);
+    const uint16_t alturaPequena = bancada.painel.lineHeightPx(TextFont::Small);
+    // titulo grande mais as quatro faixas pequenas que a tela de falha ainda deve
+    TEST_ASSERT_TRUE(alturaGrande + 4u * (alturaPequena + 1u) > bancada.painel.heightPx());
     TEST_ASSERT_EQUAL_UINT16(256u, bancada.painel.widthPx());
     bool achou = false;
     for (uint8_t i = 0; i < bancada.painel.drawCount(); ++i) {
@@ -938,6 +947,64 @@ static void test_IKEYPAD_reset_volta_a_principal_e_nao_deixa_gesto_atravessar(vo
     TEST_ASSERT_TRUE(bancada.tela.view() == NormalView::Main);
 }
 
+// --- LAYOUT (2026-09-01): a coluna de estado sobe de fonte quando cabe ----------------------
+//
+// Escolha do bigboss: a area de medicao (X:/Y:) NAO muda - duas linhas de 28 px ja ocupam 59
+// dos 64 px do painel e nao ha para onde crescer. Quem cresce e a coluna da direita, que e o
+// que o operador le de longe para saber o estado dos quatro contatos.
+//
+// A coluna so sobe quando TUDO cabe: se qualquer linha estourar a largura disponivel ou as
+// linhas necessarias nao couberem na altura, a coluna inteira volta para a fonte pequena. Nunca
+// se esconde uma linha de estado de rele para caber uma fonte maior - o inverso do que o
+// operador precisa num supervisor de seguranca.
+
+static void test_layout_coluna_de_estado_sobe_de_fonte_com_os_dois_eixos_no_mesmo_modo(void) {
+    Bancada bancada;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(enlaceSaudavel(455, -123)) == NormalRequest::None);
+
+    // a medicao continua na fonte grande
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X:+045,5") == TextFont::Large);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("Y:-012,3") == TextFont::Large);
+    // e a coluna da direita subiu
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Medium);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("Y1:-- Y2:--") == TextFont::Medium);
+    verificarQuadro(bancada.painel);
+}
+
+static void test_layout_coluna_de_estado_volta_para_a_fonte_pequena_quando_nao_cabe(void) {
+    // Durante a Auto Calibracao um eixo fica em CALIB e o outro segue em MEDICAO: a coluna
+    // passa a precisar de "SAIDA X:..." e "SAIDA Y:...", que nao cabem na largura em Medium.
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Calibrating;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Tracking;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("SAIDA X:"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("SAIDA Y:"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Small);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("SAIDA X:") == TextFont::Small);
+    verificarQuadro(bancada.painel);
+}
+
+static void test_layout_coluna_de_estado_nao_invade_a_area_de_medicao(void) {
+    // O X da coluna sai da largura REAL da fonte grande, e nao de um numero escrito a mao: se
+    // a fonte grande mudar, a coluna anda junto em vez de montar em cima do angulo.
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(-1800, 1800);
+    entrada.presetActive[kNormalAxisX] = true;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    const int16_t fimDoAngulo = static_cast<int16_t>(
+        bancada.painel.xOf("X:-180,0") +
+        bancada.painel.textWidthPx(TextFont::Large, "X:-180,0"));
+    TEST_ASSERT_TRUE(bancada.painel.xOf("X1:-- X2:--") > fimDoAngulo);
+    verificarQuadro(bancada.painel);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
@@ -955,6 +1022,9 @@ int main(int, char**) {
     RUN_TEST(test_A7_enlace_recuperado_com_latch_armado_continua_na_tela_de_rearme);
     RUN_TEST(test_A7_os_quatro_estados_de_falha_tem_a_propria_primeira_linha);
     RUN_TEST(test_A7_a_linha_de_falha_e_desenhada_em_fonte_pequena);
+    RUN_TEST(test_layout_coluna_de_estado_sobe_de_fonte_com_os_dois_eixos_no_mesmo_modo);
+    RUN_TEST(test_layout_coluna_de_estado_volta_para_a_fonte_pequena_quando_nao_cabe);
+    RUN_TEST(test_layout_coluna_de_estado_nao_invade_a_area_de_medicao);
     RUN_TEST(test_D3_NRM_02_down_percorre_as_telas_de_detalhe_e_volta);
     RUN_TEST(test_NRM_04_toque_simples_em_cima_nao_faz_nada_no_modo_normal);
     RUN_TEST(test_MAN_5_6_L152_duplo_toque_em_cima_chega_como_pset_e_nao_como_dois_toques);

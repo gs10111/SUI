@@ -36,7 +36,8 @@ namespace {
 // Coluna direita da tela principal. A maior linha da coluna ("SAIDA X:MEDICAO", 15 glifos)
 // cabe nos 106 px que sobram, e a maior linha da coluna esquerda ("X:+045,0" em fonte grande,
 // 144 px) termina antes daqui.
-constexpr int16_t kMainStatusX = 150;
+// Folga entre o fim da area de medicao e o comeco da coluna de estado.
+constexpr int16_t kStatusGapPx = 6;
 
 // Coluna do valor no detalhe: "+045,0" em fonte grande ocupa 108 px e fecha em 248.
 constexpr int16_t kDetailValueX = 140;
@@ -182,7 +183,11 @@ void NormalScreen::render(const NormalInput& in) {
 
 void NormalScreen::renderMain(const NormalInput& in) {
     const int16_t alturaGrande = static_cast<int16_t>(display_.lineHeightPx(TextFont::Large));
-    const int16_t passo = smallRowHeight();
+    // A coluna da direita sobe para a fonte maior quando cabe; o passo e a capacidade seguem a
+    // fonte escolhida, senao a coluna cresce e vaza pelo pe da tela.
+    const TextFont fonteEstado = statusFont(in);
+    const int16_t colunaX = statusColumnX();
+    const int16_t passo = rowHeight(fonteEstado);
 
     // DSP-01 e NRM-01: os DOIS eixos ao mesmo tempo, cada um com a sua identificacao. Leitura
     // ausente sai como o traco de Angle, nunca como zero - um zero seria uma medicao.
@@ -200,7 +205,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     const bool temPreset = in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY];
     const uint8_t necessarias =
         static_cast<uint8_t>(2u + (mesmoModo ? 1u : 2u) + (temPreset ? 1u : 0u));
-    const bool cabeEnlace = necessarias < statusRowCapacity();
+    const bool cabeEnlace = necessarias < rowCapacity(fonteEstado);
 
     int16_t linha = 0;
 
@@ -214,7 +219,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     limitesX.add(limitLabel(1));
     limitesX.add(":");
     limitesX.add(stateToken(in.limit[1].state));
-    drawAt(kMainStatusX, linha, limitesX.text(), TextFont::Small);
+    drawAt(colunaX, linha, limitesX.text(), fonteEstado);
     linha = static_cast<int16_t>(linha + passo);
 
     Line limitesY;
@@ -225,7 +230,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     limitesY.add(limitLabel(3));
     limitesY.add(":");
     limitesY.add(stateToken(in.limit[3].state));
-    drawAt(kMainStatusX, linha, limitesY.text(), TextFont::Small);
+    drawAt(colunaX, linha, limitesY.text(), fonteEstado);
     linha = static_cast<int16_t>(linha + passo);
 
     // Invariante 2 de docs/ihm-estados.md: o modo da saida e POR EIXO. Com os dois eixos no
@@ -235,7 +240,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
         Line saida;
         saida.add("SAIDA:");
         saida.add(analogText(in.analog[kNormalAxisX]));
-        drawAt(kMainStatusX, linha, saida.text(), TextFont::Small);
+        drawAt(colunaX, linha, saida.text(), fonteEstado);
         linha = static_cast<int16_t>(linha + passo);
     } else {
         for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
@@ -244,7 +249,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
             saida.add((eixo == kNormalAxisY) ? "Y" : "X");
             saida.add(":");
             saida.add(analogText(in.analog[eixo]));
-            drawAt(kMainStatusX, linha, saida.text(), TextFont::Small);
+            drawAt(colunaX, linha, saida.text(), fonteEstado);
             linha = static_cast<int16_t>(linha + passo);
         }
     }
@@ -253,7 +258,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // de mensagem como prova. E o unico campo que cede lugar quando a coluna enche (regra 4 do
     // cabecalho deste arquivo).
     if (cabeEnlace) {
-        drawAt(kMainStatusX, linha, "ENLACE OK", TextFont::Small);
+        drawAt(colunaX, linha, "ENLACE OK", fonteEstado);
         linha = static_cast<int16_t>(linha + passo);
     }
 
@@ -261,7 +266,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // relativa. Na tela principal cabe a INDICACAO de quais eixos estao deslocados; o valor do
     // deslocamento aparece na tela de detalhe do eixo, que tem largura para ele.
     if (temPreset) {
-        renderPresetMark(in, kMainStatusX, linha);
+        renderPresetMark(in, colunaX, linha, fonteEstado);
     }
 }
 
@@ -407,7 +412,7 @@ void NormalScreen::renderFault(const NormalInput& in) {
     // AGUARDANDO, COMUNICACAO e SENSOR): ali a leitura continua valendo e continua sendo
     // relativa ao Preset. Some da tela de falha e o operador perde a unica prova visivel disso.
     if (in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) {
-        renderPresetMark(in, kMainStatusX, linha);
+        renderPresetMark(in, statusColumnX(), linha, TextFont::Small);
     }
 
     Line limites;
@@ -451,7 +456,8 @@ void NormalScreen::renderHeartbeat(const NormalInput& in) {
                            kHeartbeatMarkPx, kHeartbeatMarkPx, true));
 }
 
-void NormalScreen::renderPresetMark(const NormalInput& in, int16_t x, int16_t y) {
+void NormalScreen::renderPresetMark(const NormalInput& in, int16_t x, int16_t y,
+                                    TextFont font) {
     Line preset;
     preset.add("PSET:");
     if (in.presetActive[kNormalAxisX]) {
@@ -460,7 +466,7 @@ void NormalScreen::renderPresetMark(const NormalInput& in, int16_t x, int16_t y)
     if (in.presetActive[kNormalAxisY]) {
         preset.add("Y");
     }
-    drawAt(x, y, preset.text(), TextFont::Small);
+    drawAt(x, y, preset.text(), font);
 }
 
 void NormalScreen::drawAt(int16_t x, int16_t y, const char* text, TextFont font) {
@@ -468,18 +474,84 @@ void NormalScreen::drawAt(int16_t x, int16_t y, const char* text, TextFont font)
 }
 
 int16_t NormalScreen::smallRowHeight() const {
-    return static_cast<int16_t>(display_.lineHeightPx(TextFont::Small) + 1);
+    return rowHeight(TextFont::Small);
+}
+
+int16_t NormalScreen::rowHeight(TextFont font) const {
+    return static_cast<int16_t>(display_.lineHeightPx(font) + 1);
+}
+
+// A coluna de estado comeca onde a area de medicao termina. O X sai da largura REAL da maior
+// leitura possivel na fonte grande ("X:-180,0"), e nao de um numero escrito a mao: trocar a
+// fonte grande passa a mover a coluna junto, em vez de deixar as duas montadas uma na outra.
+int16_t NormalScreen::statusColumnX() const {
+    return static_cast<int16_t>(kMargin + display_.textWidthPx(TextFont::Large, "X:-180,0") +
+                                kStatusGapPx);
+}
+
+TextFont NormalScreen::statusFont(const NormalInput& in) const {
+    const int16_t largura = static_cast<int16_t>(display_.widthPx() - statusColumnX());
+    if (largura <= 0) {
+        return TextFont::Small;
+    }
+
+    // As linhas nao existem ainda quando a fonte precisa ser escolhida, entao a decisao usa o
+    // PIOR CASO literal de cada campo. "MEDICAO" e o texto mais longo de analogText(), "AL" o
+    // mais longo de stateToken() e "PSET:XY" o preset dos dois eixos.
+    const bool mesmoModo = sameAnalogMode(in);
+    const uint16_t maior = maiorLarguraDaColuna(TextFont::Medium, mesmoModo);
+    if (maior > static_cast<uint16_t>(largura)) {
+        return TextFont::Small;
+    }
+
+    // Altura, com a regra que decide o empate: A FONTE MAIOR NUNCA PODE CUSTAR INFORMACAO.
+    // A conta nao e "as linhas obrigatorias cabem", e sim "cabe tudo o que a fonte pequena
+    // mostraria neste mesmo quadro" - inclusive o "ENLACE OK", que e o campo que cede lugar
+    // quando a coluna enche (regra 4 do cabecalho deste arquivo). Sem isto, ligar um Preset nos
+    // dois eixos apagaria o "ENLACE OK" da tela em troca de letra maior, e o operador perderia
+    // a confirmacao positiva de enlace vivo sem nada na tela explicando por que.
+    const uint8_t necessarias = static_cast<uint8_t>(
+        2u + (mesmoModo ? 1u : 2u) +
+        ((in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u));
+    const uint8_t comEnlace = static_cast<uint8_t>(
+        necessarias + ((necessarias < rowCapacity(TextFont::Small)) ? 1u : 0u));
+    if (comEnlace > rowCapacity(TextFont::Medium)) {
+        return TextFont::Small;
+    }
+    return TextFont::Medium;
+}
+
+uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo) const {
+    uint16_t maior = display_.textWidthPx(font, "X1:AL X2:AL");
+    const uint16_t saida = mesmoModo ? display_.textWidthPx(font, "SAIDA:MEDICAO")
+                                     : display_.textWidthPx(font, "SAIDA X:MEDICAO");
+    if (saida > maior) {
+        maior = saida;
+    }
+    const uint16_t enlace = display_.textWidthPx(font, "ENLACE OK");
+    if (enlace > maior) {
+        maior = enlace;
+    }
+    const uint16_t preset = display_.textWidthPx(font, "PSET:XY");
+    if (preset > maior) {
+        maior = preset;
+    }
+    return maior;
 }
 
 // Quantas linhas de fonte pequena cabem inteiras no painel: a ultima comeca em
 // (capacidade-1)*passo e tem de terminar dentro da altura.
 uint8_t NormalScreen::statusRowCapacity() const {
+    return rowCapacity(TextFont::Small);
+}
+
+uint8_t NormalScreen::rowCapacity(TextFont font) const {
     const int16_t altura = static_cast<int16_t>(display_.heightPx());
-    const int16_t linha = static_cast<int16_t>(display_.lineHeightPx(TextFont::Small));
+    const int16_t linha = static_cast<int16_t>(display_.lineHeightPx(font));
     if (altura < linha) {
         return 0;
     }
-    return static_cast<uint8_t>((altura - linha) / smallRowHeight() + 1);
+    return static_cast<uint8_t>((altura - linha) / rowHeight(font) + 1);
 }
 
 void NormalScreen::keep(Status status) {

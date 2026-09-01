@@ -23,13 +23,22 @@
 namespace domain {
 namespace {
 
-// Telas de uma e de duas linhas (editores, mensagens e o aviso de A9).
-constexpr int16_t kLinha1Y = 20;
-constexpr int16_t kLinha2Y = 44;
+// LAYOUT (2026-09-01): o texto FIXO encolhe e sobe para o canto superior esquerdo; o conteudo
+// que o operador le e escolhe ocupa o resto da tela em Medium. Papel de cada faixa:
+//   kRotuloY   - rotulo/cabecalho FIXO, Small (12 px), colado em (0,0)
+//   kConteudoY - item escolhido, opcao, mensagem: Medium (15 px)
+//   kDetalheY  - linha secundaria longa que NAO cabe em Medium: Small
+//   kEditorY   - editor numerico do manual, linha unica de 29 caracteres: so cabe em Small
+constexpr int16_t kRotuloY = 0;
+constexpr int16_t kConteudoY = 18;
+constexpr int16_t kDetalheY = 40;
+constexpr int16_t kEditorY = 24;
 
-// Lista deslizante: cabecalho e a janela de tres entradas (desvio declarado d do cabecalho).
-constexpr int16_t kListaCabecalhoY = 2;
-constexpr int16_t kListaItemY[MenuMachine::kListWindow] = {18, 32, 46};
+// Lista deslizante: cabecalho Small em y=0 e a janela de tres entradas Medium logo abaixo
+// (desvio declarado d do cabecalho). Os 14 px do primeiro item saem dos 12 px do cabecalho
+// mais 2 de folga: e essa faixa recuperada que devolve tela para as opcoes.
+constexpr int16_t kListaCabecalhoY = 0;
+constexpr int16_t kListaItemY[MenuMachine::kListWindow] = {14, 30, 46};
 
 // Campo de senha: "Senha de acesso:0000" (L98) e "Edita senha:1234" (L231), quatro digitos sem
 // sinal, faixa 0000 a 9999 da Tabela 1 (L131).
@@ -608,8 +617,8 @@ void MenuMachine::toNormal() {
 
 // --- desenho ---
 
-void MenuMachine::drawLine(int16_t y, const char* text) {
-    display_.drawText(0, y, text, TextFont::Small, TextInk::Normal);
+void MenuMachine::drawLine(int16_t y, const char* text, TextFont font) {
+    display_.drawText(0, y, text, font, TextInk::Normal);
 }
 
 void MenuMachine::drawList(const char* header, const char* const* items, uint8_t count,
@@ -622,16 +631,17 @@ void MenuMachine::drawList(const char* header, const char* const* items, uint8_t
             inicio = maxInicio;
         }
     }
-    drawLine(kListaCabecalhoY, header);
+    drawLine(kListaCabecalhoY, header, TextFont::Small);
     for (uint8_t i = 0; i < kListWindow && (inicio + i) < count; ++i) {
         const uint8_t indice = static_cast<uint8_t>(inicio + i);
-        display_.drawText(0, kListaItemY[i], items[indice], TextFont::Small,
+        display_.drawText(0, kListaItemY[i], items[indice], TextFont::Medium,
                           (indice == sel) ? TextInk::Inverse : TextInk::Normal);
     }
 }
 
-void MenuMachine::drawEditLine(int16_t y, const char* text, uint8_t inverseIndex) {
-    display_.drawText(0, y, text, TextFont::Small, TextInk::Normal);
+void MenuMachine::drawEditLine(int16_t y, const char* text, uint8_t inverseIndex,
+                              TextFont font) {
+    display_.drawText(0, y, text, font, TextInk::Normal);
     const size_t comprimento = strlen(text);
     if (inverseIndex >= comprimento) {
         return;
@@ -643,9 +653,11 @@ void MenuMachine::drawEditLine(int16_t y, const char* text, uint8_t inverseIndex
     }
     cabeca[i] = '\0';
     const char digito[2] = {text[inverseIndex], '\0'};
-    // REQ-DSP-04: o caractere em edicao e desenhado em Inverse por cima da linha inteira.
-    display_.drawText(static_cast<int16_t>(display_.textWidthPx(TextFont::Small, cabeca)), y,
-                      digito, TextFont::Small, TextInk::Inverse);
+    // REQ-DSP-04: o caractere em edicao e desenhado em Inverse por cima da linha inteira. A
+    // largura da cabeca TEM de ser medida na MESMA fonte que desenhou a linha, senao o retangulo
+    // invertido aterrissa em cima do digito errado.
+    display_.drawText(static_cast<int16_t>(display_.textWidthPx(font, cabeca)), y, digito, font,
+                      TextInk::Inverse);
 }
 
 uint8_t MenuMachine::buildFieldLine(const char* prefix) {
@@ -670,13 +682,14 @@ void MenuMachine::render() {
 
         case MenuState::Login: {
             const uint8_t prefixo = buildFieldLine(kPrefixoLogin);
-            drawEditLine(kLinha1Y, line_,
-                         static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()));
+            drawEditLine(kConteudoY, line_,
+                         static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
+                         TextFont::Medium);
             break;
         }
 
-        case MenuState::LoginErro: drawLine(kLinha1Y, kMsgSenhaIncorreta); break;
-        case MenuState::LoginBloqueado: drawLine(kLinha1Y, kMsgBloqueado); break;
+        case MenuState::LoginErro: drawLine(kConteudoY, kMsgSenhaIncorreta, TextFont::Medium); break;
+        case MenuState::LoginBloqueado: drawLine(kConteudoY, kMsgBloqueado, TextFont::Medium); break;
 
         // L112: a lista, com o item selecionado em Inverse (desvio declarado d).
         case MenuState::Menu: drawList(kCabecalhoMenu, kNomeItem, kItemCount, selTop_); break;
@@ -718,7 +731,10 @@ void MenuMachine::render() {
             n = appendTo(prefixo, kLineCap, n, kEtiquetaLimite[static_cast<uint8_t>(currentLimit())]);
             n = appendTo(prefixo, kLineCap, n, "(graus):");
             const uint8_t base = buildFieldLine(prefixo);
-            drawEditLine(kLinha1Y, line_, static_cast<uint8_t>(base + editor_.cursorTextIndex()));
+            // 29 caracteres: em Medium seriam 261 px num painel de 256. Fica em Small, e a
+            // linha continua literal como REQ-DSP-03 exige.
+            drawEditLine(kEditorY, line_, static_cast<uint8_t>(base + editor_.cursorTextIndex()),
+                         TextFont::Small);
             break;
         }
 
@@ -727,8 +743,8 @@ void MenuMachine::render() {
             uint8_t n = appendTo(line_, kLineCap, 0, "Operacao Limite ");
             n = appendTo(line_, kLineCap, n, kEtiquetaLimite[static_cast<uint8_t>(currentLimit())]);
             n = appendTo(line_, kLineCap, n, ":");
-            drawLine(kLinha1Y, line_);
-            drawLine(kLinha2Y, kNomeOperacao[opSel_]);
+            drawLine(kRotuloY, line_, TextFont::Small);
+            drawLine(kConteudoY, kNomeOperacao[opSel_], TextFont::Medium);
             break;
         }
 
@@ -737,28 +753,32 @@ void MenuMachine::render() {
             uint8_t n = appendTo(line_, kLineCap, 0, "Sentido Sensor ");
             n = appendTo(line_, kLineCap, n, (axis_ == Axis::X) ? "X" : "Y");
             n = appendTo(line_, kLineCap, n, ":");
-            drawLine(kLinha1Y, line_);
-            drawLine(kLinha2Y, kNomeSentido[dirSel_ & 1u]);
+            drawLine(kRotuloY, line_, TextFont::Small);
+            drawLine(kConteudoY, kNomeSentido[dirSel_ & 1u], TextFont::Medium);
             break;
         }
 
         // A9: aviso obrigatorio de 3 s, com o eixo e os dois limites a conferir (L199).
         case MenuState::AvisoSentido:
-            drawLine(kLinha1Y, (axis_ == Axis::X) ? kMsgSentidoX : kMsgSentidoY);
-            drawLine(kLinha2Y, (axis_ == Axis::X) ? kMsgPresetZeradoX : kMsgPresetZeradoY);
+            drawLine(kConteudoY, (axis_ == Axis::X) ? kMsgSentidoX : kMsgSentidoY,
+                     TextFont::Medium);
+            // "Preset zerado - confira X1 X2" tem 29 caracteres: so cabe em Small.
+            drawLine(kDetalheY, (axis_ == Axis::X) ? kMsgPresetZeradoX : kMsgPresetZeradoY,
+                     TextFont::Small);
             break;
 
         case MenuState::EditSenha: {
             const uint8_t prefixo = buildFieldLine(kPrefixoEditaSenha);
-            drawEditLine(kLinha1Y, line_,
-                         static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()));
+            drawEditLine(kConteudoY, line_,
+                         static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
+                         TextFont::Medium);
             break;
         }
 
-        case MenuState::Recusa: drawLine(kLinha1Y, recusaMsg_); break;
-        case MenuState::GravOk: drawLine(kLinha1Y, kMsgGravOk); break;
-        case MenuState::FalhaGrav: drawLine(kLinha1Y, kMsgFalhaGrav); break;
-        case MenuState::Revisao: drawLine(kLinha1Y, kMsgRevisao); break;
+        case MenuState::Recusa: drawLine(kConteudoY, recusaMsg_, TextFont::Medium); break;
+        case MenuState::GravOk: drawLine(kConteudoY, kMsgGravOk, TextFont::Medium); break;
+        case MenuState::FalhaGrav: drawLine(kConteudoY, kMsgFalhaGrav, TextFont::Medium); break;
+        case MenuState::Revisao: drawLine(kConteudoY, kMsgRevisao, TextFont::Medium); break;
     }
     display_.present();
 }

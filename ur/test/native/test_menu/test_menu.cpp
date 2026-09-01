@@ -1296,6 +1296,119 @@ static void test_A13_begin_desarma_o_prazo_de_mensagem_e_nao_ressuscita_o_menu(v
     TEST_ASSERT_EQUAL_INT(code(MenuState::Login), code(b.menu.state()));
 }
 
+namespace {
+
+// --- LAYOUT: parte fixa no canto, conteudo grande -------------------------------------------
+//
+// Pedido do bigboss em 2026-09-01: fontes maiores e, ao entrar no menu, a parte FIXA vai para o
+// canto superior esquerdo para sobrar tela para as opcoes. A regra que sai disso e verificavel:
+// cabecalho de lista em Small colado em (0,0); item de lista, opcao escolhida e mensagem em
+// Medium.
+//
+// A TELA DO EDITOR NUMERICO NAO SOBE DE FONTE, e isso e deliberado: "Valor Limite X1(graus):
+// +000,0" tem 29 caracteres e so cabe nos 256 px em Small. Parti-la em rotulo pequeno mais
+// campo grande contraria REQ-DSP-03, que exige a linha literal do manual - e mudanca de manual,
+// nao de layout. Fica registrado aqui para quem for propor a errata.
+//
+// O invariante geometrico e o que impede a regra de virar promessa: com fonte maior, uma linha
+// que antes cabia passa a vazar do painel ou a montar em cima da outra, e nenhum teste de
+// conteudo enxerga isso - a string continua "aparecendo".
+
+struct CaixaMenu {
+    int16_t x0;
+    int16_t y0;
+    int16_t x1;
+    int16_t y1;
+};
+
+CaixaMenu caixaMenuDoTexto(const FakeDisplay& painel, uint8_t indice) {
+    const FakeDisplay::Draw& d = painel.draw(indice);
+    const int16_t largura = static_cast<int16_t>(painel.textWidthPx(d.font, d.text));
+    const int16_t altura = static_cast<int16_t>(painel.lineHeightPx(d.font));
+    return CaixaMenu{d.x, d.y, static_cast<int16_t>(d.x + largura),
+                     static_cast<int16_t>(d.y + altura)};
+}
+
+bool intersectaMenu(const CaixaMenu& a, const CaixaMenu& b) {
+    return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+}
+
+// O digito em Inverse e desenhado POR CIMA da linha, de proposito (REQ-DSP-04): e o unico par
+// que pode se sobrepor, e so quando um dos dois e Inverse.
+void verificarQuadroMenu(const FakeDisplay& painel) {
+    TEST_ASSERT_TRUE(painel.drawCount() > 0u);
+    for (uint8_t i = 0; i < painel.drawCount(); ++i) {
+        const CaixaMenu a = caixaMenuDoTexto(painel, i);
+        const char* texto = painel.draw(i).text;
+        TEST_ASSERT_TRUE_MESSAGE(a.x0 >= 0, texto);
+        TEST_ASSERT_TRUE_MESSAGE(a.y0 >= 0, texto);
+        TEST_ASSERT_TRUE_MESSAGE(a.x1 <= 256, texto);
+        TEST_ASSERT_TRUE_MESSAGE(a.y1 <= 64, texto);
+        for (uint8_t j = static_cast<uint8_t>(i + 1u); j < painel.drawCount(); ++j) {
+            if (painel.draw(i).ink == TextInk::Inverse ||
+                painel.draw(j).ink == TextInk::Inverse) {
+                continue;
+            }
+            TEST_ASSERT_FALSE_MESSAGE(intersectaMenu(a, caixaMenuDoTexto(painel, j)), texto);
+        }
+    }
+}
+
+}  // namespace
+
+static void test_layout_cabecalho_fixo_fica_pequeno_no_canto_superior_esquerdo(void) {
+    Bancada b;
+    entrarNoMenu(b);
+
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Menu>"));
+    TEST_ASSERT_TRUE(b.tela.fontOf("Menu>") == TextFont::Small);
+    TEST_ASSERT_EQUAL_INT16(0, b.tela.xOf("Menu>"));
+    TEST_ASSERT_EQUAL_INT16(0, b.tela.yOf("Menu>"));
+    verificarQuadroMenu(b.tela);
+}
+
+static void test_layout_itens_da_lista_usam_a_fonte_maior(void) {
+    Bancada b;
+    entrarNoMenu(b);
+
+    TEST_ASSERT_TRUE(b.tela.fontOf("Voltar") == TextFont::Medium);
+    TEST_ASSERT_TRUE(b.tela.fontOf("Ajusta Preset") == TextFont::Medium);
+    // O primeiro item comeca logo ABAIXO do cabecalho de 12 px, e nao numa terceira faixa
+    // desperdicada: e este numero que devolve tela para as opcoes.
+    TEST_ASSERT_TRUE(b.tela.yOf("Voltar") >= 12);
+    TEST_ASSERT_TRUE(b.tela.yOf("Voltar") <= 16);
+    verificarQuadroMenu(b.tela);
+}
+
+static void test_layout_submenu_de_limite_tambem_cabe_com_a_fonte_maior(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Limite4);
+    toque(b, Key::Menu);
+
+    TEST_ASSERT_TRUE(b.tela.fontOf("Limite 4>") == TextFont::Small);
+    TEST_ASSERT_EQUAL_INT16(0, b.tela.yOf("Limite 4>"));
+    // "Operacao Limite Y2" e o item mais largo da IHM: 18 caracteres em Medium.
+    TEST_ASSERT_TRUE(b.tela.fontOf("Operacao Limite Y2") == TextFont::Medium);
+    verificarQuadroMenu(b.tela);
+}
+
+static void test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_tela(void) {
+    // REQ-DSP-03: a linha do manual e uma so, com rotulo e valor juntos. 29 caracteres so cabem
+    // nos 256 px em Small - por isso este e o unico texto da IHM que NAO sobe de fonte.
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Limite4);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+
+    TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(b.menu.state()));
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+000,0"));
+    TEST_ASSERT_TRUE(b.tela.fontOf("Valor Limite Y2(graus):+000,0") == TextFont::Small);
+    verificarQuadroMenu(b.tela);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -1331,5 +1444,9 @@ int main(int, char**) {
     RUN_TEST(test_A13_confirmacao_sem_alteracao_nao_marca_config_pendente);
     RUN_TEST(test_A13_gesto_em_tela_temporizada_e_ignorado);
     RUN_TEST(test_A13_begin_desarma_o_prazo_de_mensagem_e_nao_ressuscita_o_menu);
+    RUN_TEST(test_layout_cabecalho_fixo_fica_pequeno_no_canto_superior_esquerdo);
+    RUN_TEST(test_layout_itens_da_lista_usam_a_fonte_maior);
+    RUN_TEST(test_layout_submenu_de_limite_tambem_cabe_com_a_fonte_maior);
+    RUN_TEST(test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_tela);
     return UNITY_END();
 }

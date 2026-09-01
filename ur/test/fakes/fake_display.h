@@ -51,12 +51,31 @@ public:
     uint16_t widthPx() const override { return kWidthPx; }
     uint16_t heightPx() const override { return kHeightPx; }
 
+    // Espelham o alvo (src/adapters/ssd1322_display.cpp): Small = u8g2_font_6x12_tr,
+    // Medium = u8g2_font_9x15B_tr, Large = u8g2_font_t0_30b_tr. textWidthPx e LARGURA DE
+    // AVANCO. Os passos por glifo foram MEDIDOS contra o u8g2 real (u8g2_GetStrWidth sobre as
+    // strings desta IHM), e cada um esta arredondado PARA CIMA em ate 1 px:
+    //   Small  5,875 px/glifo medido -> 7 aqui
+    //   Medium 8,875 px/glifo medido -> 9 aqui
+    //   Large  14,125 px/glifo medido -> 15 aqui
+    // O arredondamento e sempre para cima de proposito: um fake mais GENEROSO que o alvo faz a
+    // suite mentir - o layout passaria no host e vazaria da tela na placa.
     uint8_t lineHeightPx(TextFont font) const override {
-        return (font == TextFont::Large) ? 28u : 12u;
+        switch (font) {
+            case TextFont::Large: return 28u;
+            case TextFont::Medium: return 15u;
+            default: break;
+        }
+        return 12u;
     }
 
     uint16_t textWidthPx(TextFont font, const char* text) const override {
-        const uint16_t perGlyph = (font == TextFont::Large) ? 18u : 7u;
+        uint16_t perGlyph = 7u;
+        if (font == TextFont::Large) {
+            perGlyph = 15u;
+        } else if (font == TextFont::Medium) {
+            perGlyph = 9u;
+        }
         return static_cast<uint16_t>(perGlyph * len(text));
     }
 
@@ -163,6 +182,24 @@ public:
     TextInk inkOf(const char* text) const {
         const uint8_t i = find(text);
         return (i < shown_) ? frame_[i].ink : TextInk::Normal;
+    }
+
+    // Qual degrau de fonte desenhou o texto, e onde. Sem isto, um teste de layout so consegue
+    // afirmar que a string apareceu - e "apareceu" e exatamente o que ja valia antes de a
+    // tela mudar de tamanho.
+    TextFont fontOf(const char* text) const {
+        const uint8_t i = find(text);
+        return (i < shown_) ? frame_[i].font : TextFont::Small;
+    }
+
+    int16_t xOf(const char* text) const {
+        const uint8_t i = find(text);
+        return (i < shown_) ? frame_[i].x : static_cast<int16_t>(-1);
+    }
+
+    int16_t yOf(const char* text) const {
+        const uint8_t i = find(text);
+        return (i < shown_) ? frame_[i].y : static_cast<int16_t>(-1);
     }
 
     // Um digito piscando e desenhado em Inverse: e assim que o teste prova REQ-DSP-04.

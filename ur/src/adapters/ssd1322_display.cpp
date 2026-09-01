@@ -37,14 +37,31 @@ constexpr uint16_t kColumnMarkX[Ssd1322Display::kColumnMarkCount] = {0, 64, 128,
 constexpr board::Pin kBusPins[] = {board::kDispSclk, board::kDispMosi, board::kDispDc,
                                    board::kDispCs};
 
+// Larguras MEDIDAS com u8g2_GetStrWidth sobre as strings desta IHM (nao estimadas):
+//   6x12_tr    5,875 px/glifo  -> "Valor Limite X1(graus):+000,0" = 173 px
+//   9x15B_tr   8,875 px/glifo  -> "SAIDA:MEDICAO" = 116 px, "Operacao Limite Y2" = 161 px
+//   t0_30b_tr 14,125 px/glifo  -> "X:-180,0" = 113 px, duas linhas empilhadas = 59 de 64 px
+// 9x15B foi o maior degrau que ainda deixa a coluna de estado caber ao lado da area de medicao
+// e o item de menu mais largo caber nos 256 px. O negrito e proposital: painel monocromatico
+// lido de longe num cais.
 const uint8_t* fontFor(TextFont font) {
-    return (font == TextFont::Large) ? u8g2_font_t0_30b_tr : u8g2_font_6x12_tr;
+    switch (font) {
+        case TextFont::Large: return u8g2_font_t0_30b_tr;
+        case TextFont::Medium: return u8g2_font_9x15B_tr;
+        case TextFont::Small: break;
+    }
+    return u8g2_font_6x12_tr;
 }
 
 }  // namespace
 
 Ssd1322Display::Ssd1322Display(RearmHook rearmWatchdogPin)
-    : u8g2_(U8G2_R0, static_cast<uint8_t>(board::kDispCs), static_cast<uint8_t>(board::kDispDc),
+    // U8G2_R2 = 180 graus. O painel do CN4 esta montado invertido na caixa: com R0 a imagem
+    // sai de cabeca para baixo para quem le o equipamento de frente. A rotacao e do ADAPTADOR
+    // de proposito - o dominio desenha sempre em (0,0) = canto superior esquerdo LOGICO, e nao
+    // pode saber como o vidro foi parafusado. Trocar isto inverte a tela inteira, inclusive o
+    // marcador de batimento em (247,55) e o deslocamento anti-burn-in.
+    : u8g2_(U8G2_R2, static_cast<uint8_t>(board::kDispCs), static_cast<uint8_t>(board::kDispDc),
             static_cast<uint8_t>(board::kDispReset)),
       rearm_(rearmWatchdogPin),
       originDx_(0),

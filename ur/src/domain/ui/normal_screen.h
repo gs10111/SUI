@@ -254,11 +254,19 @@ private:
     void renderDetail(const NormalInput& in, uint8_t axis);
     void renderFault(const NormalInput& in);
     void renderHeartbeat(const NormalInput& in);
-    void renderPresetMark(const NormalInput& in, int16_t x, int16_t y);
+    void renderPresetMark(const NormalInput& in, int16_t x, int16_t y, TextFont font);
 
     void drawAt(int16_t x, int16_t y, const char* text, TextFont font);
     int16_t smallRowHeight() const;
+    int16_t rowHeight(TextFont font) const;
     uint8_t statusRowCapacity() const;
+    uint8_t rowCapacity(TextFont font) const;
+    // Onde a coluna de estado comeca: logo depois da area de medicao, MEDIDA na fonte grande.
+    int16_t statusColumnX() const;
+    // Fonte da coluna de estado NESTE quadro: Medium quando toda linha necessaria cabe em
+    // largura e em altura, Small quando nao cabe. Nunca esconde linha para caber fonte maior.
+    TextFont statusFont(const NormalInput& in) const;
+    uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo) const;
 
     void keep(Status status);
 

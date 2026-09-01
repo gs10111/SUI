@@ -19,9 +19,15 @@
 
 #include "status.h"
 
+// TRES degraus, com papel fixo. A regra que separa Small de Medium nao e estetica: o painel tem
+// 256x64 px e a linha mais longa da IHM ("Valor Limite X1(graus):+000,0", 29 caracteres) so cabe
+// inteira em Small. Por isso o texto FIXO - cabecalho de menu, rotulo de campo, dica de falha -
+// desce para Small e se encolhe no canto, liberando o resto da tela para o que o operador
+// precisa ler de longe, que sobe para Medium.
 enum class TextFont : uint8_t {
-    Small = 0,  // legendas, rodape, itens de menu
-    Large,      // area de medicao (X: e Y:) e mensagens de falha
+    Small = 0,  // texto fixo: cabecalho no canto, rotulo de campo, dica, linha secundaria
+    Medium,     // conteudo: itens de menu, opcao escolhida, coluna de estado, mensagem
+    Large,      // area de medicao (X: e Y:) e o campo numerico em edicao
 };
 
 enum class TextInk : uint8_t {

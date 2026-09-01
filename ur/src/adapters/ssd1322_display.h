@@ -62,7 +62,8 @@
 // Quem para durante esses ms e o loopTask - botoes e IHM -, nao o ciclo de seguranca nem o
 // cachorro. Ainda assim: chamada de boot/recuperacao, nunca de ciclo.
 //
-// FONTES E METRICAS. Small = u8g2_font_6x12_tr, Large = u8g2_font_t0_30b_tr, ambas "_tr" (ASCII
+// FONTES E METRICAS. Small = u8g2_font_6x12_tr, Medium = u8g2_font_9x15B_tr,
+// Large = u8g2_font_t0_30b_tr, todas "_tr" (ASCII
 // puro, sem acentuacao) pela politica da Decisao 12 item 16. lineHeightPx() e textWidthPx() NAO
 // sao numeros escritos a mao: saem de u8g2_.getMaxCharHeight() e de u8g2_.getUTF8Width() da fonte
 // carregada. Com getMaxCharHeight = 12 px em Small, o NormalScreen::statusRowCapacity() do

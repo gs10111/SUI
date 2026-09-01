@@ -315,13 +315,13 @@ private:
 
     // --- desenho ---
     void render();
-    void drawLine(int16_t y, const char* text);
+    void drawLine(int16_t y, const char* text, TextFont font);
     // Cabecalho mais a janela de kListWindow entradas em torno da selecao, com o item
     // selecionado em Inverse (desvio declarado d).
     void drawList(const char* header, const char* const* items, uint8_t count, uint8_t sel);
     // Desenha a linha inteira em Normal e repinta em Inverse o caractere do cursor: e assim
     // que o digito em edicao "pisca" (REQ-DSP-04). Indice fora da linha nao pinta nada.
-    void drawEditLine(int16_t y, const char* text, uint8_t inverseIndex);
+    void drawEditLine(int16_t y, const char* text, uint8_t inverseIndex, TextFont font);
     // Monta prefixo + campo formatado em line_ e devolve o comprimento do prefixo, que e o
     // deslocamento do cursor do editor dentro da linha inteira.
     uint8_t buildFieldLine(const char* prefix);
