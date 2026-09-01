@@ -90,6 +90,8 @@
 #include "status.h"
 
 #include "domain/ui/normal_screen.h"
+#include "domain/ui/preset_wizard.h"
+#include "ports/i_display.h"
 
 namespace app {
 
@@ -335,5 +337,12 @@ private:
 // tela nenhuma. Aqui, um teste consegue exigir que cada campo atravesse.
 domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
                                      const domain::Parameters& params);
+
+// Tela de edicao do Preset. Estava dentro de src/main.cpp, que nao compila no env native: a
+// unica tela que grava o offset dos quatro pontos de atuacao de um eixo nao tinha teste nenhum.
+// Mesma armadilha de buildNormalInput, mesma correcao - desce para uma camada que a suite
+// alcanca, e o composition root vira encaminhamento de uma linha.
+void renderPresetEdit(IDisplay& display, const domain::ui::PresetWizard& preset,
+                      domain::Axis axis);
 
 }  // namespace app

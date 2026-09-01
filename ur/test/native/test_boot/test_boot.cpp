@@ -415,6 +415,61 @@ static void test_o_autoteste_sob_demanda_nunca_arma_o_reset_de_fabrica(void) {
     TEST_ASSERT_FALSE(rig.boot.takeFactoryReset());
 }
 
+// --- GEOMETRIA DAS TELAS DE ENERGIZACAO ------------------------------------------------------
+//
+// Ate 2026-09-01 estas telas nao tinham nenhuma afirmacao de geometria: BootSequence::centered()
+// CLAMPA x em 0 quando o texto e mais largo que o painel, entao um texto grande demais nao
+// estoura nada - ele so vaza pela direita, em silencio, e a suite continua verde porque
+// showsExactly() so olha a string. Sao as duas primeiras telas que o cliente ve e as unicas em
+// fonte grande fora da area de medicao.
+static void conferirGeometriaBoot(const FakeDisplay& display) {
+    TEST_ASSERT_TRUE(display.drawCount() > 0u);
+    for (uint8_t i = 0; i < display.drawCount(); ++i) {
+        const FakeDisplay::Draw& d = display.draw(i);
+        const int32_t x1 = static_cast<int32_t>(d.x) +
+                           static_cast<int32_t>(display.textWidthPx(d.font, d.text));
+        const int32_t y1 = static_cast<int32_t>(d.y) +
+                           static_cast<int32_t>(display.lineHeightPx(d.font));
+        TEST_ASSERT_TRUE_MESSAGE(d.x >= 0, d.text);
+        TEST_ASSERT_TRUE_MESSAGE(d.y >= 0, d.text);
+        TEST_ASSERT_TRUE_MESSAGE(x1 <= static_cast<int32_t>(display.widthPx()), d.text);
+        TEST_ASSERT_TRUE_MESSAGE(y1 <= static_cast<int32_t>(display.heightPx()), d.text);
+        for (uint8_t j = static_cast<uint8_t>(i + 1u); j < display.drawCount(); ++j) {
+            const FakeDisplay::Draw& o = display.draw(j);
+            const int32_t ox1 = static_cast<int32_t>(o.x) +
+                                static_cast<int32_t>(display.textWidthPx(o.font, o.text));
+            const int32_t oy1 = static_cast<int32_t>(o.y) +
+                                static_cast<int32_t>(display.lineHeightPx(o.font));
+            const bool cruza = d.x < ox1 && o.x < x1 && d.y < oy1 && o.y < y1;
+            TEST_ASSERT_FALSE_MESSAGE(cruza, d.text);
+        }
+    }
+}
+
+static void test_logo_cabe_no_painel_e_nao_monta_a_marca_sobre_o_modelo(void) {
+    Rig rig;
+    rig.power(0);
+    rig.stepUntilMs(rig.bootAtMs + kSetupMs + BootSequence::kSelfTestMs + 60u);
+
+    TEST_ASSERT_TRUE(rig.boot.stage() == BootSequence::Stage::Logo);
+    TEST_ASSERT_TRUE(rig.display.showsExactly(BootSequence::kTextBrand));
+    TEST_ASSERT_TRUE(rig.display.showsExactly(BootSequence::kTextModel));
+    conferirGeometriaBoot(rig.display);
+}
+
+static void test_mensagens_de_energizacao_cabem_no_painel(void) {
+    // "RESET DE FABRICA" tem 16 caracteres em fonte grande: e o texto mais largo que a IHM
+    // desenha em Large fora da area de medicao.
+    Rig rig;
+    rig.keypad.press(Key::Up);
+    rig.power(BootSequence::kMaskUp);
+    rig.stepUntilMs(rig.bootAtMs + BootSequence::kResetHoldMs + 60u);
+
+    TEST_ASSERT_TRUE(rig.boot.stage() == BootSequence::Stage::ResetMessage);
+    TEST_ASSERT_TRUE(rig.display.showsExactly(BootSequence::kTextFactoryReset));
+    conferirGeometriaBoot(rig.display);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_os_prazos_publicados_sao_os_numeros_da_decisao);
@@ -433,5 +488,7 @@ int main(int, char**) {
     RUN_TEST(test_D12_item8_o_autoteste_sob_demanda_so_sai_depois_que_a_tecla_e_solta);
     RUN_TEST(test_D12_item8_o_autoteste_sob_demanda_tem_teto_de_30000_ms);
     RUN_TEST(test_o_autoteste_sob_demanda_nunca_arma_o_reset_de_fabrica);
+    RUN_TEST(test_logo_cabe_no_painel_e_nao_monta_a_marca_sobre_o_modelo);
+    RUN_TEST(test_mensagens_de_energizacao_cabem_no_painel);
     return UNITY_END();
 }

@@ -39,7 +39,9 @@
 
 #include "domain/parameters.h"
 #include "domain/ui/preset_wizard.h"
+#include "app/application.h"
 #include "fakes/fake_clock.h"
+#include "fakes/fake_display.h"
 
 using domain::Angle;
 using domain::Axis;
@@ -50,6 +52,7 @@ using domain::ui::PresetMenuItem;
 using domain::ui::PresetWizard;
 using domain::ui::PsetOutcome;
 using test::FakeClock;
+using test::FakeDisplay;
 
 namespace {
 
@@ -833,6 +836,104 @@ static void test_D1_telas_de_recusa_do_pset_sao_byte_a_byte(void) {
     TEST_ASSERT_EQUAL_STRING("Instavel, refaca!", PresetWizard::kRefusedUnstableText);
 }
 
+// --- TELA DE EDICAO DO PRESET ---------------------------------------------------------------
+//
+// Ate 2026-09-01 esta tela era desenhada dentro de src/main.cpp, que NAO compila no env native:
+// nenhum teste a alcancava. E a mesma armadilha que ja custou a Emenda 2 (buildNormalInput no
+// composition root, campo novo que nunca chegava a tela e suite verde o tempo todo). Mudar a
+// fonte da IHM sem este teste seria mexer as cegas justamente na tela que grava o offset dos
+// quatro pontos de atuacao.
+
+struct TelaPreset {
+    FakeClock relogio;
+    FakeDisplay tela;
+    PresetWizard preset;
+    Parameters params;
+
+    TelaPreset() : relogio(), tela(), preset(relogio), params(Parameters::factoryDefaults()) {}
+
+    void abrir(Axis eixo) {
+        TEST_ASSERT_TRUE(preset.beginEdit(eixo, params));
+        app::renderPresetEdit(tela, preset, eixo);
+    }
+};
+
+static void verificarQuadroPreset(const FakeDisplay& painel) {
+    TEST_ASSERT_TRUE(painel.drawCount() > 0u);
+    for (uint8_t i = 0; i < painel.drawCount(); ++i) {
+        const FakeDisplay::Draw& d = painel.draw(i);
+        const int16_t x1 =
+            static_cast<int16_t>(d.x + painel.textWidthPx(d.font, d.text));
+        const int16_t y1 = static_cast<int16_t>(d.y + painel.lineHeightPx(d.font));
+        TEST_ASSERT_TRUE_MESSAGE(d.x >= 0, d.text);
+        TEST_ASSERT_TRUE_MESSAGE(d.y >= 0, d.text);
+        TEST_ASSERT_TRUE_MESSAGE(x1 <= 256, d.text);
+        TEST_ASSERT_TRUE_MESSAGE(y1 <= 64, d.text);
+    }
+}
+
+static void test_tela_de_preset_x_sai_com_o_texto_do_manual_e_cabe_no_painel(void) {
+    TelaPreset t;
+    t.abrir(Axis::X);
+
+    TEST_ASSERT_TRUE(t.tela.showsExactly("Preset X:+000,0"));
+    TEST_ASSERT_TRUE(t.tela.fontOf("Preset X:+000,0") == TextFont::Medium);
+    verificarQuadroPreset(t.tela);
+}
+
+static void test_tela_de_preset_y_traz_a_etiqueta_do_proprio_eixo(void) {
+    TelaPreset t;
+    t.abrir(Axis::Y);
+
+    TEST_ASSERT_TRUE(t.tela.showsExactly("Preset Y:+000,0"));
+    TEST_ASSERT_FALSE(t.tela.shows("Preset X"));
+    verificarQuadroPreset(t.tela);
+}
+
+// REQ-DSP-04: o digito em edicao pisca. O retangulo invertido tem de aterrissar sobre o digito
+// APONTADO pelo cursor - medido na MESMA fonte que desenhou a linha. Com a fonte da linha e a
+// da medicao diferentes, o realce cai em cima do digito errado e o operador grava outro valor.
+static void test_tela_de_preset_marca_o_digito_do_cursor_na_posicao_certa(void) {
+    TelaPreset t;
+    t.abrir(Axis::X);
+
+    TEST_ASSERT_TRUE(t.tela.hasInverse());
+    const char* prefixo = "Preset X:";
+    const uint16_t larguraPrefixo = t.tela.textWidthPx(TextFont::Medium, prefixo);
+    const uint8_t cursor = t.preset.editCursorTextIndex();
+
+    bool achou = false;
+    for (uint8_t i = 0; i < t.tela.drawCount(); ++i) {
+        if (t.tela.draw(i).ink != TextInk::Inverse) {
+            continue;
+        }
+        achou = true;
+        TEST_ASSERT_TRUE(t.tela.draw(i).font == TextFont::Medium);
+        char cabeca[32];
+        const char* linha = "Preset X:+000,0";
+        const uint8_t corte = static_cast<uint8_t>(9u + cursor);
+        uint8_t k = 0;
+        for (; k < corte; ++k) {
+            cabeca[k] = linha[k];
+        }
+        cabeca[k] = '\0';
+        TEST_ASSERT_EQUAL_INT16(static_cast<int16_t>(t.tela.textWidthPx(TextFont::Medium, cabeca)),
+                                t.tela.draw(i).x);
+        TEST_ASSERT_TRUE(larguraPrefixo <= static_cast<uint16_t>(t.tela.draw(i).x));
+    }
+    TEST_ASSERT_TRUE(achou);
+}
+
+static void test_tela_de_preset_acompanha_o_valor_editado(void) {
+    TelaPreset t;
+    t.abrir(Axis::X);
+    t.preset.editUp();
+    app::renderPresetEdit(t.tela, t.preset, Axis::X);
+
+    TEST_ASSERT_TRUE(t.tela.showsExactly("Preset X:+000,1"));
+    verificarQuadroPreset(t.tela);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_PST_01_programa_preset_x_em_um_decimo_de_grau);
@@ -875,5 +976,9 @@ int main(int, char**) {
     RUN_TEST(test_PST_04_preset_e_offset_sobrevivem_ao_registro_gravado);
     RUN_TEST(test_MAN_5_6_L148_submenu_preset_voltar_preset_x_preset_y);
     RUN_TEST(test_D1_telas_de_recusa_do_pset_sao_byte_a_byte);
+    RUN_TEST(test_tela_de_preset_x_sai_com_o_texto_do_manual_e_cabe_no_painel);
+    RUN_TEST(test_tela_de_preset_y_traz_a_etiqueta_do_proprio_eixo);
+    RUN_TEST(test_tela_de_preset_marca_o_digito_do_cursor_na_posicao_certa);
+    RUN_TEST(test_tela_de_preset_acompanha_o_valor_editado);
     return UNITY_END();
 }

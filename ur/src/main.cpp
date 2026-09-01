@@ -542,35 +542,9 @@ void serviceCalibration() {
 }
 
 void renderPresetEdit() {
-    char field[domain::DigitEditor::kTextCap];
-    if (!g_preset.formatEdit(field, domain::DigitEditor::kTextCap)) {
-        return;
-    }
-    char line[kLineCap];
-    const char* prefix = (g_presetAxis == domain::Axis::X) ? "Preset X:" : "Preset Y:";
-    uint8_t used = 0;
-    for (; prefix[used] != '\0' && used < (kLineCap - 1u); ++used) {
-        line[used] = prefix[used];
-    }
-    const uint8_t prefixLen = used;
-    for (uint8_t i = 0; field[i] != '\0' && used < (kLineCap - 1u); ++i, ++used) {
-        line[used] = field[i];
-    }
-    line[used] = '\0';
-    g_display.clear();
-    g_display.drawText(0, kEditLineY, line, TextFont::Small, TextInk::Normal);
-    const uint8_t cursor = static_cast<uint8_t>(prefixLen + g_preset.editCursorTextIndex());
-    if (cursor < used) {
-        char head[kLineCap];
-        for (uint8_t i = 0; i < cursor; ++i) {
-            head[i] = line[i];
-        }
-        head[cursor] = '\0';
-        const char glyph[2] = {line[cursor], '\0'};
-        g_display.drawText(static_cast<int16_t>(g_display.textWidthPx(TextFont::Small, head)),
-                           kEditLineY, glyph, TextFont::Small, TextInk::Inverse);
-    }
-    g_display.present();
+    // A tela mora em src/app/application.cpp: aqui ela nao compila no env native e nenhum teste
+    // a alcanca. Este e o encaminhamento de uma linha.
+    app::renderPresetEdit(g_display, g_preset, g_presetAxis);
 }
 
 void servicePresetEdit() {

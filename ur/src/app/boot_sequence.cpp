@@ -12,9 +12,16 @@ namespace app {
 
 namespace {
 
-constexpr int16_t kBrandY = 30;
+// Coordenadas corrigidas em 2026-09-01, quando o invariante geometrico entrou em test_boot e
+// mostrou duas violacoes reais que nenhuma afirmacao de conteudo enxergava:
+//   kBrandY = 30 punha a caixa da marca em 30..58 sobre a do modelo em 52..64 (6 px de
+//   sobreposicao), e kMessageY = 40 punha a mensagem em 40..68, quatro px FORA de um painel de
+//   64. Nao aparecia porque a fonte grande tem 28 px de caixa e so cerca de 19 de tinta acima
+//   da linha de base: a folga estava vindo de acaso de desenho da fonte, e nao do layout.
+// Agora: marca 24..52, modelo 52..64, mensagem 34..62 - tudo dentro e sem cruzamento.
+constexpr int16_t kBrandY = 24;
 constexpr int16_t kModelY = 52;
-constexpr int16_t kMessageY = 40;
+constexpr int16_t kMessageY = 34;
 constexpr int16_t kSelfTestTextY = 12;
 
 }  // namespace

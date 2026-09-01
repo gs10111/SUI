@@ -565,4 +565,50 @@ Application::Snapshot Application::snapshot() const {
     return pub_;
 }
 
+void renderPresetEdit(IDisplay& display, const domain::ui::PresetWizard& preset,
+                      domain::Axis axis) {
+    char campo[domain::DigitEditor::kTextCap];
+    if (!preset.formatEdit(campo, domain::DigitEditor::kTextCap)) {
+        return;
+    }
+
+    constexpr uint8_t kLineCap = 40;
+    // A linha inteira sobe para Medium: "Preset X:+000,0" tem 15 caracteres e da 133 px dos 256
+    // do painel, entao aqui nao existe o aperto de largura que segura o editor de Valor Limite
+    // em Small.
+    constexpr TextFont kFonte = TextFont::Medium;
+    constexpr int16_t kLinhaY = 24;
+
+    char linha[kLineCap];
+    const char* prefixo = (axis == domain::Axis::X) ? "Preset X:" : "Preset Y:";
+    uint8_t usado = 0;
+    for (; prefixo[usado] != '\0' && usado < (kLineCap - 1u); ++usado) {
+        linha[usado] = prefixo[usado];
+    }
+    const uint8_t tamanhoPrefixo = usado;
+    for (uint8_t i = 0; campo[i] != '\0' && usado < (kLineCap - 1u); ++i, ++usado) {
+        linha[usado] = campo[i];
+    }
+    linha[usado] = '\0';
+
+    display.clear();
+    display.drawText(0, kLinhaY, linha, kFonte, TextInk::Normal);
+
+    // REQ-DSP-04: o digito em edicao em video reverso, por cima da linha. A largura da cabeca e
+    // medida na MESMA fonte que desenhou a linha - com fontes diferentes o realce aterrissa em
+    // cima do digito errado e o operador grava outro valor.
+    const uint8_t cursor = static_cast<uint8_t>(tamanhoPrefixo + preset.editCursorTextIndex());
+    if (cursor < usado) {
+        char cabeca[kLineCap];
+        for (uint8_t i = 0; i < cursor; ++i) {
+            cabeca[i] = linha[i];
+        }
+        cabeca[cursor] = '\0';
+        const char glifo[2] = {linha[cursor], '\0'};
+        display.drawText(static_cast<int16_t>(display.textWidthPx(kFonte, cabeca)), kLinhaY,
+                         glifo, kFonte, TextInk::Inverse);
+    }
+    display.present();
+}
+
 }  // namespace app
