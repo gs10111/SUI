@@ -519,6 +519,20 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
             g_gesture.flush();
             break;
         }
+        // ZERAR PRESET: nao abre assistente. O menu continua dono do display mostrando o aviso
+        // obrigatorio de 3 s enquanto a gravacao acontece aqui. Se a gravacao reprovar, a
+        // mensagem de falha entra por cima do aviso - anunciar "zerado" sobre um offset que
+        // continua no lugar seria a mentira na direcao perigosa.
+        case domain::MenuAction::ZerarPreset: {
+            const Status st = g_preset.clearOffsets(g_params);
+            if (st.ok()) {
+                publishAndPersist(kDirtyParams);
+                g_menu.adoptExternalChanges();
+            } else {
+                showMessage(kMsgSaveFailed);
+            }
+            break;
+        }
         case domain::MenuAction::None: break;
     }
 }

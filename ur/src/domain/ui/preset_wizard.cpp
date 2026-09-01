@@ -116,6 +116,12 @@ void PresetWizard::cancelCapture() {
     capturing_ = false;
 }
 
+Status PresetWizard::clearOffsets(Parameters& params) const {
+    const Status x = params.setPresetOffset(Axis::X, 0);
+    const Status y = params.setPresetOffset(Axis::Y, 0);
+    return x.failed() ? x : y;
+}
+
 PsetOutcome PresetWizard::commitCapture(Parameters& params) {
     if (!capturing_) {
         return PsetOutcome::Ignored;

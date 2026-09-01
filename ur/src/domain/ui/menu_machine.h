@@ -164,6 +164,8 @@ enum class MenuState : uint8_t {
     EditOperacao,    // E3
     EditSentido,     // E4
     AvisoSentido,    // E4b: A9, o aviso obrigatorio de 3 s da troca de sentido
+    AvisoPresetZerado,  // aviso obrigatorio de 3 s do "Zerar Preset": mover o zero desloca os
+                        // quatro pontos de atuacao, exatamente como a troca de sentido
     EditSenha,       // E5
     Recusa,          // A13: valor fora de faixa, sem clamp silencioso
     GravOk,          // E7: "Alteracao bem sucedida!"
@@ -181,12 +183,18 @@ enum class MenuAction : uint8_t {
     AjustaPresetY,
     AutoCalibracaoX,
     AutoCalibracaoY,
+    // Devolve a leitura ao angulo cru nos dois eixos. Nao abre assistente: o menu continua dono
+    // do display e mostra o aviso obrigatorio enquanto o composition root grava.
+    ZerarPreset,
 };
 
 class MenuMachine {
 public:
     static constexpr uint8_t kItemCount = 10;
     static constexpr uint8_t kSubItemCount = 3;
+    // O submenu de Preset tem um item a mais - "Zerar Preset" - desde 2026-09-01. Os de Auto
+    // Calibracao e Sentido continuam com tres. E errata do manual 5.6, que lista tres.
+    static constexpr uint8_t kSubItemCountPreset = 4;
     static constexpr uint8_t kLimitOpCount = 4;
 
     // Quantos itens da lista cabem por vez na janela deslizante (desvio declarado d).
@@ -226,6 +234,8 @@ public:
     // A9: aviso obrigatorio da troca de sentido, com o eixo e os dois limites a conferir.
     static constexpr const char* kMsgSentidoX = "Sentido X alterado!";
     static constexpr const char* kMsgSentidoY = "Sentido Y alterado!";
+    static constexpr const char* kMsgPresetZerado1 = "PRESET ZERADO";
+    static constexpr const char* kMsgPresetZerado2 = "confira X1 X2 Y1 Y2";
     static constexpr const char* kMsgPresetZeradoX = "Preset zerado - confira X1 X2";
     static constexpr const char* kMsgPresetZeradoY = "Preset zerado - confira Y1 Y2";
 
@@ -286,6 +296,7 @@ public:
     // rascunho de limites, operacoes, sentido e senha fica intocado, senao a adocao descartaria
     // a edicao pendente que ela deveria preservar.
     void adoptExternalChanges();
+    uint8_t subItemCount() const;
 
 
     static const char* itemName(MenuItem menuItem);

@@ -65,7 +65,8 @@ const char* const kEtiquetaLimite[Parameters::kLimitCount] = {"X1", "X2", "Y1", 
 
 // Submenu de eixo: L148 imprime o de Preset; os de Auto Calibracao e Sentido do Sensor seguem
 // a mesma forma (docs/ihm-estados.md 3.4, D3 e D5).
-const char* const kItemPreset[MenuMachine::kSubItemCount] = {"Voltar", "Preset X", "Preset Y"};
+const char* const kItemPreset[MenuMachine::kSubItemCountPreset] = {"Voltar", "Preset X",
+                                                                   "Preset Y", "Zerar Preset"};
 const char* const kItemAutoCal[MenuMachine::kSubItemCount] = {"Voltar", "Auto Calibracao X",
                                                               "Auto Calibracao Y"};
 const char* const kItemSentido[MenuMachine::kSubItemCount] = {"Voltar", "Sentido Sensor X",
@@ -165,6 +166,11 @@ bool MenuMachine::takeAction(MenuAction& out) {
     return true;
 }
 
+// Quantos itens o submenu corrente tem. So o de Preset tem quatro.
+uint8_t MenuMachine::subItemCount() const {
+    return (subKind_ == SubKind::Preset) ? kSubItemCountPreset : kSubItemCount;
+}
+
 void MenuMachine::adoptExternalChanges() {
     const Axis eixos[Parameters::kAxisCount] = {Axis::X, Axis::Y};
     for (uint8_t i = 0; i < Parameters::kAxisCount; ++i) {
@@ -226,6 +232,7 @@ void MenuMachine::onGesture(const Gesture& gesture) {
         case MenuState::GravOk:
         case MenuState::FalhaGrav:
         case MenuState::AvisoSentido:
+        case MenuState::AvisoPresetZerado:
         case MenuState::Assistente: break;
     }
     if (dirty_) {
@@ -321,13 +328,21 @@ void MenuMachine::onSubEixo(const Gesture& gesture) {
         return;
     }
     if (gesture.key == Key::Up || gesture.key == Key::Down) {
-        selSub_ = stepCircular(selSub_, kSubItemCount, gesture.key == Key::Down);
+        selSub_ = stepCircular(selSub_, subItemCount(), gesture.key == Key::Down);
         dirty_ = true;
         return;
     }
     if (selSub_ == 0) {
         state_ = MenuState::Menu;
         dirty_ = true;
+        return;
+    }
+    // "Zerar Preset" e o quarto item, e so existe no submenu de Preset. Nao abre assistente: o
+    // menu continua dono do display e exibe o aviso obrigatorio enquanto o composition root
+    // grava. O aviso e o mesmo gesto de A9 - mover o zero desloca os quatro pontos de atuacao.
+    if (subKind_ == SubKind::Preset && selSub_ == 3) {
+        action_ = MenuAction::ZerarPreset;
+        showMessage(MenuState::AvisoPresetZerado, MenuState::SubEixo, kDirWarnMs);
         return;
     }
     const Axis eixo = (selSub_ == 1) ? Axis::X : Axis::Y;
@@ -735,7 +750,7 @@ void MenuMachine::render() {
                 itens = kItemSentido;
                 cabecalho = kCabecalhoSentido;
             }
-            drawList(cabecalho, itens, kSubItemCount, selSub_);
+            drawList(cabecalho, itens, subItemCount(), selSub_);
             break;
         }
 
@@ -792,6 +807,11 @@ void MenuMachine::render() {
         }
 
         // A9: aviso obrigatorio de 3 s, com o eixo e os dois limites a conferir (L199).
+        case MenuState::AvisoPresetZerado:
+            drawLine(kConteudoY, kMsgPresetZerado1, contentFont(kMsgPresetZerado1));
+            drawLine(kDetalheY, kMsgPresetZerado2, contentFont(kMsgPresetZerado2));
+            break;
+
         case MenuState::AvisoSentido: {
             const char* aviso = (axis_ == Axis::X) ? kMsgSentidoX : kMsgSentidoY;
             const char* detalhe = (axis_ == Axis::X) ? kMsgPresetZeradoX : kMsgPresetZeradoY;

@@ -1479,6 +1479,75 @@ static void test_adotar_o_externo_nao_descarta_a_edicao_pendente_do_menu(void) {
     TEST_ASSERT_EQUAL_INT16(55, b.menu.draft().presetOffsetDeci(Axis::Y));
 }
 
+// --- ZERAR PRESET (decisao do bigboss, 2026-09-01) --------------------------------------------
+//
+// Sem este caminho, a unica saida de uma captura feita em posicao errada era o Reset Geral, que
+// leva junto os quatro limites programados. Preco alto demais para desfazer um gesto de 3 s -
+// e numa UR de cais significa reprogramar quatro setpoints de seguranca.
+//
+// O item e o QUARTO do submenu de Preset. Os submenus de Auto Calibracao e Sentido continuam
+// com tres: um item a mais neles seria tela inventada.
+static void test_submenu_de_preset_tem_o_quarto_item_zerar(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::AjustaPreset);
+    toque(b, Key::Menu);
+
+    TEST_ASSERT_EQUAL_INT(code(MenuState::SubEixo), code(b.menu.state()));
+    TEST_ASSERT_EQUAL_UINT8(4u, b.menu.subItemCount());
+    // A janela mostra tres por vez; descer ate o quarto o traz para a tela.
+    toque(b, Key::Down);
+    toque(b, Key::Down);
+    toque(b, Key::Down);
+    TEST_ASSERT_EQUAL_STRING("Zerar Preset", selecionado(b));
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Zerar Preset"));
+}
+
+static void test_zerar_preset_pede_a_acao_e_avisa_por_3_s(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::AjustaPreset);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Down);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+
+    // pedido entregue ao composition root, que e quem grava
+    MenuAction acao = MenuAction::None;
+    TEST_ASSERT_TRUE(b.menu.takeAction(acao));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MenuAction::ZerarPreset), static_cast<int>(acao));
+
+    // aviso OBRIGATORIO, e o menu continua dono do display - nao ha assistente aqui
+    TEST_ASSERT_EQUAL_INT(code(MenuState::AvisoPresetZerado), code(b.menu.state()));
+    TEST_ASSERT_TRUE(b.menu.ownsDisplay());
+    TEST_ASSERT_TRUE(b.tela.showsExactly("PRESET ZERADO"));
+    TEST_ASSERT_TRUE(b.tela.showsExactly("confira X1 X2 Y1 Y2"));
+
+    // Gesto nenhum encurta o aviso, igual ao de A9. Atencao ao proprio helper: toque() avanca
+    // 500 ms, entao a conta do prazo tem de contar com eles.
+    esperar(b, 2000);
+    toque(b, Key::Menu);  // 2500 ms decorridos
+    TEST_ASSERT_EQUAL_INT(code(MenuState::AvisoPresetZerado), code(b.menu.state()));
+    esperar(b, 600);      // 3100 ms: o prazo venceu
+    TEST_ASSERT_EQUAL_INT(code(MenuState::SubEixo), code(b.menu.state()));
+}
+
+static void test_os_outros_submenus_continuam_com_tres_itens(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::AutoCalibracao);
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_UINT8(3u, b.menu.subItemCount());
+    TEST_ASSERT_FALSE(b.tela.shows("Zerar"));
+
+    // e a rolagem circular respeita a contagem de cada um
+    toque(b, Key::Down);
+    toque(b, Key::Down);
+    toque(b, Key::Down);
+    TEST_ASSERT_EQUAL_STRING("Voltar", selecionado(b));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -1520,5 +1589,8 @@ int main(int, char**) {
     RUN_TEST(test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_tela);
     RUN_TEST(test_captura_do_assistente_sobrevive_a_confirmacao_do_sair);
     RUN_TEST(test_adotar_o_externo_nao_descarta_a_edicao_pendente_do_menu);
+    RUN_TEST(test_submenu_de_preset_tem_o_quarto_item_zerar);
+    RUN_TEST(test_zerar_preset_pede_a_acao_e_avisa_por_3_s);
+    RUN_TEST(test_os_outros_submenus_continuam_com_tres_itens);
     return UNITY_END();
 }

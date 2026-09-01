@@ -963,6 +963,42 @@ static void test_tela_de_captura_sem_leitura_nao_inventa_numero(void) {
     verificarQuadroPreset(t.tela);
 }
 
+static void test_zerar_devolve_a_leitura_ao_angulo_cru(void) {
+    TelaPreset t;
+    TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::X));
+    alimentar(t.relogio, t.preset, 200, -50);
+    TEST_ASSERT_TRUE(t.preset.commitCapture(t.params) == PsetOutcome::Applied);
+    TEST_ASSERT_EQUAL_INT16(-200, t.params.presetOffsetDeci(Axis::X));
+    TEST_ASSERT_EQUAL_INT16(50, t.params.presetOffsetDeci(Axis::Y));
+
+    TEST_ASSERT_TRUE(t.preset.clearOffsets(t.params).ok());
+
+    // OS DOIS eixos, nao so o que deu titulo a tela.
+    TEST_ASSERT_EQUAL_INT16(0, t.params.presetOffsetDeci(Axis::X));
+    TEST_ASSERT_EQUAL_INT16(0, t.params.presetOffsetDeci(Axis::Y));
+    TEST_ASSERT_EQUAL_INT16(
+        200, PresetWizard::reading(Axis::X, Angle::fromDeciDegrees(200), t.params).deciDegrees());
+    TEST_ASSERT_EQUAL_INT16(
+        -50, PresetWizard::reading(Axis::Y, Angle::fromDeciDegrees(-50), t.params).deciDegrees());
+}
+
+// Apagar referencia nao precisa medir nada: exigir leitura valida ou estabilidade deixaria o
+// operador preso a um offset errado justamente quando a sensora esta muda.
+static void test_zerar_nao_depende_de_leitura_nem_de_estabilidade(void) {
+    TelaPreset t;
+    TEST_ASSERT_TRUE(t.params.setPresetOffset(Axis::X, -333).ok());
+    TEST_ASSERT_TRUE(t.params.setPresetOffset(Axis::Y, 444).ok());
+    for (uint8_t i = 0; i < 20u; ++i) {
+        t.preset.sample(Angle::invalid(), Angle::invalid());
+        t.relogio.advanceMs(50);
+    }
+    TEST_ASSERT_FALSE(t.preset.dataValid());
+
+    TEST_ASSERT_TRUE(t.preset.clearOffsets(t.params).ok());
+    TEST_ASSERT_EQUAL_INT16(0, t.params.presetOffsetDeci(Axis::X));
+    TEST_ASSERT_EQUAL_INT16(0, t.params.presetOffsetDeci(Axis::Y));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_PST_02_o_offset_so_nasce_quando_o_gesto_de_pset_chega);
@@ -1007,6 +1043,8 @@ int main(int, char**) {
     RUN_TEST(test_captura_sem_leitura_recusa_por_falta_de_dado_e_nao_por_instabilidade);
     RUN_TEST(test_commit_sem_captura_aberta_e_ignorado);
     RUN_TEST(test_cancelar_a_captura_nao_grava_nada);
+    RUN_TEST(test_zerar_devolve_a_leitura_ao_angulo_cru);
+    RUN_TEST(test_zerar_nao_depende_de_leitura_nem_de_estabilidade);
     RUN_TEST(test_tela_de_captura_traz_titulo_leitura_ao_vivo_e_estado);
     RUN_TEST(test_tela_de_captura_anuncia_quando_esta_pronta);
     RUN_TEST(test_tela_de_captura_sem_leitura_nao_inventa_numero);

@@ -229,6 +229,12 @@ public:
     // meia captura: ou os dois offsets entram, ou nenhum.
     PsetOutcome commitCapture(Parameters& params);
 
+    // ZERAR: devolve a leitura ao angulo CRU nos dois eixos. Sem este caminho, a unica saida de
+    // uma captura feita em posicao errada era o Reset Geral, que leva junto os quatro limites -
+    // preco alto demais para desfazer um gesto de 3 segundos. Nao depende de leitura valida nem
+    // de estabilidade: apagar referencia nao precisa medir nada.
+    Status clearOffsets(Parameters& params) const;
+
     // O EDITOR NUMERICO DE PRESET FOI REMOVIDO em 2026-09-01. O alvo passou a ser sempre zero e
     // a IHM CAPTURA a posicao em vez de receber um numero digitado; manter os metodos vivos
     // deixaria um caminho inalcancavel capaz de gravar o parametro que desloca os quatro pontos
