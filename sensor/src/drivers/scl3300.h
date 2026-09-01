@@ -49,6 +49,12 @@ public:
     bool ready() const { return ready_; }
     uint8_t mode() const { return mode_; }
     uint32_t clockHz() const { return clockHz_; }
+
+    // BYPASS DE BANCADA (comando de console "bypass"). Padrao DESLIGADO e nao persiste: cada
+    // energizacao volta a recusar. Tolera SO os dois bits do capacitor do pino D_EXTC; ver
+    // scl3300_math.h para por que A_EXT_C nao entra.
+    void setBenchBypass(bool on) { benchBypass_ = on; }
+    bool benchBypass() const { return benchBypass_; }
     board::Pin csPin() const { return cs_; }
     uint32_t frames() const { return frames_; }
 
@@ -82,6 +88,7 @@ private:
     bool ready_;
     bool selfTestFailed_;
     bool flagsRead_;
+    bool benchBypass_;
     FrameTrace trace_[kTraceDepth];
     uint8_t traceFill_;
     uint8_t traceHead_;

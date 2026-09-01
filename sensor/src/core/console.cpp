@@ -192,6 +192,7 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  whoami     WHOAMI do inclinometro (esperado 0xC1)");
     ctx_.io.writeLine("  selftest   autoteste do inclinometro");
     ctx_.io.writeLine("  reinit     refaz a inicializacao do SCL3300");
+    ctx_.io.writeLine("  bypass     bancada: bypass [on|off] - tolera SO o capacitor D_EXTC");
     ctx_.io.writeLine("  link       estatisticas do RS-485 e o baud");
     ctx_.io.writeLine("  proto      mostra ou troca o escravo: proto [jig|modbus]");
     ctx_.io.writeLine("  wdt        watchdog externo STWD100");
@@ -295,6 +296,10 @@ void SensorConsole::handleLine(char* line) {
     }
     if (strcmp(head, "selftest") == 0) {
         cmdSelfTest();
+        return;
+    }
+    if (strcmp(head, "bypass") == 0) {
+        cmdBypass(arg);
         return;
     }
     if (strcmp(head, "reinit") == 0) {
@@ -450,6 +455,9 @@ void SensorConsole::cmdStatus() {
     ctx_.tilt.diagnostics(diag);
 
     ctx_.io.writeLine("---- ESTADO DA SENSORA ----");
+    if (diag.benchBypass) {
+        ctx_.io.writeLine("!! BYPASS DE BANCADA LIGADO - leitura publicada SEM credito real !!");
+    }
     ctx_.io.printf("Inclinometro : %s  (%s)\r\n", ctx_.tilt.name(), diag.ready ? "inicializado" : "NAO INICIALIZADO");
     ctx_.io.printf("Leitura      : %s\r\n", st.ok() ? "OK" : errName(st.err));
 
@@ -538,6 +546,37 @@ void SensorConsole::cmdWhoAmI() {
     }
     ctx_.io.printf("WHOAMI = 0x%04X (esperado 0x%02X) %s\r\n", static_cast<unsigned>(id),
                    static_cast<unsigned>(kWhoAmIExpected), (id == kWhoAmIExpected) ? "OK" : "DIVERGENTE");
+}
+
+// BYPASS DE BANCADA. Existe para exercitar a cadeia limite -> rele -> LED -> saida analogica
+// antes de o capacitor do pino D_EXTC (C8) ser consertado: sem ele a UR recusa toda leitura e
+// os quatro reles ficam em alarme por A5, entao nenhum ajuste de limite pode ser observado.
+//
+// Runtime e volatil de proposito. Nao existe binario compilado com ele ligado, e cada
+// energizacao volta a recusar - um bypass que sobrevive ao reboot vira bypass esquecido.
+void SensorConsole::cmdBypass(const char* arg) {
+    if (arg != nullptr && strcmp(arg, "on") == 0) {
+        ctx_.tilt.setBenchBypass(true);
+    } else if (arg != nullptr && strcmp(arg, "off") == 0) {
+        ctx_.tilt.setBenchBypass(false);
+    } else if (arg != nullptr && *arg != '\0') {
+        ctx_.io.writeLine("uso: bypass [on|off]");
+        return;
+    }
+
+    InclinometerDiag diag;
+    ctx_.tilt.diagnostics(diag);
+    if (!diag.benchBypass) {
+        ctx_.io.writeLine("bypass de bancada: DESLIGADO (leitura estrita)");
+        return;
+    }
+    ctx_.io.writeLine("!! BYPASS DE BANCADA LIGADO - NAO E CONDICAO DE OPERACAO !!");
+    ctx_.io.writeLine("Tolerados SO: PIN_CONTINUITY no STATUS e D_EXT_C no ERR_FLAG2,");
+    ctx_.io.writeLine("que sao os dois bits do capacitor do pino 10 (D_EXTC, C8).");
+    ctx_.io.writeLine("A_EXT_C, SAT, MEM, CLK e todo o resto CONTINUAM invalidando: sem o");
+    ctx_.io.writeLine("capacitor do core analogico o angulo sai errado, e numero errado");
+    ctx_.io.writeLine("comandando rele e o defeito que este produto existe para evitar.");
+    ctx_.io.writeLine("Some na proxima energizacao. Conserte o C8.");
 }
 
 void SensorConsole::cmdSelfTest() {

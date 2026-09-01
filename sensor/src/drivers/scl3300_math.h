@@ -140,12 +140,40 @@ constexpr uint16_t kErr2Fault =
 // ERR_FLAG1 (Tabela 31) nao tem bit benigno: MEM, AFE_SAT e ADC_SAT sao todos falha.
 constexpr uint16_t kErr1Fault = 0xFFFFu;
 
+// BYPASS DE BANCADA. Tolera EXATAMENTE os dois bits que o capacitor ausente do pino D_EXTC
+// (C8) produz: PIN_CONTINUITY no STATUS e D_EXT_C no ERR_FLAG2. Serve para exercitar a cadeia
+// limite -> rele -> LED -> saida analogica antes de o capacitor ser consertado, e nada alem
+// disso.
+//
+// A_EXT_C fica DELIBERADAMENTE de fora: e o capacitor do core ANALOGICO, e sem ele o front-end
+// satura e o angulo sai errado. Tolera-lo seria comandar rele com numero falso, que e
+// exatamente o modo de falha que este produto existe para evitar. Um bypass que tolerasse tudo
+// nao seria auxilio de bancada, seria desligar a supervisao.
+//
+// Quem liga isto e um comando de console, em tempo de execucao e com padrao DESLIGADO: nao
+// existe binario compilado com o bypass ativo, e cada energizacao volta a recusar.
+constexpr uint16_t kBenchBypassStatus = kStatusPinContinuity;
+constexpr uint16_t kBenchBypassErr2 = kErr2DExtC;
+
+// SAT sai da mascara DURA porque tem tratamento proprio no driver (kStsSaturated e Err::Range),
+// e nao porque seja tolerado.
+constexpr uint16_t statusHardMask(bool benchBypass) {
+    const uint32_t tolerado =
+        static_cast<uint32_t>(kStatusSat) | (benchBypass ? kBenchBypassStatus : 0u);
+    return static_cast<uint16_t>(kStatusFault & ~tolerado);
+}
+
 // Veredito do autoteste em um lugar so, sem Arduino, para que o teste de host prenda o criterio.
 // Bits reservados entram como falha de proposito: num supervisor de seguranca, bit indefinido
 // subindo e motivo para desconfiar da peca, e a mesma postura ja vale para kStatusFault.
-constexpr bool selfTestFaulty(uint16_t status, uint16_t flag1, uint16_t flag2) {
-    return ((status & kStatusFault) != 0u) || ((flag1 & kErr1Fault) != 0u) ||
-           ((flag2 & kErr2Fault) != 0u);
+constexpr bool selfTestFaulty(uint16_t status, uint16_t flag1, uint16_t flag2,
+                              bool benchBypass = false) {
+    const uint16_t statusMask = static_cast<uint16_t>(
+        kStatusFault & ~(benchBypass ? static_cast<uint32_t>(kBenchBypassStatus) : 0u));
+    const uint16_t err2Mask = static_cast<uint16_t>(
+        kErr2Fault & ~(benchBypass ? static_cast<uint32_t>(kBenchBypassErr2) : 0u));
+    return ((status & statusMask) != 0u) || ((flag1 & kErr1Fault) != 0u) ||
+           ((flag2 & err2Mask) != 0u);
 }
 
 // Tabela 23: limiares de EXEMPLO do STO por modo, em LSB. O datasheet manda ler STO

@@ -307,6 +307,75 @@ static void test_stoOutOfRangeUsaORamoComSinal(void) {
     TEST_ASSERT_TRUE(scl::stoOutOfRange(2000u, 2));
 }
 
+// --- BYPASS DE BANCADA (2026-09-01) ----------------------------------------------------------
+//
+// Pedido do bigboss: poder exercitar toda a cadeia limite -> rele -> LED -> saida analogica
+// ANTES de o C8 ser consertado. Sem isto a UR recusa toda leitura, os quatro reles ficam em
+// alarme por A5 e nenhum ajuste de limite pode ser observado.
+//
+// O bypass TOLERA EXATAMENTE DOIS BITS, os dois que o capacitor ausente do pino D_EXTC produz:
+// PIN_CONTINUITY no STATUS e D_EXT_C no ERR_FLAG2. Todo o resto continua reprovando - inclusive
+// A_EXT_C, que e o capacitor do outro lado do chip e cuja ausencia satura o front-end e
+// FALSIFICA o angulo. Um bypass que tolerasse tudo nao seria auxilio de bancada, seria
+// desligar a supervisao.
+//
+// E runtime, com padrao DESLIGADO, para nao existir binario compilado com ele ligado por
+// esquecimento: cada energizacao volta a recusar.
+
+static void test_bypass_tolera_pin_continuity_e_d_ext_c(void) {
+    // 0x4010 = D_EXT_C + DPWR, exatamente o medido na bancada
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(scl::kStatusPinContinuity, 0x0000u, 0x4010u, false));
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(scl::kStatusPinContinuity, 0x0000u, 0x4010u, true));
+}
+
+static void test_bypass_nao_tolera_mais_nada(void) {
+    const uint16_t status[] = {scl::kStatusSat, scl::kStatusMem, scl::kStatusClk,
+                               scl::kStatusPd,  scl::kStatusTemp, scl::kStatusDigi1,
+                               scl::kStatusDigi2};
+    for (size_t i = 0; i < sizeof(status) / sizeof(status[0]); ++i) {
+        const uint16_t comBypassAtivo =
+            static_cast<uint16_t>(status[i] | scl::kStatusPinContinuity);
+        TEST_ASSERT_TRUE(scl::selfTestFaulty(comBypassAtivo, 0x0000u, 0x0000u, true));
+    }
+
+    // A_EXT_C e o capacitor do CORE ANALOGICO: sem ele o front-end satura e o angulo sai errado.
+    // Tolera-lo seria comandar rele com numero falso, que e o modo de falha que este produto
+    // existe para evitar.
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0000u, scl::kErr2AExtC, true));
+
+    const uint16_t flag2[] = {scl::kErr2Clk,  scl::kErr2TempSat,   scl::kErr2Apwr2,
+                              scl::kErr2Vref, scl::kErr2Apwr,      scl::kErr2MemoryCrc,
+                              scl::kErr2Pd,   scl::kErr2Vdd,       scl::kErr2Agnd};
+    for (size_t i = 0; i < sizeof(flag2) / sizeof(flag2[0]); ++i) {
+        const uint16_t comDExtC = static_cast<uint16_t>(flag2[i] | scl::kErr2DExtC);
+        TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0000u, comDExtC, true));
+    }
+
+    // ERR_FLAG1 nao tem bit tolerado em nenhum modo
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, scl::kErr1Mem, 0x0000u, true));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, scl::kErr1AfeSat, 0x0000u, true));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, scl::kErr1AdcSat, 0x0000u, true));
+}
+
+static void test_bypass_desligado_e_o_padrao_do_argumento(void) {
+    // A mesma chamada de tres argumentos usada pelo resto do codigo continua ESTRITA.
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(scl::kStatusPinContinuity, 0x0000u, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0000u, scl::kErr2DExtC));
+}
+
+static void test_mascara_de_falha_dura_do_status_encolhe_so_do_bit_tolerado(void) {
+    const uint16_t estrita = scl::statusHardMask(false);
+    const uint16_t comBypass = scl::statusHardMask(true);
+    TEST_ASSERT_TRUE((estrita & scl::kStatusPinContinuity) != 0u);
+    TEST_ASSERT_TRUE((comBypass & scl::kStatusPinContinuity) == 0u);
+    // e a diferenca entre as duas e EXATAMENTE esse bit
+    TEST_ASSERT_EQUAL_HEX16(scl::kStatusPinContinuity,
+                            static_cast<uint16_t>(estrita ^ comBypass));
+    // SAT continua fora da mascara dura nos dois modos (tem tratamento proprio)
+    TEST_ASSERT_TRUE((estrita & scl::kStatusSat) == 0u);
+    TEST_ASSERT_TRUE((comBypass & scl::kStatusSat) == 0u);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -333,5 +402,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_sensoraSadiaPassa);
     RUN_TEST(test_stoThresholdPorModo);
     RUN_TEST(test_stoOutOfRangeUsaORamoComSinal);
+    RUN_TEST(test_bypass_tolera_pin_continuity_e_d_ext_c);
+    RUN_TEST(test_bypass_nao_tolera_mais_nada);
+    RUN_TEST(test_bypass_desligado_e_o_padrao_do_argumento);
+    RUN_TEST(test_mascara_de_falha_dura_do_status_encolhe_so_do_bit_tolerado);
     return UNITY_END();
 }

@@ -9,9 +9,6 @@ namespace {
 constexpr uint32_t kFrameStuckLow = 0x00000000u;
 constexpr uint32_t kFrameStuckHigh = 0xFFFFFFFFu;
 
-constexpr uint16_t kStatusHardMask =
-    static_cast<uint16_t>(scl::kStatusFault & static_cast<uint16_t>(~static_cast<uint32_t>(scl::kStatusSat)));
-
 constexpr uint8_t kIdxAngX = 1;
 constexpr uint8_t kIdxAngY = 2;
 constexpr uint8_t kIdxAngZ = 3;
@@ -40,6 +37,7 @@ Scl3300::Scl3300(SpiBus& bus, board::Pin cs, uint32_t clockHz, uint8_t mode)
       ready_(false),
       selfTestFailed_(false),
       flagsRead_(false),
+      benchBypass_(false),
       trace_{},
       traceFill_(0),
       traceHead_(0) {}
@@ -263,7 +261,10 @@ Status Scl3300::read(Tilt& out) {
     }
     const bool statusKnown = frameOk[kIdxStatus];
     const bool saturated = statusKnown && ((lastStatus_ & scl::kStatusSat) != 0);
-    const bool hardFault = statusKnown && ((lastStatus_ & kStatusHardMask) != 0);
+    // A mascara segue o bypass de bancada: com ele ligado, PIN_CONTINUITY deixa de derrubar a
+    // leitura, e SO ele. Todo o resto continua invalidando.
+    const bool hardFault =
+        statusKnown && ((lastStatus_ & scl::statusHardMask(benchBypass_)) != 0);
 
     if (frameOk[kIdxAngX]) {
         out.xDeci = scl::angleDeciDegrees(payload[kIdxAngX]);
@@ -373,7 +374,7 @@ Status Scl3300::selfTest() {
     // O criterio antigo era "flag2 != 0" e reprovava toda sensora sadia: a Tabela 33 diz que
     // DPWR fica alto depois de todo start-up e ler ERR_FLAG nao reseta nada (secao 6.4).
     // scl::selfTestFaulty() carrega a justificativa e esta preso por teste de host.
-    selfTestFailed_ = scl::selfTestFaulty(summary, flag1, flag2);
+    selfTestFailed_ = scl::selfTestFaulty(summary, flag1, flag2, benchBypass_);
     if (selfTestFailed_) {
         return Status(Err::HwFault);
     }
@@ -454,6 +455,7 @@ void Scl3300::diagnostics(InclinometerDiag& out) const {
     out.sto = lastSto_;
     out.returnStatus = static_cast<uint8_t>(lastRs_);
     out.mode = mode_;
+    out.benchBypass = benchBypass_;
     out.ready = ready_;
     out.flagsRead = flagsRead_;
 }

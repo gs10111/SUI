@@ -13,6 +13,7 @@ struct InclinometerDiag {
     uint16_t sto;
     uint8_t returnStatus;
     uint8_t mode;
+    bool benchBypass;
     bool ready;
     bool flagsRead;
 };
@@ -36,6 +37,11 @@ public:
     virtual uint32_t crcErrors() const = 0;
     virtual uint32_t frameErrors() const = 0;
     virtual void diagnostics(InclinometerDiag& out) const = 0;
+
+    // BYPASS DE BANCADA. Padrao: nao faz nada. So o driver do SCL3300 implementa, porque so ele
+    // tem bits de erro externos que fazem sentido tolerar; para qualquer outra implementacao a
+    // porta continua estrita, que e o comportamento seguro.
+    virtual void setBenchBypass(bool on) { (void)on; }
     virtual uint8_t traceCount() const = 0;
     virtual bool traceAt(uint8_t index, FrameTrace& out) const = 0;
 };

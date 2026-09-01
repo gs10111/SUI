@@ -27,6 +27,7 @@ private:
     void printSto(const InclinometerDiag& diag);
     void cmdWhoAmI();
     void cmdSelfTest();
+    void cmdBypass(const char* arg);
     void cmdReinit();
     void cmdLink();
     void cmdProto(const char* arg);
