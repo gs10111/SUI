@@ -517,7 +517,13 @@ static void test_A7_o_rearme_da_IHM_destrava_e_exige_cinco_eventos_novos(void) {
 
     TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllSignalled, rig.app.snapshot().relayMask);
 
+    // O rearme atravessa o nucleo: a IHM PUBLICA o pedido e quem apaga o latch e applyPublished(),
+    // na tarefa ctrl, sob o mesmo portMUX em que updateHealth() o arma. Publicar e apagar direto
+    // seria update perdido - um clear do loop() simultaneo a um set da ctrl faz um dos dois sumir.
     rig.app.clearLinkLatch();
+    TEST_ASSERT_TRUE_MESSAGE(rig.app.linkLatched(),
+                             "o pedido sozinho nao apaga: quem apaga e a tarefa ctrl");
+    rig.app.applyPublished();
     TEST_ASSERT_FALSE(rig.app.linkLatched());
 
     // Rearmar solta os reles: com o enlace ja saudavel e o angulo abaixo dos 5,0 graus da
@@ -748,6 +754,88 @@ static void test_o_snapshot_publica_a_mascara_ESCRITA_e_nao_a_desejada(void) {
 }
 
 // --- guarda dura de idade (decisao 5 item 30) -------------------------------------------
+
+// A janela de commit de NVS e ANUNCIADA, e so ela e creditada.
+//
+// kWriteBudgetMs do adaptador de NVS e kHardStaleMs sao os dois 250 ms: margem zero. Sem o
+// anuncio, gravar um setpoint congela a tarefa ctrl por exatamente o tempo que dispara a guarda
+// dura de idade, e salvar um parametro levaria os quatro reles a alarme - alarme falso a cada
+// gravacao. O credito vale porque a decisao 6 ja congela os reles nos modos em que a gravacao
+// acontece; e vale UM ciclo, nunca mais que isso.
+static void test_janela_de_commit_anunciada_nao_dispara_a_guarda_de_idade(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllClear, rig.app.snapshot().relayMask);
+
+    rig.app.noteCommitWindow(250);
+    rig.clock.advanceMs(250);
+
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 900);
+    cycle(rig.clock, rig.app);
+
+    TEST_ASSERT_FALSE_MESSAGE(rig.app.stale(), "bloqueio anunciado dentro do orcamento nao envelhece o dado");
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllClear, rig.app.snapshot().relayMask,
+                                    "gravar um setpoint nao pode alarmar os quatro reles");
+}
+
+static void test_o_credito_da_janela_de_commit_vale_um_unico_ciclo(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    rig.app.noteCommitWindow(250);
+    rig.clock.advanceMs(250);
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 901);
+    cycle(rig.clock, rig.app);
+    TEST_ASSERT_FALSE(rig.app.stale());
+
+    // Segundo bloqueio, agora SEM anuncio: a guarda tem de voltar a valer inteira.
+    rig.clock.advanceMs(300);
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 902);
+    cycle(rig.clock, rig.app);
+    TEST_ASSERT_TRUE_MESSAGE(rig.app.stale(), "o credito nao pode ficar armado para o proximo bloqueio");
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllSignalled, rig.app.snapshot().relayMask);
+}
+
+static void test_bloqueio_alem_do_orcamento_declarado_nao_e_creditado(void) {
+    // 501 ms passou do que foi declarado: nao ha desculpa, a guarda trabalha.
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    rig.app.noteCommitWindow(501);
+    rig.clock.advanceMs(501);
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 903);
+    cycle(rig.clock, rig.app);
+
+    TEST_ASSERT_TRUE_MESSAGE(rig.app.stale(), "estouro do orcamento nao se credita");
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllSignalled, rig.app.snapshot().relayMask);
+}
+
+// O latch de A8 tambem atravessa o nucleo publicado, pelo mesmo motivo do rearme de A7.
+static void test_A8_latch_de_configuracao_atravessa_o_publish(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllClear, rig.app.snapshot().relayMask);
+
+    rig.app.setConfigLatched(true);
+    TEST_ASSERT_FALSE_MESSAGE(rig.app.configLatched(),
+                              "o pedido sozinho nao arma: quem arma e a tarefa ctrl");
+
+    rig.app.applyPublished();
+    TEST_ASSERT_TRUE(rig.app.configLatched());
+
+    // Com o latch de A8 armado a amostra deixa de contar como fresca, e o avaliador exige as
+    // tres passagens invalidas de A4 antes de alarmar - nao e um ciclo so.
+    for (uint8_t i = 0; i < 3u; ++i) {
+        scriptGood(rig.link, kQuietDeci, kQuietDeci, static_cast<uint16_t>(904u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllSignalled, rig.app.snapshot().relayMask,
+                                    "configuracao perdida mantem os quatro reles em alarme");
+}
 
 static void test_guarda_dura_de_250_ms_leva_os_reles_a_alarme_apos_um_bloqueio(void) {
     // Cenario concreto: o loop() entra na NVS, a cache de flash e desabilitada e a tarefa ctrl
@@ -1000,6 +1088,10 @@ int main(int, char**) {
     RUN_TEST(test_applyMask_que_reprova_cai_em_signalAll_e_conta_o_erro);
     RUN_TEST(test_banco_de_reles_mudo_latcha_e_para_de_alimentar_o_cachorro);
     RUN_TEST(test_o_snapshot_publica_a_mascara_ESCRITA_e_nao_a_desejada);
+    RUN_TEST(test_janela_de_commit_anunciada_nao_dispara_a_guarda_de_idade);
+    RUN_TEST(test_o_credito_da_janela_de_commit_vale_um_unico_ciclo);
+    RUN_TEST(test_bloqueio_alem_do_orcamento_declarado_nao_e_creditado);
+    RUN_TEST(test_A8_latch_de_configuracao_atravessa_o_publish);
     RUN_TEST(test_guarda_dura_de_250_ms_leva_os_reles_a_alarme_apos_um_bloqueio);
     RUN_TEST(test_bloqueio_abaixo_de_250_ms_nao_dispara_a_guarda);
     RUN_TEST(test_noteStall_acima_do_orcamento_do_commit_declara_falha_na_hora);

@@ -187,8 +187,27 @@ public:
     void requestAnalogOverride(domain::Axis axis, uint16_t code);
     void clearAnalogOverride(domain::Axis axis);
     void setFilterTimeConstant(uint16_t timeConstantMs);
+    // PUBLICADO, nao escrito direto. configLatched_ e linkLatched_ sao lidos por finishCycle()
+    // FORA do portMUX, e linkLatched_ tambem e ESCRITO la, por updateHealth(). Um clear vindo do
+    // loop() ao mesmo tempo que um set vindo da tarefa ctrl e update perdido: ou o rearme some, ou
+    // o latch que acabou de armar e apagado. Por isso os dois viram pedido pendente aqui e sao
+    // consumidos por applyPublished(), que roda sob o portMUX na tarefa ctrl - dai em diante o
+    // dono unico dos dois campos e a ctrl.
     void setConfigLatched(bool latched);
     bool configLatched() const { return configLatched_; }
+
+    // So antes de a tarefa ctrl existir. Depois disso, use setConfigLatched().
+    void initConfigLatched(bool latched);
+
+    // JANELA DE COMMIT DE NVS ANUNCIADA. kWriteBudgetMs do adaptador de NVS e 250 ms e
+    // kHardStaleMs tambem: margem zero. Sem isto, gravar um setpoint congela a tarefa ctrl por
+    // exatamente o tempo que dispara a guarda dura de idade, e salvar um parametro leva os quatro
+    // reles a alarme - alarme falso a cada gravacao. A janela e ANUNCIADA pelo loop() depois da
+    // escrita e vale UM ciclo: a decisao 6 ja congela os reles nos modos em que a gravacao
+    // acontece (Programacao, Auto Calibracao, Reset Geral), entao o envelhecimento dessa janela e
+    // esperado e nao e evidencia de enlace ruim. Estouro do orcamento NAO e creditado: ai a guarda
+    // trabalha, que e o que se quer de um bloqueio que passou do que foi declarado.
+    void noteCommitWindow(uint32_t elapsedMs);
 
     // REARME DE A7. A IHM publica isto sob o MESMO portMUX das outras travessias, depois de o
     // operador passar pelo gate de senha (a mesma de A13). Liberar um latch nao e atuar rele,
@@ -252,6 +271,7 @@ private:
     uint32_t cycleStartMs_;
     uint32_t faultSinceMs_;
     uint32_t lastGoodMs_;
+    uint32_t pendingCommitMs_;
     uint32_t overrideSinceMs_[kAppAxisCount];
     // Anel de carimbos das ultimas kFaultsToLatch entradas em falha (mesmo padrao do anel
     // anti-chatter do LimitEvaluator). Anel e nao contador porque a janela desliza: o que
@@ -273,6 +293,11 @@ private:
     uint8_t goodRun_;
     bool overrideActive_[kAppAxisCount];
     bool pendingValid_;
+    bool pendingConfigLatched_;
+    bool pendingConfigLatchedValid_;
+    bool pendingLinkLatchClear_;
+    bool pendingCommitValid_;
+    bool commitCredit_;
     bool haveBeat_;
     bool reloadPending_;
     bool cycleOpen_;

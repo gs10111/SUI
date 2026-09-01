@@ -352,10 +352,23 @@ const __FlashStringHelper* slotName(app::PersistQueue::Slot slot) {
     return (slot == kDirtyParams) ? F("parametros") : F("calibracao");
 }
 
+// A janela de commit e ANUNCIADA a tarefa ctrl. kWriteBudgetMs do adaptador de NVS e
+// kHardStaleMs da aplicacao sao os dois 250 ms: sem o anuncio, gravar um setpoint congela a ctrl
+// por exatamente o tempo que dispara a guarda dura de idade, e os quatro reles vao a alarme a
+// cada gravacao. O anuncio vale um ciclo e so cobre bloqueio DENTRO do orcamento; passou disso, a
+// guarda trabalha.
+static_assert(NvsParameterStore::kWriteBudgetMs <= app::Application::kNvsCommitBudgetMs,
+              "orcamento de escrita da NVS maior que a janela de commit tolerada pela ctrl");
+
 void servicePersist() {
     app::PersistQueue::Slot slot = kDirtyParams;
     if (g_persist.nextSlot(slot)) {
+        const uint32_t commitStartMs = g_clock.nowMs();
         const bool ok = (slot == kDirtyParams) ? persistParams() : persistCal();
+        const uint32_t commitMs = elapsedMs(commitStartMs, g_clock.nowMs());
+        taskENTER_CRITICAL(&g_pubMux);
+        g_app.noteCommitWindow(commitMs);
+        taskEXIT_CRITICAL(&g_pubMux);
         g_persist.noteResult(slot, ok);
         if (!ok) {
             // Diagnostico por slot no console (decisao de engenharia 2: o console de leitura
@@ -889,7 +902,8 @@ void setup() {
     g_keypad.poll();
 
     g_app.begin(g_params);
-    g_app.setConfigLatched(g_configLost);
+    // Direto, e nao publicado: a tarefa ctrl ainda nao existe neste ponto do boot.
+    g_app.initConfigLatched(g_configLost);
     g_menu.begin();
 
     // Sem esta tarefa NENHUM heartbeat() e emitido, a carencia de boot de 3000 ms do

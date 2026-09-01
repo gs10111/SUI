@@ -104,6 +104,36 @@ e isso entra na lista de verificacao de liberacao junto com as medicoes M2 e M8.
 exercidos no caminho de integracao do marco 2. A matriz de rastreabilidade tem de marcar essa
 diferenca em vez de dar o REQ por verificado ponta a ponta.
 
+### Errata 1 a base comum, passo 8 da ordem de boot (2026-09-01)
+
+**O que a decisao aprovada diz.** O passo 8 da Parte 2 prescreve, literalmente,
+`SPI.begin(18, -1, 23, -1)` "com MISO = -1", e o texto aparece em tres lugares: na secao 2.2
+(passo 8), na lista de etapas que podiam comecar sem aprovacao (item 7) e no comentario da
+constante `kBootStep08VspiMs` do bloco de constantes globais.
+
+**Por que esta errado.** Passar `-1` NAO desliga o MISO no core Arduino do ESP32. O
+`SPIClass::begin()` chama `spiAttachMISO(spi, -1)`, e para pino negativo o core substitui pelo
+**default do barramento** - no VSPI, o IO19 - e executa `pinMode(IO19, INPUT)`. O IO19 e o `WDI`
+do STWD100. A partir dai os `GPIO.out_w1ts` / `out_w1tc` da ISR de 1 kHz escrevem num pino
+configurado como entrada e o chute simplesmente some, ate o `rearmPin()` do passo 10 - ou seja,
+durante todo o `u8g2.begin()`, que e o passo mais lento do boot. E exatamente o defeito que o
+passo 8 existe para impedir.
+
+**O que o codigo faz.** `src/main.cpp` chama
+`SPI.begin(board::kDispSclk, board::kDispMiso, board::kDispMosi, board::kNoPin)`, com
+`kDispMiso = IO39`. O IO39 e input-only e esta NC nesta placa: ele absorve o MISO do barramento
+sem custo e sem tocar no IO19. O `rearmPin()` do passo 10 continua no lugar, agora como
+cinto-e-suspensorio e nao como unica defesa.
+
+**Status.** O codigo esta certo e o texto da decisao esta errado. Esta errata corrige o texto; o
+codigo NAO muda. A mesma armadilha ja estava documentada no proprio briefing e no cabecalho de
+`include/board_pins.h`, que criou `kDacMiso = 36` e `kDispMiso = 39` justamente para isso - o
+passo 8 foi redigido sem usar o que a propria placa ja oferecia.
+
+**Assinatura.** Pendente do dono do produto, como toda errata das outras 18.
+
+---
+
 ### As duas que continuam abertas, e por que isso nao trava o codigo
 
 **A1 depende da medicao M2.** A recomendacao aprovada e o fail-safe, mas ela e explicitamente
@@ -606,7 +636,7 @@ SEQUENCIA NUMERADA (t = 0 na entrada do setup(), ja ~300 ms apos a liberacao do 
  5. DAC8562 E SAIDA ANALOGICA. HSPI begin (IO21/13, MISO -1) + SYNC alto + settle 1 ms + softReset + settle 2 ms + powerUpBoth + refGain2 (0x38/0x0001) + ignoreLdacPin + escrita do CODIGO DE FALHA 3932 nos dois canais (nao 0x0000, que vale -12,5 V, e nao 0x8000, que vale 0,00 V e e uma leitura legitima). Depois OP_MODE (IO22) como saida em nivel BAIXO = modo tensao. A saida sai do trilho negativo AQUI, ~4 ms dentro do setup(), e assume -11,00 V, que o CLP le como "invalido". Acomodacao do XTR300: Cc de 47 nF sobre R_OS de 1K da tau = 47 us, mais ate 40 us internos; 0,5 ms para 0,1 %. ORCAMENTO 6 ms.
  6. CONSOLE SERIAL 115200. Unico caminho de diagnostico se tudo o mais falhar. ORCAMENTO 2 ms.
  7. NVS. nvs_flash_init() + leitura do bloco de parametros com verificacao de CRC. Este e o maior passo do boot e o unico que pode desabilitar a cache. ORCAMENTO 60 ms tipico; 800 ms no pior caso de particao virgem ou corrompida que exige apagamento. Sobrevive porque o chute do passo 1 e ISR/IRAM.
- 8. PRE-RESERVA DO VSPI. SPI.begin(18, -1, 23, -1) com MISO = -1. E este passo que impede o U8g2 de sequestrar o IO19. ORCAMENTO 0,2 ms.
+ 8. PRE-RESERVA DO VSPI. SPI.begin(18, kDispMiso, 23, -1). VER ERRATA 1: o texto original prescrevia MISO = -1, que NAO desliga o MISO - o core substitui pelo default do VSPI, que e o proprio IO19 = WDI. Usa-se o IO39 (input-only, NC). E este passo que impede o U8g2 de sequestrar o IO19. ORCAMENTO 0,2 ms.
  9. DISPLAY. u8g2_.begin() (sequencia de init do SSD1322) + setContrast + clearBuffer + sendBuffer de 2048 B. ORCAMENTO 150 ms (A_MEDIR, medicao 9: o driver nunca chama setBusClock(), entao o clock e o do construtor do U8g2 e board::kDisplaySpiHz = 4 MHz e ficcao neste caminho).
  10. g_wdt.rearmPin(). Cinto-e-suspensorio: se um upgrade de core mudar o comportamento do SPIClass::begin, este passo devolve o IO19. ORCAMENTO 0,05 ms.
  11. BOTOES. pinMode em IO15/34/35 e primeira amostragem. ORCAMENTO 0,5 ms.
@@ -782,7 +812,7 @@ constexpr uint32_t kBootStep05DacMs      = 6;     // 5. HSPI + DAC8562 + codigo 
 constexpr uint32_t kBootStep06ConsoleMs  = 2;     // 6. Serial 115200
 constexpr uint32_t kBootStep07NvsMs      = 60;    // 7. NVS: 60 tipico, 800 no pior caso (A_MEDIR)
 constexpr uint32_t kBootStep07NvsWorstMs = 800;
-constexpr uint32_t kBootStep08VspiMs     = 1;     // 8. SPI.begin(18,-1,23,-1): impede o U8g2 de
+constexpr uint32_t kBootStep08VspiMs     = 1;     // 8. SPI.begin(18,kDispMiso,23,-1) - ver Errata 1
                                                   //    sequestrar o IO19 (MISO default do VSPI)
 constexpr uint32_t kBootStep09DisplayMs  = 150;   // 9. u8g2.begin + clear + sendBuffer (A_MEDIR, 10)
 constexpr uint32_t kBootStep10RearmMs    = 1;     // 10. rearmPin(): cinto-e-suspensorio

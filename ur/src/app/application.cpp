@@ -34,6 +34,7 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       cycleStartMs_(clockRef.nowMs()),
       faultSinceMs_(clockRef.nowMs()),
       lastGoodMs_(clockRef.nowMs()),
+      pendingCommitMs_(0),
       overrideSinceMs_{clockRef.nowMs(), clockRef.nowMs()},
       faultStampMs_(),
       faultStampCount_(0),
@@ -52,6 +53,11 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       goodRun_(0),
       overrideActive_{false, false},
       pendingValid_(false),
+      pendingConfigLatched_(false),
+      pendingConfigLatchedValid_(false),
+      pendingLinkLatchClear_(false),
+      pendingCommitValid_(false),
+      commitCredit_(false),
       haveBeat_(false),
       reloadPending_(true),
       cycleOpen_(false),
@@ -116,16 +122,28 @@ void Application::clearAnalogOverride(domain::Axis axis) {
 }
 
 void Application::setConfigLatched(bool latched) {
+    pendingConfigLatched_ = latched;
+    pendingConfigLatchedValid_ = true;
+}
+
+void Application::initConfigLatched(bool latched) {
     configLatched_ = latched;
+    pendingConfigLatchedValid_ = false;
 }
 
 void Application::clearLinkLatch() {
-    linkLatched_ = false;
-    // A janela tambem zera. Rearmar e dizer "vi e tratei"; deixar quatro carimbos velhos no anel
-    // faria a proxima falha isolada travar de novo na hora, e o operador teria de rearmar a cada
-    // evento - que e o ponteamento em campo que A11 descreve.
-    faultStampCount_ = 0;
-    faultStampHead_ = 0;
+    // Pedido, nao escrita. Quem apaga linkLatched_ e applyPublished(), sob o portMUX, na mesma
+    // tarefa que o escreve em updateHealth() - senao o clear do loop() e o set da ctrl se
+    // atropelam e um dos dois se perde.
+    pendingLinkLatchClear_ = true;
+}
+
+void Application::noteCommitWindow(uint32_t elapsedMs) {
+    if (elapsedMs > kNvsCommitBudgetMs) {
+        return;
+    }
+    pendingCommitMs_ = elapsedMs;
+    pendingCommitValid_ = true;
 }
 
 void Application::noteFaultEntry(uint32_t nowMs) {
@@ -154,6 +172,23 @@ void Application::setFilterTimeConstant(uint16_t timeConstantMs) {
 }
 
 void Application::applyPublished() {
+    if (pendingConfigLatchedValid_) {
+        configLatched_ = pendingConfigLatched_;
+        pendingConfigLatchedValid_ = false;
+    }
+    if (pendingLinkLatchClear_) {
+        linkLatched_ = false;
+        // A janela tambem zera. Rearmar e dizer "vi e tratei"; deixar quatro carimbos velhos no
+        // anel faria a proxima falha isolada travar de novo na hora, e o operador teria de
+        // rearmar a cada evento - que e o ponteamento em campo que A11 descreve.
+        faultStampCount_ = 0;
+        faultStampHead_ = 0;
+        pendingLinkLatchClear_ = false;
+    }
+    if (pendingCommitValid_) {
+        commitCredit_ = true;
+        pendingCommitValid_ = false;
+    }
     if (!pendingValid_) {
         return;
     }
@@ -392,9 +427,18 @@ void Application::finishCycle() {
     // GUARDA DURA DE IDADE (decisao 5 item 30). Medida ANTES do carimbo da amostra desta
     // passagem, de proposito: e o ciclo que VOLTA de um bloqueio quem observa que o dado
     // envelheceu, e carimbar primeiro apagaria a evidencia sem que nenhum rele fosse tocado.
-    stale_ = deadlineReached(lastGoodMs_, nowMs, kHardStaleMs);
-    if (good) {
+    if (commitCredit_) {
+        // Janela de commit de NVS anunciada: o envelhecimento desta passagem foi declarado e os
+        // reles ja estao congelados pela decisao 6. O credito vale UM ciclo e reancora o relogio
+        // da guarda; a partir do proximo ciclo ela volta a valer inteira.
+        commitCredit_ = false;
+        stale_ = false;
         lastGoodMs_ = nowMs;
+    } else {
+        stale_ = deadlineReached(lastGoodMs_, nowMs, kHardStaleMs);
+        if (good) {
+            lastGoodMs_ = nowMs;
+        }
     }
 
     for (uint8_t i = 0; i < kAppAxisCount; ++i) {
