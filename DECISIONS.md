@@ -2917,3 +2917,59 @@ O esqueleto — ordem de boot de 16 passos, criacao da tarefa ctrl (core 0, prio
 | `ui` inteira | Tabela unica de strings assinada + MEDICAO 11 + MEDICAO 14 de D12 (acoplamento do refresh nos botoes) + reconciliar debounce 20 ms x piso de 50 ms |
 | Escrita de rele em hardware | Polaridade (`kRelayFailSafePolarity`) assinada pelo bigboss, sustentada pelas MEDICOES 7, 8 e 9 |
 | Escrita do DAC com valor fisico | MEDICAO 1 (ganho 2 x 5) e MEDICAO 3 (swing e -11,00 V) |
+---
+
+# Parte 8 — Sessao de bancada de 2026-09-01: o que mudou e o que ficou aberto
+
+Registro do dia em que as duas placas rodaram juntas pela primeira vez com o
+firmware de aplicacao. Tudo aqui ja esta implementado, testado e no repositorio;
+esta secao existe para que o manual e a nota de release nao precisem ser
+reconstruidos a partir do log de commits.
+
+## 8.1 Decisoes do bigboss tomadas em bancada
+
+| # | Decisao | Efeito |
+|---|---|---|
+| B1 | **A1 fecha na OPCAO A**: alarme ENERGIZA o rele e ACENDE o LED | Inverte os quatro reles e os quatro LEDs. M2 deixa de ser bloqueante para A1 - o consumo continuo de bobina que ela mediria era custo da opcao B |
+| B2 | **Preset por CAPTURA**: o operador posiciona, segura parado 3 s, grava | O editor numerico de Preset foi REMOVIDO. O alvo e sempre zero. Uma captura zera os DOIS eixos |
+| B3 | **Estabilidade do Preset e TEMPORAL**: 3000 ms dentro de 0,5 grau | Antes eram 8 amostras (400 ms), tempo que um portico passa quieto no meio de um movimento |
+| B4 | **Item "Zerar Preset"** no submenu, com aviso obrigatorio de 3 s | Submenu de Preset passa a ter QUATRO itens |
+| B5 | **Fontes maiores em toda a IHM**, por medicao | Regra unica: a maior fonte em que a string inteira cabe |
+| B6 | **Display girado 180 graus** | O painel esta montado invertido na caixa |
+| B7 | **Limpeza da tela principal**: sai "ENLACE OK"; a linha de "SAIDA" fica condicional | Desvio declarado da escolha: SAIDA nao sai por completo, porque e o unico lugar em que um DAC morto aparece |
+
+## 8.2 Errata de manual que estas decisoes obrigam
+
+1. **5.6 (L148)** imprime `Preset>Voltar   Preset X   Preset Y`. Sao **quatro** itens agora, com `Zerar Preset`.
+2. **5.6 (L149 a L152)** descreve a tela de digitacao do Preset. **Ela nao existe mais**: o Preset e capturado, nao digitado.
+3. **5.9 e Tabela 4** voltam a valer sem errata por causa de B1 — mas a **legenda dos LEDs** precisa dizer que alarme ACENDE.
+4. **Tela principal**: o layout nunca foi publicado (lacuna ja registrada); B7 muda o desvio declarado.
+5. **A15 continua valendo**: a serigrafia do CN3 esta cruzada e o LED so vira canal de sinalizacao valido depois do ECO.
+6. **Autoteste da sensora**: o criterio publicado tem de dizer que `DPWR` alto apos start-up e NORMAL (datasheet Tabela 33), e que `STO` fora da faixa por 20 leituras consecutivas reprova.
+
+## 8.3 Nota de release obrigatoria (B1)
+
+> Com a polaridade da opcao A, a UR **nao consegue mais sinalizar a propria morte**.
+> Queda de energia, fonte queimada, cabo solto ou ESP32 travado chegam ao CLP como
+> "estrutura nivelada, nenhum limite atingido" nos QUATRO canais. O intertravamento
+> do cliente passa a exigir **monitoramento externo da alimentacao da UR**, por
+> canal proprio. Unidades ja instaladas com a polaridade anterior indicam o
+> OPOSTO: exige reinspecao de instalacao antes da atualizacao.
+
+## 8.4 O que continua precisando de assinatura
+
+| Item | Por que nao foi decidido sozinho |
+|---|---|
+| **Modo do SCL3300: 1 ou 3/4** | Hoje abre em modo 1 (+-1,2 g, filtro 40 Hz). Modos 3 e 4 sao *inclination mode* com filtro de 10 Hz e sem fundo de escala em g, que e o que um portico pede - choque passa de 1,2 g e acende SAT. A sensibilidade de inclinacao e IGUAL nos quatro modos (182 LSB/grau), entao nao se perde resolucao. Amarrado a MEDICAO M8 |
+| **Duplo toque em CIMA continua existindo?** | O manual o publica (L152) e ele agora convive com a captura pelo menu. Dois caminhos para a mesma coisa e superficie a mais |
+| **`kRequirePassword = true`** | O binario de bancada esta com `false` (Emenda 1). Producao precisa de `true`, e a troca e uma linha |
+| **`kStoFaultRun = 20`** | 200 ms continuos. Numero deste produto, nao do datasheet; M8 e quem mede o espectro real da estrutura |
+
+## 8.5 Medicoes que continuam nao feitas
+
+`M1` (cadeia analogica), `M2` (bobinas — deixou de bloquear A1, ainda vale para o
+orcamento da fonte), `M3` (janela do WDI durante escrita de NVS), `M4` (enlace com
+o cabo real de 500 m), `M5` (nivel de repouso de IO34/IO35 — o `trace de tecla`
+no console foi acrescentado para tornar essa medicao dispensavel no diagnostico do
+dia a dia), `M8` (dinamica da estrutura), `M10` (faixa angular e amarracao fisica
+do sentido).
