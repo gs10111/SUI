@@ -577,6 +577,38 @@ void renderPresetCapture() {
     app::renderPresetCapture(g_display, g_preset, g_presetAxis);
 }
 
+// DIAGNOSTICO DO PSET NO CONSOLE. "Aperto duas vezes e nao acontece nada" tem cinco causas
+// possiveis - nao armado, sem dado, instavel, offset fora de faixa e gravacao recusada - e
+// quatro delas nao imprimem mensagem nenhuma no painel. Sem esta linha, distinguir e adivinhacao.
+void tracePset(const char* origem, domain::ui::PsetOutcome outcome) {
+    const char* nome = "?";
+    switch (outcome) {
+        case domain::ui::PsetOutcome::Applied: nome = "APLICADO"; break;
+        case domain::ui::PsetOutcome::NeedsConfirm: nome = "PEDE CONFIRMACAO"; break;
+        case domain::ui::PsetOutcome::RefusedNoData: nome = "RECUSADO sem dado"; break;
+        case domain::ui::PsetOutcome::RefusedUnstable: nome = "RECUSADO instavel"; break;
+        case domain::ui::PsetOutcome::Ignored: nome = "IGNORADO (nao armado)"; break;
+    }
+    Serial.print(F("pset "));
+    Serial.print(origem);
+    Serial.print(F(": "));
+    Serial.print(nome);
+    Serial.print(F("  armado="));
+    Serial.print(g_preset.armed() ? '1' : '0');
+    Serial.print(F(" dado="));
+    Serial.print(g_preset.dataValid() ? '1' : '0');
+    Serial.print(F(" parado_ms="));
+    Serial.print(g_preset.staticForMs());
+    Serial.print(F(" brutoX="));
+    Serial.print(g_preset.lastRaw(domain::Axis::X).deciDegrees());
+    Serial.print(F(" brutoY="));
+    Serial.print(g_preset.lastRaw(domain::Axis::Y).deciDegrees());
+    Serial.print(F(" offX="));
+    Serial.print(g_params.presetOffsetDeci(domain::Axis::X));
+    Serial.print(F(" offY="));
+    Serial.println(g_params.presetOffsetDeci(domain::Axis::Y));
+}
+
 // CAPTURA DO PRESET (decisao do bigboss, 2026-09-01). O operador posiciona a estrutura onde bem
 // entender, segura parado e grava. Hold de MENU tenta gravar; hold de BAIXO desiste. Nao ha
 // tecla que edite numero: o alvo e sempre zero.
@@ -585,6 +617,7 @@ void servicePresetCapture() {
     while (g_gesture.takeGesture(gesture)) {
         if (gesture.kind == domain::GestureKind::Hold && gesture.key == Key::Menu) {
             const domain::ui::PsetOutcome fim = g_preset.commitCapture(g_params);
+            tracePset("captura", fim);
             if (fim == domain::ui::PsetOutcome::Applied) {
                 g_presetEditing = false;
                 publishAndPersist(kDirtyParams);
@@ -634,6 +667,7 @@ void servicePsetConfirm() {
 
 void requestPset() {
     const domain::ui::PsetOutcome outcome = g_preset.requestPset(g_params);
+    tracePset("duplo-toque", outcome);
     switch (outcome) {
         case domain::ui::PsetOutcome::Applied:
             publishAndPersist(kDirtyParams);
