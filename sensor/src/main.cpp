@@ -157,12 +157,28 @@ void loop() {
 
     if ((nowMs - g_lastTiltMs) >= kTiltPeriodMs) {
         g_lastTiltMs = nowMs;
+        // PUBLICA SEMPRE, e nao so na leitura boa.
+        //
+        // Scl3300::read() preenche o Tilt e monta o status completo em TODOS os caminhos - ate no
+        // "nao inicializado", que ja sai como kStsSclNotResponding - e kStsDataValid so entra
+        // quando a leitura vale. Descartar o resultado da leitura reprovada tinha dois efeitos, e
+        // os dois apareceram em bancada:
+        //
+        // 1. O angulo NUNCA chegava ao mestre. A sensora tinha o numero (o console 'angle'
+        //    mostrava 49,5 graus) e os registradores do RS-485 ficavam zerados. A Unidade Remota
+        //    nao pode exibir, nem marcado pela Emenda 2, aquilo que nunca recebe.
+        // 2. O status virava ambiguo: o kStsDataValid de uma publicacao ANTERIOR ficava no
+        //    registrador e o ramo de falha so acrescentava kStsSclNotResponding por cima,
+        //    produzindo 0x0011 - DATA_VALID e SCL_NOT_RESPONDING juntos. E a pendencia P3 de
+        //    docs/protocolo-rs485.md, e um mestre que teste por mascara de bit aceitaria angulo
+        //    velho de sensor morto indefinidamente. Reescrever a palavra inteira a cada ciclo
+        //    fecha isso: nao existe mais estado em que os dois bits coexistam.
+        //
+        // O valor publicado numa leitura reprovada e diagnostico, nao decisao: quem consome
+        // decide pelo status, e o mestre deste produto exige status == 0x0001 exato.
         Tilt tilt = {0, 0, 0, 0, 0, false};
-        if (g_tilt.read(tilt).ok()) {
-            publishTilt(tilt, nowMs / 1000u);
-        } else {
-            g_registers[sensormap::kRegStatus] |= kStsSclNotResponding;
-        }
+        g_tilt.read(tilt);
+        publishTilt(tilt, nowMs / 1000u);
     }
 
     serviceLink();
