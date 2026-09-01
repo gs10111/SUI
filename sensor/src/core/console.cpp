@@ -442,7 +442,11 @@ void SensorConsole::cmdStatus() {
     ctx_.io.printf("Leitura      : %s\r\n", st.ok() ? "OK" : errName(st.err));
 
     ctx_.io.writeLine("-- registradores do SCL3300 (datasheet Rev.4) --");
-    ctx_.io.printf("RS           : %u  %s\r\n", static_cast<unsigned>(diag.returnStatus),
+    // RS_SCL, e nao "RS": o Return Status do quadro SPI do inclinometro nao tem relacao nenhuma
+    // com o RS-485 do cabo. Os dois aparecem no mesmo console, e ler "RS erro" logo abaixo de
+    // "RS-485" ja custou uma sessao de bancada procurando defeito no cabo que estava perfeito.
+    ctx_.io.printf("RS_SCL       : %u  %s   (Return Status do SPI, NAO e o RS-485)\r\n",
+                   static_cast<unsigned>(diag.returnStatus),
                    scl::rsName(static_cast<scl::Rs>(diag.returnStatus)));
     char flags[160];
     scl::describeStatus(diag.status, flags, sizeof(flags));
@@ -585,19 +589,47 @@ void SensorConsole::cmdTrace() {
         return;
     }
     ctx_.io.writeLine("-- quadros trocados com o SCL3300 (lembre do pipeline: a resposta e do comando ANTERIOR) --");
-    ctx_.io.writeLine("  n  enviado     recebido    RS         dado    CRC");
+    // A coluna "op env>eco" e o diagnostico mais barato deste console. O SCL3300 ecoa na resposta
+    // o opcode do comando que RECEBEU: os dois numeros iguais significam que o comando chegou;
+    // diferentes, que nao chegou. Sem ela e preciso decodificar dois hexadecimais de 32 bits a
+    // mao para descobrir isso, e ninguem faz no meio de um bring-up.
+    ctx_.io.writeLine("  n  enviado     recebido    op env>eco  RS_SCL     dado    CRC");
+    uint8_t opDivergente = 0;
     for (uint8_t i = 0; i < total; ++i) {
         FrameTrace f;
         if (!ctx_.tilt.traceAt(i, f)) {
             break;
         }
         const bool crcOk = scl::frameCrcOk(f.response);
-        ctx_.io.printf(" %2u  0x%08lX  0x%08lX  %-9s 0x%04X  %s\r\n", static_cast<unsigned>(i),
-                       static_cast<unsigned long>(f.command), static_cast<unsigned long>(f.response),
+        const uint8_t opTx = scl::frameOpcode(f.command);
+        const uint8_t opRx = scl::frameOpcode(f.response);
+        if (opTx != opRx) {
+            ++opDivergente;
+        }
+        ctx_.io.printf(" %2u  0x%08lX  0x%08lX  %02X>%02X %-5s %-9s 0x%04X  %s\r\n",
+                       static_cast<unsigned>(i), static_cast<unsigned long>(f.command),
+                       static_cast<unsigned long>(f.response), static_cast<unsigned>(opTx),
+                       static_cast<unsigned>(opRx), (opTx == opRx) ? "" : "DIF",
                        scl::rsName(scl::rsOf(f.response)),
-                       static_cast<unsigned>(scl::frameData(f.response)), crcOk ? "ok" : "RUIM");
+                       static_cast<unsigned>(scl::frameData(f.response)),
+                       crcOk ? "ok" : "RUIM");
     }
+    if (opDivergente == total && total > 1u) {
+        ctx_.io.writeLine("");
+        ctx_.io.writeLine("!! TODOS os quadros ecoam opcode diferente do enviado.");
+        ctx_.io.writeLine("   O chip responde, com CRC valido, ao comando que NAO foi o enviado:");
+        ctx_.io.printf("   o MOSI (IO%d) nao esta chegando ao pino do U2.\r\n",
+                       static_cast<int>(board::kSclMosi));
+        ctx_.io.writeLine("   Meca com 'spiprobe pin 23' NO PINO DO CHIP, nao no ESP32.");
+        ctx_.io.writeLine("   Ate isso fechar, nenhum bit de STATUS ou ERR_FLAG vale nada.");
+    }
+    ctx_.io.writeLine("RS_SCL = Return Status do quadro SPI do SCL3300. NAO e o RS-485 do cabo.");
     ctx_.io.writeLine("resposta 0x00000000 = barramento mudo; 0xFFFFFFFF = linha presa em alto");
+    // Resposta identica em quadros com comandos DIFERENTES nao e um chip doente: e um chip que
+    // nao esta recebendo comando. O opcode que ele ecoa e o que ele recebeu, entao opcode 0 em
+    // toda linha aponta o MOSI, e enquanto isso durar nenhum bit de STATUS ou ERR_FLAG vale.
+    ctx_.io.writeLine("resposta IGUAL para comandos diferentes = MOSI nao chega ao chip:");
+    ctx_.io.writeLine("  compare o opcode enviado (bits 31:26) com o ecoado na resposta.");
 }
 
 void SensorConsole::cmdReinit() {
