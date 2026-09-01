@@ -455,10 +455,23 @@ void Application::finishCycle() {
         }
     }
 
+    // EMENDA 2: o quadro chegou integro? Entao existe um numero medido, mesmo que o conteudo
+    // tenha sido recusado. Ele vai para o display marcado, e para lugar nenhum alem disso.
+    const bool frameArrived = (verdict_ == LinkPoll::Fresh);
+
     for (uint8_t i = 0; i < kAppAxisCount; ++i) {
         const int16_t deci = (i == 0) ? sample_.xDeci : sample_.yDeci;
         const domain::Angle fresh =
             good ? domain::Angle::fromDeciDegrees(deci) : domain::Angle::invalid();
+        const domain::Angle medido =
+            frameArrived ? domain::Angle::fromDeciDegrees(deci) : domain::Angle::invalid();
+        // Mesma cadeia de medicao da leitura boa - sentido e preset - para que o numero exibido
+        // seja o MESMO que apareceria se o sensor estivesse saudavel. Sem o filtro: o filtro esta
+        // sendo alimentado com invalido e seu estado nao representa esta amostra.
+        unqualified_[i] = medido.valid()
+                              ? domain::ui::PresetWizard::reading(static_cast<domain::Axis>(i),
+                                                                  medido, active_)
+                              : domain::Angle::invalid();
         raw_[i] = fresh;
         domain::Angle filtered;
         if (good && reloadPending_) {
@@ -490,6 +503,7 @@ void Application::latchSnapshot() {
     Snapshot out{};
     for (uint8_t i = 0; i < kAppAxisCount; ++i) {
         out.reading[i] = reading_[i];
+        out.unqualified[i] = unqualified_[i];
         out.raw[i] = raw_[i];
         out.overriding[i] = overrideActive_[i];
         out.analogCode[i] = analogCode_[i];

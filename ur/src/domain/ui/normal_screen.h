@@ -162,6 +162,13 @@ struct NormalLimitView {
 // reles, estado do enlace como classificado pelo supervisor.
 struct NormalInput {
     Angle reading[kNormalAxisCount];            // [0] = X, [1] = Y
+
+    // EMENDA 2 (aprovada 2026-09-01). Leitura medida e passada pela cadeia, mas SEM credito para
+    // comandar rele ou saida analogica: o quadro chegou integro e o conteudo foi recusado. A tela
+    // de falha mostra este numero MARCADO, porque esconder um dado que existe nao protege
+    // ninguem - e mostra-lo igual a uma leitura boa seria pior, que e o numero plausivel sem
+    // aviso. Invalido quando nao houve quadro: ai nao ha o que mostrar.
+    Angle unqualified[kNormalAxisCount];
     NormalLimitView limit[kLimitChannelCount];  // ordem de LimitChannel: X1, X2, Y1, Y2
     NormalLinkState link;
 

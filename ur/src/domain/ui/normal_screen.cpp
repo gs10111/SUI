@@ -316,6 +316,11 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
     }
 }
 
+// EMENDA 2: a marca de leitura sem credito. Curta de proposito - ela acompanha o numero no
+// mesmo campo e nao pode empurrar o rodape de contatos para fora da tela.
+constexpr const char kMarkUnqualified[] = "!";
+constexpr const char kTextUnqualified[] = "leitura sem credito - so diagnostico";
+
 void NormalScreen::renderFault(const NormalInput& in) {
     const char* linha1 = kTextAwaiting;
     const char* dica = "";
@@ -365,15 +370,36 @@ void NormalScreen::renderFault(const NormalInput& in) {
     }
     linha = static_cast<int16_t>(linha + passo);
 
-    // Decisao 12 item 12: em falha o campo de valor e substituido pelo traco. Quem apaga o
-    // numero e o Angle invalido que o ciclo entrega; a tela nunca inventa uma leitura nem
-    // conserva a ultima como se fosse atual.
+    // EMENDA 2, aprovada em 2026-09-01, altera a decisao 12 item 12. O texto original mandava
+    // substituir o campo de valor pelo traco em QUALQUER falha. Com o quadro chegando integro e
+    // so o conteudo recusado - sensora viva que se declara doente - o numero medido EXISTE, e
+    // esconde-lo do operador nao protege ninguem: em bancada isso custou horas procurando defeito
+    // de cabo com o cabo perfeito.
+    //
+    // O numero entra MARCADO, nunca igual a uma leitura boa. O caso perigoso deste defeito nao e
+    // numero ausente, e numero plausivel: sem a marca, alguem usa para decidir e nada na tela
+    // avisa. O sufixo kMarkUnqualified e a linha kTextUnqualified fazem a marca.
+    //
+    // A marca e SO de display. reading[] continua invalido, os quatro reles continuam em alarme e
+    // as duas saidas no codigo de falha - nada aqui toca a linha de seguranca.
+    const bool semCredito = !in.reading[kNormalAxisX].valid() &&
+                            (in.unqualified[kNormalAxisX].valid() ||
+                             in.unqualified[kNormalAxisY].valid());
     Line leitura;
     leitura.add("X:");
-    leitura.add(in.reading[kNormalAxisX]);
+    leitura.add(semCredito ? in.unqualified[kNormalAxisX] : in.reading[kNormalAxisX]);
+    if (semCredito) {
+        leitura.add(kMarkUnqualified);
+    }
     leitura.add(" Y:");
-    leitura.add(in.reading[kNormalAxisY]);
+    leitura.add(semCredito ? in.unqualified[kNormalAxisY] : in.reading[kNormalAxisY]);
+    if (semCredito) {
+        leitura.add(kMarkUnqualified);
+    }
     drawAt(kMargin, linha, leitura.text(), TextFont::Small);
+    if (semCredito && linha2[0] == '\0') {
+        drawAt(kMargin, static_cast<int16_t>(linha - passo), kTextUnqualified, TextFont::Small);
+    }
 
     // Decisao 1 item 17 e DECISIONS.md:2529: a permanencia do indicador de Preset E o mecanismo
     // de seguranca. MEDICAO INSTAVEL (DECISIONS.md:1733) e condicao rotineira de icamento e nao

@@ -134,6 +134,52 @@ passo 8 foi redigido sem usar o que a propria placa ja oferecia.
 
 ---
 
+### Emenda 2 a decisao 12 item 12 - leitura sem credito na tela (2026-09-01)
+
+**Pedido do dono do produto:** "se eu consigo ler as informacoes que preciso porque nao mostro na
+supervisora? o sensor pode estar com um problema mas ta me dando as informacoes". Aprovada a
+opcao B das tres apresentadas.
+
+**O que a decisao aprovada dizia.** Decisao 12 item 12: em falha, o campo de valor da tela e
+substituido pelo traco. Isso vale para QUALQUER falha, sem distinguir a causa.
+
+**A lacuna.** A regra colava tres efeitos que sao independentes: apagar o numero da tela, levar os
+quatro reles a alarme, e levar as duas saidas analogicas ao codigo de falha. Os dois ultimos sao a
+linha de seguranca. O primeiro e escolha de interface, e no caso em que o quadro chega INTEGRO e
+apenas o conteudo e recusado - sensora viva que se declara doente - o numero medido existe,
+chegou com CRC bom e no prazo, e esconde-lo do operador nao protege ninguem.
+
+Em bancada isso custou horas: com a sensora reprovando o autoteste por um capacitor externo, a UR
+mostrava tela de falha sem numero nenhum, e a unica forma de ver a inclinacao era o console USB da
+propria sensora.
+
+**O que muda.** Quando existe leitura medida e ela nao tem credito, a tela de falha passa a mostrar
+o numero MARCADO, com o sufixo "!" no valor de cada eixo e a linha "leitura sem credito - so
+diagnostico". O numero passa pela MESMA cadeia de medicao da leitura boa - sentido do sensor e
+preset - para que seja o mesmo que apareceria com o sensor saudavel; nao passa pelo filtro, cujo
+estado nao representa a amostra recusada.
+
+**O que NAO muda, e e o ponto.** `reading[]` continua invalido. Os quatro reles continuam em
+alarme por A5 e pela guarda dura de idade. As duas saidas continuam no codigo de falha 3932 de A2.
+Nada nesta emenda toca a linha de seguranca: o campo novo e de diagnostico e nao entra em
+`driveRelays()` nem em `driveAnalog()`.
+
+**Por que marcado e nao limpo.** O caso perigoso deste defeito nao e numero ausente, e numero
+plausivel. Um `+049,5` identico ao de uma leitura boa seria usado para decidir, e nada na tela
+avisaria. A marca e o que separa "existe um numero" de "este numero vale".
+
+**Sem quadro nenhum a tela continua no traco.** Enlace mudo nao produz numero medido, e a tela nao
+inventa nem conserva o ultimo valor como se fosse atual - isso continua sendo a decisao 12 item 12
+como escrita.
+
+**Efeito no manual.** Errata 20: a secao 7 passa a descrever duas telas de falha distintas, uma com
+leitura marcada e outra sem leitura.
+
+**Cobertura.** Tres testes em `test/native/test_normal`, com as tres mutacoes correspondentes
+mortas: apagar a marca, voltar a esconder o numero, e marcar quando nao ha numero medido.
+
+---
+
 ### As duas que continuam abertas, e por que isso nao trava o codigo
 
 **A1 depende da medicao M2.** A recomendacao aprovada e o fail-safe, mas ela e explicitamente

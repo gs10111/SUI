@@ -221,6 +221,7 @@ void verificarQuadro(const Painel& painel) {
 void setUp(void) {}
 void tearDown(void) {}
 
+
 static void test_DSP_02_NRM_01_tela_principal_mostra_os_dois_eixos_no_formato_do_manual(void) {
     Bancada bancada;
     const NormalInput entrada = enlaceSaudavel(455, -123);
@@ -238,6 +239,55 @@ static void test_DSP_02_NRM_01_tela_principal_mostra_os_dois_eixos_no_formato_do
     TEST_ASSERT_EQUAL_UINT32(1u, bancada.painel.presentCount());
     TEST_ASSERT_EQUAL_UINT32(1u, bancada.painel.clearCount());
     TEST_ASSERT_TRUE(bancada.tela.lastStatus().ok());
+    verificarQuadro(bancada.painel);
+}
+
+// EMENDA 2, aprovada em 2026-09-01: com o quadro chegando integro e o conteudo recusado, o
+// numero medido vai para a tela MARCADO. Esconder um dado que existe nao protege ninguem;
+// mostra-lo igual a uma leitura boa seria pior - e o numero plausivel sem aviso.
+static void test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::SensorFault);
+    entrada.unqualified[kNormalAxisX] = Angle::fromDeciDegrees(495);
+    entrada.unqualified[kNormalAxisY] = Angle::fromDeciDegrees(9);
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE_MESSAGE(bancada.painel.shows("+049,5"), "o numero medido tem de aparecer");
+    TEST_ASSERT_TRUE_MESSAGE(bancada.painel.shows("+000,9"), "os dois eixos, nao so um");
+    TEST_ASSERT_TRUE_MESSAGE(bancada.painel.shows("!"), "e tem de vir marcado");
+    TEST_ASSERT_TRUE(bancada.painel.shows("FALHA DO SENSOR"));
+    // A marca e SO de display: os quatro contatos continuam em alarme e a saida em falha.
+    TEST_ASSERT_TRUE(bancada.painel.shows("AL"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_EMENDA2_sem_quadro_nenhum_continua_no_traco(void) {
+    // Enlace mudo: nao existe numero medido. A tela nao inventa nem conserva o ultimo valor.
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
+    entrada.unqualified[kNormalAxisX] = Angle::invalid();
+    entrada.unqualified[kNormalAxisY] = Angle::invalid();
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE_MESSAGE(bancada.painel.shows("---,-"), "sem quadro, o campo fica no traco");
+    TEST_ASSERT_FALSE_MESSAGE(bancada.painel.shows("!"), "sem numero nao ha o que marcar");
+    verificarQuadro(bancada.painel);
+}
+
+static void test_EMENDA2_leitura_boa_nunca_recebe_a_marca(void) {
+    // A marca so existe onde falta credito. Numa leitura valida seria ruido e, pior, ensinaria
+    // o operador a ignorar a marca.
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(495, 9);
+    entrada.unqualified[kNormalAxisX] = Angle::fromDeciDegrees(495);
+    entrada.unqualified[kNormalAxisY] = Angle::fromDeciDegrees(9);
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+049,5"));
+    TEST_ASSERT_FALSE_MESSAGE(bancada.painel.shows("!"), "leitura com credito nao leva marca");
     verificarQuadro(bancada.painel);
 }
 
@@ -890,7 +940,13 @@ static void test_IKEYPAD_reset_volta_a_principal_e_nao_deixa_gesto_atravessar(vo
 
 int main(int, char**) {
     UNITY_BEGIN();
+    RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
+    RUN_TEST(test_EMENDA2_sem_quadro_nenhum_continua_no_traco);
+    RUN_TEST(test_EMENDA2_leitura_boa_nunca_recebe_a_marca);
     RUN_TEST(test_DSP_02_NRM_01_tela_principal_mostra_os_dois_eixos_no_formato_do_manual);
+    RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
+    RUN_TEST(test_EMENDA2_sem_quadro_nenhum_continua_no_traco);
+    RUN_TEST(test_EMENDA2_leitura_boa_nunca_recebe_a_marca);
     RUN_TEST(test_DSP_01_leitura_invalida_mostra_o_traco_do_Angle_e_nunca_um_zero);
     RUN_TEST(test_DSP_02_o_sinal_e_a_casa_decimal_sao_do_Angle_e_nao_da_tela);
     RUN_TEST(test_COM_01_falha_de_comunicacao_mostra_o_texto_da_errata_do_item_7);

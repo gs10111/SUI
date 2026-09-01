@@ -160,6 +160,11 @@ public:
     struct Snapshot {
         domain::Angle reading[kAppAxisCount];
         domain::Angle raw[kAppAxisCount];
+        // EMENDA 2 (aprovada 2026-09-01). Leitura passada pela cadeia de medicao mas SEM credito
+        // para comandar nada: existe quando o quadro chegou integro e o conteudo foi recusado -
+        // sensora viva que se declara doente. Serve so ao display, marcada. Nunca entra em
+        // driveRelays() nem em driveAnalog(): o campo e de diagnostico, nao de decisao.
+        domain::Angle unqualified[kAppAxisCount];
         RelayState limitState[kLimitChannelCount];
         RelayMask relayMask;
         LinkHealth link;
@@ -283,6 +288,7 @@ private:
     uint32_t faultSinceMs_;
     uint32_t lastGoodMs_;
     uint32_t pendingCommitMs_;
+    domain::Angle unqualified_[kAppAxisCount];
     uint32_t overrideSinceMs_[kAppAxisCount];
     // Anel de carimbos das ultimas kFaultsToLatch entradas em falha (mesmo padrao do anel
     // anti-chatter do LimitEvaluator). Anel e nao contador porque a janela desliza: o que
