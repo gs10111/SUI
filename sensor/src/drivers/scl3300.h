@@ -20,7 +20,10 @@ public:
     static constexpr uint32_t kSpiDefaultHz = 2000000;
     static constexpr uint8_t kTraceDepth = 24;
     static constexpr uint8_t kStatusReadsOnBegin = 3;
-    static constexpr uint8_t kBurstFrames = 6;
+    // Sete quadros: X, Y, Z, temperatura, STO e DUAS leituras de STATUS. O STO entrou em
+    // 2026-09-01 - o datasheet 6.2 manda le-lo "continuously in the normal operation sequence
+    // after XYZ acceleration readings", e ate entao ele so era lido pelo comando de console.
+    static constexpr uint8_t kBurstFrames = 7;
 
     Scl3300(SpiBus& bus, board::Pin cs, uint32_t clockHz = kSpiDefaultHz, uint8_t mode = 1);
 
@@ -54,6 +57,8 @@ public:
     // energizacao volta a recusar. Tolera SO os dois bits do capacitor do pino D_EXTC; ver
     // scl3300_math.h para por que A_EXT_C nao entra.
     void setBenchBypass(bool on) { benchBypass_ = on; }
+    uint8_t stoRun() const { return sto_.run(); }
+    bool stoFaulted() const { return sto_.faulted(); }
     bool benchBypass() const { return benchBypass_; }
     board::Pin csPin() const { return cs_; }
     uint32_t frames() const { return frames_; }
@@ -89,6 +94,7 @@ private:
     bool selfTestFailed_;
     bool flagsRead_;
     bool benchBypass_;
+    scl::StoMonitor sto_;
     FrameTrace trace_[kTraceDepth];
     uint8_t traceFill_;
     uint8_t traceHead_;

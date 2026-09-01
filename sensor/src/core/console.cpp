@@ -47,6 +47,7 @@ constexpr StatusBit kStatusBits[] = {
     {kStsSclNotResponding, "SEM_RESPOSTA"},
     {kStsSaturated, "SATURADO"},
     {kStsWdtReset, "WDT_RESET"},
+    {kStsStoOutOfRange, "STO_FORA_DA_FAIXA"},
 };
 
 constexpr size_t kStatusBitCount = sizeof(kStatusBits) / sizeof(kStatusBits[0]);
@@ -446,6 +447,11 @@ void SensorConsole::printSto(const InclinometerDiag& diag) {
     ctx_.io.printf("STO          : 0x%04X  (%d com sinal)  limiar modo %u: +-%d LSB  [%s]\r\n",
                    static_cast<unsigned>(diag.sto), sto, static_cast<unsigned>(diag.mode), limit,
                    out ? "FORA DA FAIXA" : "dentro");
+    // Datasheet 6.2: o que reprova a peca nao e uma amostra, e a rajada. Sem imprimir a
+    // contagem, o operador ve "FORA DA FAIXA" num pico legitimo de carga e conclui defeito.
+    ctx_.io.printf("STO rajada   : %u de %u leituras consecutivas fora%s\r\n",
+                   static_cast<unsigned>(diag.stoRun), static_cast<unsigned>(scl::kStoFaultRun),
+                   diag.stoFaulted ? "   [FALHA LATCHADA - reinit para limpar]" : "");
 }
 
 void SensorConsole::cmdStatus() {

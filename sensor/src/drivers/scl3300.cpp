@@ -13,7 +13,8 @@ constexpr uint8_t kIdxAngX = 1;
 constexpr uint8_t kIdxAngY = 2;
 constexpr uint8_t kIdxAngZ = 3;
 constexpr uint8_t kIdxTemp = 4;
-constexpr uint8_t kIdxStatus = 5;
+constexpr uint8_t kIdxSto = 5;
+constexpr uint8_t kIdxStatus = 6;
 
 }  // namespace
 
@@ -38,6 +39,7 @@ Scl3300::Scl3300(SpiBus& bus, board::Pin cs, uint32_t clockHz, uint8_t mode)
       selfTestFailed_(false),
       flagsRead_(false),
       benchBypass_(false),
+      sto_(),
       trace_{},
       traceFill_(0),
       traceHead_(0) {}
@@ -124,6 +126,7 @@ Status Scl3300::begin() {
     ready_ = false;
     selfTestFailed_ = false;
     flagsRead_ = false;
+    sto_.reset();
     traceFill_ = 0;
     traceHead_ = 0;
     lastRs_ = scl::Rs::Startup;
@@ -221,10 +224,11 @@ Status Scl3300::read(Tilt& out) {
 
     const uint32_t commands[kBurstFrames] = {
         scl::kCmdReadAngX, scl::kCmdReadAngY, scl::kCmdReadAngZ,
-        scl::kCmdReadTemp, scl::kCmdReadStatus, scl::kCmdReadStatus,
+        scl::kCmdReadTemp, scl::kCmdReadSto,  scl::kCmdReadStatus,
+        scl::kCmdReadStatus,
     };
-    uint16_t payload[kBurstFrames] = {0, 0, 0, 0, 0, 0};
-    bool frameOk[kBurstFrames] = {false, false, false, false, false, false};
+    uint16_t payload[kBurstFrames] = {0, 0, 0, 0, 0, 0, 0};
+    bool frameOk[kBurstFrames] = {false, false, false, false, false, false, false};
 
     bool crcBad = false;
     bool linkBad = false;
@@ -262,6 +266,13 @@ Status Scl3300::read(Tilt& out) {
 
     if (frameOk[kIdxStatus]) {
         lastStatus_ = payload[kIdxStatus];
+    }
+    // Datasheet 6.2: o STO e alimentado no contador de eventos subsequentes a cada leitura, e nao
+    // so quando alguem digita "selftest" no console. E a unica medida DIRETA do elemento sensor
+    // que este produto tem.
+    if (frameOk[kIdxSto]) {
+        lastSto_ = payload[kIdxSto];
+        sto_.note(lastSto_, mode_);
     }
     const bool statusKnown = frameOk[kIdxStatus];
     const bool saturated = statusKnown && ((lastStatus_ & scl::kStatusSat) != 0);
@@ -311,9 +322,12 @@ Status Scl3300::read(Tilt& out) {
     if (hardFault || selfTestFailed_) {
         flags = static_cast<uint16_t>(flags | kStsSclSelfTestFail);
     }
+    if (sto_.faulted()) {
+        flags = static_cast<uint16_t>(flags | kStsStoOutOfRange);
+    }
 
     const bool valid = allFramesOk && !crcBad && !linkBad && !startupSeen && !rsErrorFatal &&
-                       !saturated && !hardFault &&
+                       !saturated && !hardFault && !sto_.faulted() &&
                        (lastRs_ == scl::Rs::Ok ||
                         (lastRs_ == scl::Rs::Error &&
                          scl::rsErrorExplainedByBypass(lastStatus_, benchBypass_)));
@@ -467,6 +481,8 @@ void Scl3300::diagnostics(InclinometerDiag& out) const {
     out.sto = lastSto_;
     out.returnStatus = static_cast<uint8_t>(lastRs_);
     out.mode = mode_;
+    out.stoRun = sto_.run();
+    out.stoFaulted = sto_.faulted();
     out.benchBypass = benchBypass_;
     out.ready = ready_;
     out.flagsRead = flagsRead_;

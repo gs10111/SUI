@@ -416,6 +416,75 @@ static void test_sem_bypass_nenhum_rs_de_erro_e_perdoado(void) {
     TEST_ASSERT_FALSE(scl::rsErrorExplainedByBypass(0x0000u, false));
 }
 
+// --- MONITORAMENTO CONTINUO DO STO (datasheet 6.2) --------------------------------------------
+//
+// A secao 6.2 manda ler o STO continuamente depois de cada leitura XYZ e monitorar o limiar por
+// CONTAGEM DE EVENTOS SUBSEQUENTES: "Component failure can be suspected if the STO signal
+// exceeds the threshold level continuously". Uma amostra isolada fora da faixa nao e falha - num
+// portico, choque e vibracao produzem excursoes legitimas -, e reprovar na primeira derrubaria a
+// supervisao a cada impacto de carga.
+//
+// Ate hoje o STO era lido so pelo comando de console e nunca entrava em veredito nenhum. Era a
+// unica medida DIRETA do elemento sensor que o produto tinha e nao usava.
+
+static void test_contador_de_sto_sobe_e_zera(void) {
+    scl::StoMonitor monitor;
+    TEST_ASSERT_EQUAL_UINT8(0, monitor.run());
+    TEST_ASSERT_FALSE(monitor.faulted());
+
+    // dentro da faixa nao conta
+    monitor.note(0xFFEAu, 3);  // -22 no modo 3
+    TEST_ASSERT_EQUAL_UINT8(0, monitor.run());
+
+    // fora da faixa conta
+    monitor.note(4000u, 3);
+    TEST_ASSERT_EQUAL_UINT8(1, monitor.run());
+    monitor.note(4000u, 3);
+    TEST_ASSERT_EQUAL_UINT8(2, monitor.run());
+
+    // UMA leitura boa zera a contagem: o criterio e "continuamente", nao "acumulado"
+    monitor.note(0u, 3);
+    TEST_ASSERT_EQUAL_UINT8(0, monitor.run());
+    TEST_ASSERT_FALSE(monitor.faulted());
+}
+
+static void test_falha_so_com_a_rajada_inteira(void) {
+    scl::StoMonitor monitor;
+    for (uint8_t i = 1; i < scl::kStoFaultRun; ++i) {
+        monitor.note(4000u, 3);
+        TEST_ASSERT_FALSE(monitor.faulted());
+    }
+    monitor.note(4000u, 3);
+    TEST_ASSERT_TRUE(monitor.faulted());
+
+    // e a falha e LATCHADA: nao some com uma leitura boa isolada, so com reset()
+    monitor.note(0u, 3);
+    TEST_ASSERT_TRUE(monitor.faulted());
+    monitor.reset();
+    TEST_ASSERT_FALSE(monitor.faulted());
+    TEST_ASSERT_EQUAL_UINT8(0, monitor.run());
+}
+
+static void test_o_limiar_segue_o_modo_de_operacao(void) {
+    // 2000 LSB: dentro no modo 3 (limiar 3600) e FORA nos modos 1 e 2 (1800 e 900).
+    scl::StoMonitor m3;
+    scl::StoMonitor m1;
+    for (uint8_t i = 0; i < scl::kStoFaultRun; ++i) {
+        m3.note(2000u, 3);
+        m1.note(2000u, 1);
+    }
+    TEST_ASSERT_FALSE(m3.faulted());
+    TEST_ASSERT_TRUE(m1.faulted());
+}
+
+static void test_o_ramo_negativo_conta_igual(void) {
+    scl::StoMonitor monitor;
+    for (uint8_t i = 0; i < scl::kStoFaultRun; ++i) {
+        monitor.note(static_cast<uint16_t>(-4000), 3);
+    }
+    TEST_ASSERT_TRUE(monitor.faulted());
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -449,5 +518,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_rs_de_erro_e_perdoado_quando_o_status_so_traz_o_bit_tolerado);
     RUN_TEST(test_rs_de_erro_continua_fatal_com_qualquer_outro_bit);
     RUN_TEST(test_sem_bypass_nenhum_rs_de_erro_e_perdoado);
+    RUN_TEST(test_contador_de_sto_sobe_e_zera);
+    RUN_TEST(test_falha_so_com_a_rajada_inteira);
+    RUN_TEST(test_o_limiar_segue_o_modo_de_operacao);
+    RUN_TEST(test_o_ramo_negativo_conta_igual);
     return UNITY_END();
 }

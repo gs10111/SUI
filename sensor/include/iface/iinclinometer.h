@@ -13,6 +13,10 @@ struct InclinometerDiag {
     uint16_t sto;
     uint8_t returnStatus;
     uint8_t mode;
+    // Datasheet 6.2: leituras CONSECUTIVAS de STO fora da faixa, e se a rajada ja configurou
+    // falha. Uma amostra isolada fora nao e defeito; a rajada e.
+    uint8_t stoRun;
+    bool stoFaulted;
     bool benchBypass;
     bool ready;
     bool flagsRead;

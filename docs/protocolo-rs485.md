@@ -346,6 +346,7 @@ Definida em `/home/ubuntu/repos/SUI/sensor/include/tilt.h` e montada em `Scl3300
 | 4 | `0x0010` | `SCL_NOT_RESPONDING` | Link SPI com o SCL3300 mudo, ou STATUS nao pode ser lido | 1 = falha |
 | 5 | `0x0020` | `SATURATED` | Bit SAT do SCL3300: aceleracao acima do fundo de escala do modo — angulo **nao confiavel** | 1 = falha |
 | 6 | `0x0040` | `WDT_RESET` | Reservado para sinalizar reset por watchdog | **Nunca escrito hoje** — pendencia P6 |
+| 7 | `0x0080` | `STO_OUT_OF_RANGE` | Self-Test Output do SCL3300 fora do limiar da Tabela 23 do datasheet por **20 leituras consecutivas** (200 ms). Datasheet 6.2 manda ler o STO continuamente apos cada leitura XYZ e contar eventos subsequentes; uma amostra isolada **nao** e falha. Latchado: so `reinit` limpa | 1 = falha |
 | 7..15 | `0xFF80` | — | Reservados. Devem ser lidos como 0 | — |
 
 `DATA_VALID` so e setado quando **todas** estas condicoes valem simultaneamente: todos os 6 quadros

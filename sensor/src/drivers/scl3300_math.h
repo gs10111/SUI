@@ -206,6 +206,54 @@ constexpr int16_t kStoThresholdMode34 = 3600;
 int16_t stoThreshold(uint8_t mode);
 bool stoOutOfRange(uint16_t rawSto, uint8_t mode);
 
+// Quantas leituras CONSECUTIVAS fora da faixa configuram falha. O datasheet nao da o numero -
+// "failure tolerant time of the system are application specific and should be carefully
+// validated" -, entao ele e escolha deste produto e esta escrito aqui, uma vez:
+//
+// A leitura do SCL3300 roda a cada 10 ms, entao 20 leituras sao 200 ms continuos com o elemento
+// sensor fora da faixa. E mais longo que qualquer impacto de carga de portico (que produz
+// excursao legitima de dezenas de ms e ja tem tratamento proprio no bit SAT) e mais curto que os
+// 3 ciclos de 50 ms que a UR leva para levar os quatro reles a alarme - ou seja, quando este bit
+// sobe, a UR ainda tem margem para reagir dentro do proprio orcamento de A5. NUMERO SUJEITO A
+// MEDICAO M8, que e quem mede o espectro real da estrutura.
+constexpr uint8_t kStoFaultRun = 20;
+
+// Contador de eventos subsequentes da secao 6.2, sem Arduino e sem estado global.
+//
+// UMA leitura dentro da faixa ZERA a contagem, porque o criterio do datasheet e "continuously".
+// A FALHA, ao contrario, e LATCHADA: uma vez suspeita a peca, uma amostra boa isolada nao a
+// reabilita - quem limpa e reset(), chamado na reinicializacao do driver. Elemento sensor
+// intermitente que se auto-absolve a cada boa leitura e o pior dos dois mundos.
+class StoMonitor {
+public:
+    StoMonitor() : run_(0), faulted_(false) {}
+
+    void note(uint16_t rawSto, uint8_t mode) {
+        if (!stoOutOfRange(rawSto, mode)) {
+            run_ = 0;
+            return;
+        }
+        if (run_ < kStoFaultRun) {
+            ++run_;
+        }
+        if (run_ >= kStoFaultRun) {
+            faulted_ = true;
+        }
+    }
+
+    void reset() {
+        run_ = 0;
+        faulted_ = false;
+    }
+
+    uint8_t run() const { return run_; }
+    bool faulted() const { return faulted_; }
+
+private:
+    uint8_t run_;
+    bool faulted_;
+};
+
 void describeStatus(uint16_t value, char* out, uint16_t cap);
 void describeErrFlag1(uint16_t value, char* out, uint16_t cap);
 void describeErrFlag2(uint16_t value, char* out, uint16_t cap);
