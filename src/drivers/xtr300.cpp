@@ -1,5 +1,6 @@
-// Eixo X = DAC-A, eixo Y = DAC-B (folha 2/2). Troca de modo sempre com os dois canais em 0x0000,
-// conforme a sequencia recomendada para o XTR300 (TI SBOS404): sem comutar com saida em fundo de escala.
+// Eixo X = DAC-A, eixo Y = DAC-B (folha 2/2). Troca de modo sempre com os dois canais em saida
+// nula, conforme a sequencia recomendada para o XTR300 (TI SBOS404): sem comutar com saida em
+// fundo de escala. Nesta placa saida nula e board::kDacZeroCode = 0x8000, nao 0x0000.
 #include "drivers/xtr300.h"
 
 #include <Arduino.h>
@@ -8,8 +9,6 @@ namespace {
 
 constexpr uint32_t kPreSwitchSettleMs = 5;
 constexpr uint32_t kModeSettleMs = 10;
-constexpr uint16_t kZeroCode = 0x0000;
-
 }  // namespace
 
 static_assert(board::kAxisCount == Dac8562::kChannelCount, "um eixo por canal do DAC8562");
@@ -111,9 +110,9 @@ Status Xtr300AnalogOutput::zeroAll() {
     }
     Status first = kOk;
     for (uint8_t axis = 0; axis < board::kAxisCount; ++axis) {
-        const Status st = dac_.writeChannel(axis, kZeroCode);
+        const Status st = dac_.writeChannel(axis, board::kDacZeroCode);
         if (st.ok()) {
-            lastCode_[axis] = kZeroCode;
+            lastCode_[axis] = board::kDacZeroCode;
         } else if (first.ok()) {
             first = st;
         }

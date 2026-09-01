@@ -74,10 +74,28 @@ constexpr uint32_t kDacSpiMaxHz = 10000000;
 constexpr uint32_t kDisplaySpiHz = 4000000;
 constexpr uint32_t kRs485DefaultBaud = 19200;
 
+// Cadeia analogica da folha 2/2, na configuracao de saida bidirecional do XTR300
+// (TI SBOS336C figura 2 e equacoes 2 e 3): o pino SET recebe R_OS = R12/R25 = 1K vindo
+// do VREF de 2,5 V do DAC8562, R_GAIN = R17/R29 = 10K entre RG1 e RG2, e NAO existe R_SET.
+//   V_OUT = (R_GAIN / 2) * (V_DAC - V_REF) / R_OS = 5 * (V_DAC - 2,5 V)
+//   I_OUT = 10 * (V_DAC - V_REF) / R_OS         = 10 mA/V * (V_DAC - 2,5 V)
+// Com V_DAC = 5,0 V * D / 65536, a saida e bipolar e o zero cai no meio da escala do DAC.
 constexpr float kDacFullScaleV = 5.0f;
 constexpr float kXtrRGainOhms = 10000.0f;
-constexpr float kXtrRSetNominalOhms = 2500.0f;
+constexpr float kXtrROsOhms = 1000.0f;
+constexpr float kXtrVrefV = 2.5f;
 constexpr float kXtrCurrentMirrorRatio = 10.0f;
+
+// Codigo de saida nula. 0x0000 NAO e zero nesta placa: vale -12,5 V, saturado pelo trilho
+// de -15 V. Escrever 0x0000 no boot, na troca de modo ou no estado seguro coloca as duas
+// saidas no fundo de escala negativo, que o sistema a jusante le como inclinacao maxima.
+constexpr uint16_t kDacZeroCode = 0x8000;
+
+// Limites uteis publicados no manual (secao 5.7): a saida satura em +/-10,00 V, bem antes
+// do limite eletrico de +/-12 V do XTR300 com trilhos de +/-15 V.
+constexpr float kXtrOutputLimitV = 10.0f;
+constexpr uint16_t kDacMinUsefulCode = 6554;   // -10,00 V
+constexpr uint16_t kDacMaxUsefulCode = 58982;  // +10,00 V
 
 constexpr uint32_t kWdtKickPeriodMs = 250;
 constexpr uint32_t kWdtMinTimeoutMs = 1120;

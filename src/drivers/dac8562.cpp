@@ -18,7 +18,7 @@ constexpr uint16_t kDataPowerUpBoth = 0x0003;
 constexpr uint16_t kDataResetAll = 0x0001;
 constexpr uint16_t kDataRefIntGain2 = 0x0001;
 constexpr uint16_t kDataLdacIgnorePin = 0x0003;
-constexpr uint16_t kDataZero = 0x0000;
+// Saida nula da placa, nao zero-scale do conversor: ver board::kDacZeroCode.
 
 constexpr uint32_t kSyncSettleMs = 1;
 constexpr uint32_t kResetSettleMs = 2;
@@ -94,7 +94,7 @@ Status Dac8562::begin() {
         return st;
     }
     for (uint8_t ch = 0; ch < kChannelCount; ++ch) {
-        st = writeChannel(ch, kDataZero);
+        st = writeChannel(ch, board::kDacZeroCode);
         if (st.failed()) {
             ready_ = false;
             return st;

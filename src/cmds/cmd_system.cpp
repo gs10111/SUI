@@ -15,7 +15,7 @@ char g_textBuf[2048];
 Report g_lastReport;
 
 const char* aoModeName(AoMode m) {
-    return (m == AoMode::Current) ? "CORRENTE (4-20 mA)" : "TENSAO (0-10 V)";
+    return (m == AoMode::Current) ? "CORRENTE (-20 a +20 mA)" : "TENSAO (-10 a +10 V)";
 }
 
 const char* aoModeShort(AoMode m) {
