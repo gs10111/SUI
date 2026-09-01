@@ -1409,6 +1409,76 @@ static void test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_t
     verificarQuadroMenu(b.tela);
 }
 
+// --- O ASSISTENTE ESCREVE NO ATIVO; O MENU TRABALHA NUM RASCUNHO ------------------------------
+//
+// Achado em 2026-09-01, conferindo como o Preset ficou depois da troca por captura. O menu copia
+// draft_ = active_ ao abrir e so devolve active_ = draft_ na confirmacao da revisao (A13). Os
+// ASSISTENTES - captura de Preset e Auto Calibracao - escrevem DIRETO no agregado ativo, porque
+// sao gestos fisicos com efeito imediato.
+//
+// A combinacao que perdia dado: editar um limite (marca pendencia), entrar no assistente, gravar,
+// voltar e confirmar no Sair. O active_ = draft_ da confirmacao restaurava o rascunho COPIADO
+// ANTES do assistente e apagava, em silencio, o offset de Preset ou o par de calibracao que o
+// tecnico acabara de gravar. Nao havia nada na tela indicando a perda.
+//
+// A correcao NAO e ressincronizar o rascunho inteiro - isso descartaria a edicao de limite que
+// esta pendente. E adotar so os campos que o MENU nao edita.
+static void test_captura_do_assistente_sobrevive_a_confirmacao_do_sair(void) {
+    Bancada b;
+    entrarNoMenu(b);
+
+    // 1) edita um limite: cria a pendencia, e e ela que arma o active_ = draft_ do Sair
+    descerAte(b, MenuItem::Limite4);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+    toque(b, Key::Up);
+    hold(b);
+    esperar(b, 1500);
+    TEST_ASSERT_TRUE(b.menu.pendingConfig());
+
+    // 2) o assistente grava DIRETO no ativo enquanto o menu esta aberto, e avisa o menu
+    TEST_ASSERT_TRUE(b.ativo.setPresetOffset(Axis::X, -37).ok());
+    TEST_ASSERT_TRUE(
+        b.ativo.setCalTriple(Axis::Y, 33500u, 60000u, Angle::fromDeciDegrees(300)).ok());
+    b.menu.adoptExternalChanges();
+
+    // 3) sai e confirma: o instante unico de A13
+    voltarAoNivel1(b, 1);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::Menu), code(b.menu.state()));
+    descerAte(b, MenuItem::Sair);
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::Revisao), code(b.menu.state()));
+    hold(b);
+
+    // o que o assistente gravou continua la
+    TEST_ASSERT_EQUAL_INT16(-37, b.ativo.presetOffsetDeci(Axis::X));
+    TEST_ASSERT_EQUAL_UINT16(33500u, b.ativo.calZeroCode(Axis::Y));
+    TEST_ASSERT_EQUAL_UINT16(60000u, b.ativo.calFullScaleCode(Axis::Y));
+    TEST_ASSERT_EQUAL_INT16(300, b.ativo.calFullScale(Axis::Y).deciDegrees());
+}
+
+// E a adocao nao pode passar por cima da edicao pendente do proprio menu.
+static void test_adotar_o_externo_nao_descarta_a_edicao_pendente_do_menu(void) {
+    Bancada b;
+    entrarNoMenu(b);
+
+    descerAte(b, MenuItem::Limite4);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+    toque(b, Key::Up);
+    hold(b);
+    esperar(b, 1500);
+    const int16_t editado = b.menu.draft().limitValue(LimitId::Y2).deciDegrees();
+
+    TEST_ASSERT_TRUE(b.ativo.setPresetOffset(Axis::Y, 55).ok());
+    b.menu.adoptExternalChanges();
+
+    TEST_ASSERT_EQUAL_INT16(editado, b.menu.draft().limitValue(LimitId::Y2).deciDegrees());
+    TEST_ASSERT_EQUAL_INT16(55, b.menu.draft().presetOffsetDeci(Axis::Y));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -1448,5 +1518,7 @@ int main(int, char**) {
     RUN_TEST(test_layout_itens_da_lista_usam_a_fonte_maior);
     RUN_TEST(test_layout_submenu_de_limite_tambem_cabe_com_a_fonte_maior);
     RUN_TEST(test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_tela);
+    RUN_TEST(test_captura_do_assistente_sobrevive_a_confirmacao_do_sair);
+    RUN_TEST(test_adotar_o_externo_nao_descarta_a_edicao_pendente_do_menu);
     return UNITY_END();
 }

@@ -273,6 +273,21 @@ public:
     // enquanto o assistente desenhava, e nesse caso quem manda na tela e o Modo Normal).
     void reclaimDisplay();
 
+    // OS ASSISTENTES ESCREVEM NO AGREGADO ATIVO, NAO NO RASCUNHO. Captura de Preset e Auto
+    // Calibracao sao gestos fisicos com efeito imediato, e por isso gravam direto - enquanto o
+    // menu trabalha numa copia que so volta ao ativo na confirmacao da revisao (A13).
+    //
+    // Sem esta chamada, editar um limite (que cria a pendencia), entrar num assistente, gravar e
+    // depois confirmar o Sair APAGAVA em silencio o que o assistente escreveu: o active_ = draft_
+    // da confirmacao restaurava a copia feita ANTES dele. O composition root chama isto ao
+    // retomar o display de um assistente.
+    //
+    // Adota SO os campos que o menu nao edita - offsets de Preset e o par de calibracao. O
+    // rascunho de limites, operacoes, sentido e senha fica intocado, senao a adocao descartaria
+    // a edicao pendente que ela deveria preservar.
+    void adoptExternalChanges();
+
+
     static const char* itemName(MenuItem menuItem);
     static const char* limitOpName(LimitOp op);
     static const char* sensorDirName(SensorDir dir);

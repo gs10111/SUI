@@ -545,6 +545,10 @@ void finishCalibration() {
     }
     publishOverrideClear(g_calAxis);
     g_calActive = false;
+    // O assistente escreveu DIRETO no agregado ativo; o menu esta com um rascunho copiado antes
+    // disso. Sem esta linha, confirmar o Sair com uma edicao de limite pendente restauraria o
+    // rascunho velho e apagaria a calibracao em silencio.
+    g_menu.adoptExternalChanges();
     g_menu.reclaimDisplay();
 }
 
@@ -585,6 +589,9 @@ void servicePresetCapture() {
                 g_presetEditing = false;
                 publishAndPersist(kDirtyParams);
                 showMessage(kMsgPsetOk);
+                // Mesma razao de finishCalibration(): a captura gravou no ativo, o menu tem um
+                // rascunho anterior a ela.
+                g_menu.adoptExternalChanges();
                 g_menu.reclaimDisplay();
                 return;
             }
@@ -612,6 +619,7 @@ void servicePsetConfirm() {
         if (gesture.kind == domain::GestureKind::Hold && gesture.key == Key::Menu) {
             if (g_preset.confirmPset(g_params) == domain::ui::PsetOutcome::Applied) {
                 publishAndPersist(kDirtyParams);
+                g_menu.adoptExternalChanges();
                 showMessage(kMsgPsetOk);
             }
             return;
@@ -629,6 +637,10 @@ void requestPset() {
     switch (outcome) {
         case domain::ui::PsetOutcome::Applied:
             publishAndPersist(kDirtyParams);
+            // Tambem aqui, e nao so no menu: A13 mantem o rascunho VIVO depois de um timeout
+            // (pendingConfig), e nesse estado openMenu() NAO ressincroniza. Um PSET aplicado na
+            // tela principal com config pendente seria apagado na proxima confirmacao.
+            g_menu.adoptExternalChanges();
             showMessage(kMsgPsetOk);
             break;
         case domain::ui::PsetOutcome::RefusedNoData:

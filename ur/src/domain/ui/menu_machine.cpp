@@ -165,6 +165,21 @@ bool MenuMachine::takeAction(MenuAction& out) {
     return true;
 }
 
+void MenuMachine::adoptExternalChanges() {
+    const Axis eixos[Parameters::kAxisCount] = {Axis::X, Axis::Y};
+    for (uint8_t i = 0; i < Parameters::kAxisCount; ++i) {
+        // Retorno ignorado de proposito: o que esta em active_ ja passou pelos gates do proprio
+        // Parameters quando o assistente gravou, entao uma recusa aqui so poderia vir de faixa
+        // divergente entre as duas copias - e nesse caso o rascunho fica com o valor antigo, que
+        // e o comportamento seguro, em vez de meia adocao.
+        (void)draft_.setPresetOffset(eixos[i], active_.presetOffsetDeci(eixos[i]));
+        (void)draft_.setPreset(eixos[i], active_.preset(eixos[i]));
+        (void)draft_.setCalTriple(eixos[i], active_.calZeroCode(eixos[i]),
+                                  active_.calFullScaleCode(eixos[i]),
+                                  active_.calFullScale(eixos[i]));
+    }
+}
+
 void MenuMachine::reclaimDisplay() {
     if (state_ != MenuState::Assistente) {
         return;
