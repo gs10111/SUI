@@ -219,6 +219,94 @@ static void test_constantesDeComando(void) {
     TEST_ASSERT_EQUAL_HEX32(0xFC00016Eu, static_cast<uint32_t>(scl::kCmdBank1));
 }
 
+// --- criterio do autoteste contra o datasheet (Tabelas 27, 31, 33 e 23) ---------------------
+//
+// O criterio antigo era "flag2 != 0". A Tabela 33 diz textualmente, no bit D4 (DPWR):
+// "[After star-up or reset] This flag is set high. No actions needed." Com o criterio antigo,
+// uma sensora perfeitamente sadia reprovava para sempre, porque DPWR fica alto depois de todo
+// start-up e ler ERR_FLAG nao reseta nada (secao 6.4). O mesmo vale para MODE_CHANGE (D9),
+// que e alto justamente porque NOS pedimos o modo no passo 4 da Tabela 11.
+// Tudo o mais continua reprovando: o objetivo aqui e tolerar dois bits nomeados, nao afrouxar.
+
+static void test_dpwrSozinhoNaoReprovaOAutoteste(void) {
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(0x0000u, 0x0000u, scl::kErr2Dpwr));
+}
+
+static void test_modeChangeDeErrFlag2NaoReprova(void) {
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(0x0000u, 0x0000u, scl::kErr2ModeChange));
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(
+        0x0000u, 0x0000u, static_cast<uint16_t>(scl::kErr2Dpwr | scl::kErr2ModeChange)));
+}
+
+// O caso medido na bancada em 2026-08-31: capacitor do pino D_EXTC (C8) sem conexao eletrica.
+// Se este teste passar a aceitar 0x4010, a UR volta a comandar rele com leitura sem credito.
+static void test_dExtCReprovaMesmoAcompanhadoDeDpwr(void) {
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0000u, 0x4010u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0000u, scl::kErr2DExtC));
+}
+
+static void test_cadaBitDeErroDocumentadoDeErrFlag2Reprova(void) {
+    const uint16_t bits[] = {
+        scl::kErr2Clk,   scl::kErr2TempSat, scl::kErr2Apwr2,  scl::kErr2Vref,
+        scl::kErr2Apwr,  scl::kErr2MemoryCrc, scl::kErr2Pd,   scl::kErr2Vdd,
+        scl::kErr2Agnd,  scl::kErr2AExtC,   scl::kErr2DExtC,
+    };
+    for (size_t i = 0; i < sizeof(bits) / sizeof(bits[0]); ++i) {
+        TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0000u, bits[i]));
+        // e continua reprovando acompanhado dos dois benignos, que e como aparecem em campo
+        TEST_ASSERT_TRUE(scl::selfTestFaulty(
+            0x0000u, 0x0000u,
+            static_cast<uint16_t>(bits[i] | scl::kErr2Dpwr | scl::kErr2ModeChange)));
+    }
+}
+
+static void test_qualquerBitDeErrFlag1Reprova(void) {
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, scl::kErr1Mem, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, scl::kErr1AfeSat, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, scl::kErr1AdcSat, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(0x0000u, 0x0002u, 0x0000u));
+}
+
+static void test_statusMantemPwrEModeChangeBenignos(void) {
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(scl::kStatusStartupBenign, 0x0000u, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(scl::kStatusPinContinuity, 0x0000u, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(scl::kStatusSat, 0x0000u, 0x0000u));
+    TEST_ASSERT_TRUE(scl::selfTestFaulty(scl::kStatusMem, 0x0000u, 0x0000u));
+}
+
+static void test_sensoraSadiaPassa(void) {
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(0x0000u, 0x0000u, 0x0000u));
+    // exatamente o que uma sensora sadia devolve depois do start-up da Tabela 11
+    TEST_ASSERT_FALSE(scl::selfTestFaulty(scl::kStatusPwr, 0x0000u, scl::kErr2Dpwr));
+}
+
+// Tabela 23: limiares de exemplo do STO por modo. Modo fora de 1..4 cai no modo 1, igual ao
+// clampMode() do driver, para que console e driver nunca discordem do limiar em uso.
+static void test_stoThresholdPorModo(void) {
+    TEST_ASSERT_EQUAL_INT16(1800, scl::stoThreshold(1));
+    TEST_ASSERT_EQUAL_INT16(900, scl::stoThreshold(2));
+    TEST_ASSERT_EQUAL_INT16(3600, scl::stoThreshold(3));
+    TEST_ASSERT_EQUAL_INT16(3600, scl::stoThreshold(4));
+    TEST_ASSERT_EQUAL_INT16(1800, scl::stoThreshold(0));
+    TEST_ASSERT_EQUAL_INT16(1800, scl::stoThreshold(9));
+}
+
+static void test_stoOutOfRangeUsaORamoComSinal(void) {
+    // 0xFFEA = -22, medido na bancada: elemento sensor saudavel em qualquer modo
+    TEST_ASSERT_FALSE(scl::stoOutOfRange(0xFFEAu, 1));
+    TEST_ASSERT_FALSE(scl::stoOutOfRange(0xFFEAu, 3));
+    TEST_ASSERT_FALSE(scl::stoOutOfRange(0x0000u, 3));
+    // limiar e inclusivo: 3600 ainda passa, 3601 nao
+    TEST_ASSERT_FALSE(scl::stoOutOfRange(3600u, 3));
+    TEST_ASSERT_TRUE(scl::stoOutOfRange(3601u, 3));
+    TEST_ASSERT_FALSE(scl::stoOutOfRange(static_cast<uint16_t>(-3600), 3));
+    TEST_ASSERT_TRUE(scl::stoOutOfRange(static_cast<uint16_t>(-3601), 3));
+    // o mesmo bruto muda de veredito conforme o modo
+    TEST_ASSERT_FALSE(scl::stoOutOfRange(2000u, 3));
+    TEST_ASSERT_TRUE(scl::stoOutOfRange(2000u, 1));
+    TEST_ASSERT_TRUE(scl::stoOutOfRange(2000u, 2));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -236,5 +324,14 @@ int main(int argc, char** argv) {
     RUN_TEST(test_temperatureDeciC);
     RUN_TEST(test_statusSatEhOBit6);
     RUN_TEST(test_constantesDeComando);
+    RUN_TEST(test_dpwrSozinhoNaoReprovaOAutoteste);
+    RUN_TEST(test_modeChangeDeErrFlag2NaoReprova);
+    RUN_TEST(test_dExtCReprovaMesmoAcompanhadoDeDpwr);
+    RUN_TEST(test_cadaBitDeErroDocumentadoDeErrFlag2Reprova);
+    RUN_TEST(test_qualquerBitDeErrFlag1Reprova);
+    RUN_TEST(test_statusMantemPwrEModeChangeBenignos);
+    RUN_TEST(test_sensoraSadiaPassa);
+    RUN_TEST(test_stoThresholdPorModo);
+    RUN_TEST(test_stoOutOfRangeUsaORamoComSinal);
     return UNITY_END();
 }

@@ -12,6 +12,7 @@ struct InclinometerDiag {
     uint16_t errFlag2;
     uint16_t sto;
     uint8_t returnStatus;
+    uint8_t mode;
     bool ready;
     bool flagsRead;
 };

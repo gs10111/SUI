@@ -370,7 +370,10 @@ Status Scl3300::selfTest() {
     // selftest que acabou de le-los - e sao exatamente os dois registradores que dizem POR QUE
     // o autoteste reprovou. O operador ficava com a luz vermelha e sem o motivo na tela.
     flagsRead_ = true;
-    selfTestFailed_ = ((summary & scl::kStatusFault) != 0) || (flag1 != 0) || (flag2 != 0);
+    // O criterio antigo era "flag2 != 0" e reprovava toda sensora sadia: a Tabela 33 diz que
+    // DPWR fica alto depois de todo start-up e ler ERR_FLAG nao reseta nada (secao 6.4).
+    // scl::selfTestFaulty() carrega a justificativa e esta preso por teste de host.
+    selfTestFailed_ = scl::selfTestFaulty(summary, flag1, flag2);
     if (selfTestFailed_) {
         return Status(Err::HwFault);
     }
@@ -450,6 +453,7 @@ void Scl3300::diagnostics(InclinometerDiag& out) const {
     out.errFlag2 = lastErrFlag2_;
     out.sto = lastSto_;
     out.returnStatus = static_cast<uint8_t>(lastRs_);
+    out.mode = mode_;
     out.ready = ready_;
     out.flagsRead = flagsRead_;
 }

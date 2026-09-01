@@ -130,6 +130,36 @@ constexpr uint16_t kErr2Agnd = 0x1000;
 constexpr uint16_t kErr2AExtC = 0x2000;
 constexpr uint16_t kErr2DExtC = 0x4000;
 
+// Datasheet Tabela 33, bit D4 (DPWR): "[After star-up or reset] This flag is set high. No actions
+// needed." Ler ERR_FLAG nao reseta nada (secao 6.4), entao DPWR fica alto para sempre depois de
+// todo start-up. O bit D9 (MODE_CHANGE) sobe porque NOS pedimos o modo no passo 4 da Tabela 11.
+// Estes dois - e SOMENTE estes dois - sao tolerados; todo o resto de ERR_FLAG2 reprova.
+constexpr uint16_t kErr2StartupBenign = static_cast<uint16_t>(kErr2Dpwr | kErr2ModeChange);
+constexpr uint16_t kErr2Fault =
+    static_cast<uint16_t>(0xFFFFu & ~static_cast<uint32_t>(kErr2StartupBenign));
+// ERR_FLAG1 (Tabela 31) nao tem bit benigno: MEM, AFE_SAT e ADC_SAT sao todos falha.
+constexpr uint16_t kErr1Fault = 0xFFFFu;
+
+// Veredito do autoteste em um lugar so, sem Arduino, para que o teste de host prenda o criterio.
+// Bits reservados entram como falha de proposito: num supervisor de seguranca, bit indefinido
+// subindo e motivo para desconfiar da peca, e a mesma postura ja vale para kStatusFault.
+constexpr bool selfTestFaulty(uint16_t status, uint16_t flag1, uint16_t flag2) {
+    return ((status & kStatusFault) != 0u) || ((flag1 & kErr1Fault) != 0u) ||
+           ((flag2 & kErr2Fault) != 0u);
+}
+
+// Tabela 23: limiares de EXEMPLO do STO por modo, em LSB. O datasheet manda ler STO
+// continuamente depois de cada leitura XYZ e contar eventos consecutivos acima do limiar -
+// limiar e tempo tolerante a falha sao "application specific". Enquanto esse contador nao
+// existir, o STO e REPORTADO e nao entra no veredito: uma unica amostra fora da faixa nao e
+// falha ("exceeds the threshold level continuously ... in static condition").
+constexpr int16_t kStoThresholdMode1 = 1800;
+constexpr int16_t kStoThresholdMode2 = 900;
+constexpr int16_t kStoThresholdMode34 = 3600;
+
+int16_t stoThreshold(uint8_t mode);
+bool stoOutOfRange(uint16_t rawSto, uint8_t mode);
+
 void describeStatus(uint16_t value, char* out, uint16_t cap);
 void describeErrFlag1(uint16_t value, char* out, uint16_t cap);
 void describeErrFlag2(uint16_t value, char* out, uint16_t cap);

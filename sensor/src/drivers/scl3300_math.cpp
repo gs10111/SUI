@@ -106,6 +106,27 @@ uint16_t modeSettleMs(uint8_t mode) {
     return kSettleMsMode1;
 }
 
+int16_t stoThreshold(uint8_t mode) {
+    switch (mode) {
+        case 2:
+            return kStoThresholdMode2;
+        case 3:
+        case 4:
+            return kStoThresholdMode34;
+        default:
+            break;
+    }
+    return kStoThresholdMode1;
+}
+
+bool stoOutOfRange(uint16_t rawSto, uint8_t mode) {
+    // STO e complemento de dois (Tabela 21). Ler como uint deixa -22 virar 65514 e reprovar
+    // uma sensora sadia em qualquer modo.
+    const int32_t value = static_cast<int32_t>(static_cast<int16_t>(rawSto));
+    const int32_t limit = static_cast<int32_t>(stoThreshold(mode));
+    return value > limit || value < -limit;
+}
+
 bool commandTableOk() {
     return frameCrcOk(kCmdSwReset) && frameCrcOk(kCmdMode1) && frameCrcOk(kCmdMode2) &&
            frameCrcOk(kCmdMode3) && frameCrcOk(kCmdMode4) && frameCrcOk(kCmdEnableAngle) &&

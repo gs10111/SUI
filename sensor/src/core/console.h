@@ -24,6 +24,7 @@ private:
     void cmdAngle();
     void cmdRaw();
     void cmdStatus();
+    void printSto(const InclinometerDiag& diag);
     void cmdWhoAmI();
     void cmdSelfTest();
     void cmdReinit();

@@ -431,6 +431,18 @@ void SensorConsole::cmdRaw() {
     }
 }
 
+// STO e o Self-Test Output, valor COM SINAL (Tabela 21): em hex cru, 0xFFEE parece enorme e e
+// -18. O limiar de comparacao muda com o modo de operacao (Tabela 23), entao imprimir o numero
+// sem o limiar do modo ATIVO deixa o operador sem referencia para julgar o que esta vendo.
+void SensorConsole::printSto(const InclinometerDiag& diag) {
+    const int sto = static_cast<int>(static_cast<int16_t>(diag.sto));
+    const int limit = static_cast<int>(scl::stoThreshold(diag.mode));
+    const bool out = scl::stoOutOfRange(diag.sto, diag.mode);
+    ctx_.io.printf("STO          : 0x%04X  (%d com sinal)  limiar modo %u: +-%d LSB  [%s]\r\n",
+                   static_cast<unsigned>(diag.sto), sto, static_cast<unsigned>(diag.mode), limit,
+                   out ? "FORA DA FAIXA" : "dentro");
+}
+
 void SensorConsole::cmdStatus() {
     Tilt t;
     const Status st = ctx_.tilt.read(t);
@@ -464,13 +476,17 @@ void SensorConsole::cmdStatus() {
             ctx_.io.writeLine("Conferir os capacitores de 100 nF X7R colados no chip (A_EXTC pino 2,");
             ctx_.io.writeLine("D_EXTC pino 10) e o terra analogico AVSS (pino 1). Sem o capacitor do");
             ctx_.io.writeLine("core analogico o front-end satura, e por isso SAT acende parado.");
+            // Tabela 48 do datasheet: a faixa e ESTREITA. Nao basta o capacitor estar la e ter
+            // continuidade - fora de 70..130 nF ou com ESR acima de 100 mohm o chip acusa do
+            // mesmo jeito, e um 100 nF de dieletrico errado (Y5V) cai fora com facilidade.
+            ctx_.io.writeLine("Faixa aceita (Tabela 48): 70 a 130 nF, ESR ate 100 mohm, o mais");
+            ctx_.io.writeLine("perto possivel do pino. Recomendado GCM155R71C104KA55 0402 16V X7R.");
         }
     }
     // STO e o Self-Test Output do SCL3300, e e um valor COM SINAL: em hexadecimal cru, 0xFFEE
     // parece enorme e e -18. Impresso so em hex, o unico registrador que mede de verdade o
     // autoteste vira ruido visual.
-    ctx_.io.printf("STO          : 0x%04X  (%d com sinal)\r\n", static_cast<unsigned>(diag.sto),
-                   static_cast<int>(static_cast<int16_t>(diag.sto)));
+    printSto(diag);
     if (diag.status == 0 && diag.errFlag1 == 0 && diag.errFlag2 == 0 && !diag.ready) {
         ctx_.io.writeLine("registradores zerados e driver nao inicializado: nenhum quadro valido ainda");
         ctx_.io.writeLine("veja docs/bringup_sensora.md - a essa altura o suspeito e alimentacao/solda");
@@ -546,12 +562,14 @@ void SensorConsole::cmdSelfTest() {
     ctx_.io.printf("ERR_FLAG1    : 0x%04X  %s\r\n", static_cast<unsigned>(diag.errFlag1), flags);
     scl::describeErrFlag2(diag.errFlag2, flags, sizeof(flags));
     ctx_.io.printf("ERR_FLAG2    : 0x%04X  %s\r\n", static_cast<unsigned>(diag.errFlag2), flags);
-    ctx_.io.printf("STO          : 0x%04X  (%d com sinal)\r\n", static_cast<unsigned>(diag.sto),
-                   static_cast<int>(static_cast<int16_t>(diag.sto)));
+    printSto(diag);
     ctx_.io.printf("RS_SCL       : %u  %s\r\n", static_cast<unsigned>(diag.returnStatus),
                    scl::rsName(static_cast<scl::Rs>(diag.returnStatus)));
     ctx_.io.writeLine("criterio atual: reprova se STATUS tiver bit fora de PWR|MODE_CHANGE,");
-    ctx_.io.writeLine("ou se ERR_FLAG1 ou ERR_FLAG2 forem diferentes de zero.");
+    ctx_.io.writeLine("se ERR_FLAG1 for diferente de zero, ou se ERR_FLAG2 tiver bit fora de");
+    ctx_.io.writeLine("DPWR|MODE_CHANGE (Tabela 33: DPWR alto apos start-up e normal).");
+    ctx_.io.writeLine("STO e reportado e NAO entra no veredito: o datasheet pede contador de");
+    ctx_.io.writeLine("eventos consecutivos, e uma amostra isolada fora da faixa nao e falha.");
 }
 
 void SensorConsole::cmdSpiLoop(const char* arg) {
