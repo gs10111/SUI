@@ -202,9 +202,6 @@ void NormalScreen::renderMain(const NormalInput& in) {
 
     const bool mesmoModo = sameAnalogMode(in);
     const bool temPreset = in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY];
-    const uint8_t necessarias =
-        static_cast<uint8_t>(2u + (mesmoModo ? 1u : 2u) + (temPreset ? 1u : 0u));
-    const bool cabeEnlace = necessarias < rowCapacity(fonteEstado);
 
     int16_t linha = 0;
 
@@ -232,33 +229,33 @@ void NormalScreen::renderMain(const NormalInput& in) {
     drawAt(colunaX, linha, limitesY.text(), fonteEstado);
     linha = static_cast<int16_t>(linha + passo);
 
-    // Invariante 2 de docs/ihm-estados.md: o modo da saida e POR EIXO. Com os dois eixos no
-    // mesmo modo cabe uma linha so; quando diferem, cada eixo diz o seu, porque durante a Auto
-    // Calibracao a saida de um eixo esta simulada e a do outro continua valendo.
-    if (mesmoModo) {
-        Line saida;
-        saida.add("SAIDA:");
-        saida.add(analogText(in.analog[kNormalAxisX]));
-        drawAt(colunaX, linha, saida.text(), fonteEstado);
-        linha = static_cast<int16_t>(linha + passo);
-    } else {
-        for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
+    // LIMPEZA DE 2026-09-01. "ENLACE OK" saiu: a ausencia dele nunca foi prova de nada - uma
+    // falha de enlace ROUBA a tela inteira -, e a vida do dado ja e denunciada pelo marcador de
+    // batimento no canto, que e o unico campo que detecta painel congelado.
+    //
+    // A linha de SAIDA nao saiu por completo, e o desvio e deliberado: ela e o UNICO lugar em
+    // que analogDead aparece - conversor recusando escrita com a leitura perfeita - e a tela de
+    // falha so cobre falha de ENLACE. Removida por inteiro, um DAC morto ficaria invisivel no
+    // painel. Entao ela some quando a saida esta RASTREANDO, que e o caso que enche a tela, e
+    // aparece quando ha o que dizer.
+    if (!allTracking(in)) {
+        if (mesmoModo) {
             Line saida;
-            saida.add("SAIDA ");
-            saida.add((eixo == kNormalAxisY) ? "Y" : "X");
-            saida.add(":");
-            saida.add(analogText(in.analog[eixo]));
+            saida.add("SAIDA:");
+            saida.add(analogText(in.analog[kNormalAxisX]));
             drawAt(colunaX, linha, saida.text(), fonteEstado);
             linha = static_cast<int16_t>(linha + passo);
+        } else {
+            for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
+                Line saida;
+                saida.add("SAIDA ");
+                saida.add((eixo == kNormalAxisY) ? "Y" : "X");
+                saida.add(":");
+                saida.add(analogText(in.analog[eixo]));
+                drawAt(colunaX, linha, saida.text(), fonteEstado);
+                linha = static_cast<int16_t>(linha + passo);
+            }
         }
-    }
-
-    // COM-01 pelo lado saudavel: o operador ve que o enlace esta vivo sem precisar da ausencia
-    // de mensagem como prova. E o unico campo que cede lugar quando a coluna enche (regra 4 do
-    // cabecalho deste arquivo).
-    if (cabeEnlace) {
-        drawAt(colunaX, linha, "ENLACE OK", fonteEstado);
-        linha = static_cast<int16_t>(linha + passo);
     }
 
     // Decisao 1 item 17: enquanto houver offset de Preset, a tela principal diz que a leitura e
@@ -558,12 +555,21 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     // quando a coluna enche (regra 4 do cabecalho deste arquivo). Sem isto, ligar um Preset nos
     // dois eixos apagaria o "ENLACE OK" da tela em troca de letra maior, e o operador perderia
     // a confirmacao positiva de enlace vivo sem nada na tela explicando por que.
+    // Depois da limpeza de 2026-09-01 a coluna tem: dois limites, a linha de SAIDA SO quando ela
+    // nao esta rastreando, e o indicador de PSET quando ha offset. "ENLACE OK" deixou de existir.
+    const uint8_t linhasSaida =
+        allTracking(in) ? 0u : static_cast<uint8_t>(mesmoModo ? 1u : 2u);
     const uint8_t necessarias = static_cast<uint8_t>(
-        2u + (mesmoModo ? 1u : 2u) +
+        2u + linhasSaida +
         ((in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u));
-    const uint8_t comEnlace = static_cast<uint8_t>(
-        necessarias + ((necessarias < rowCapacity(TextFont::Small)) ? 1u : 0u));
-    if (comEnlace > rowCapacity(TextFont::Medium)) {
+    // GUARDA DEFENSIVA, hoje NAO ALCANCAVEL, e escrita assim de proposito. Com as metricas
+    // atuais o teste de LARGURA acima ja decide todo caso de cinco linhas: cinco so acontecem
+    // com modos de saida diferentes, e "SAIDA X:MEDICAO" nao cabe na coluna em Medium, o que ja
+    // devolve Small. Um mutante que zere linhasSaida SOBREVIVE a suite por isso, e nao por
+    // buraco de teste - o invariante geometrico de cada teste continua provando que nada vaza
+    // do painel. A guarda fica porque ela e quem segura o dia em que a fonte, a largura da
+    // coluna ou o texto mudarem e a largura deixar de decidir primeiro.
+    if (necessarias > rowCapacity(TextFont::Medium)) {
         return TextFont::Small;
     }
     return TextFont::Medium;
@@ -575,10 +581,6 @@ uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo) const
                                      : display_.textWidthPx(font, "SAIDA X:MEDICAO");
     if (saida > maior) {
         maior = saida;
-    }
-    const uint16_t enlace = display_.textWidthPx(font, "ENLACE OK");
-    if (enlace > maior) {
-        maior = enlace;
     }
     const uint16_t preset = display_.textWidthPx(font, "PSET:XY");
     if (preset > maior) {
@@ -606,6 +608,17 @@ void NormalScreen::keep(Status status) {
     if (lastStatus_.ok() && status.failed()) {
         lastStatus_ = status;
     }
+}
+
+// Todos os eixos rastreando o angulo real: o caso normal, e o unico em que a linha de SAIDA
+// nao tem nada a dizer.
+bool NormalScreen::allTracking(const NormalInput& in) {
+    for (uint8_t i = 0; i < kNormalAxisCount; ++i) {
+        if (in.analog[i] != NormalAnalogMode::Tracking) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool NormalScreen::sameAnalogMode(const NormalInput& in) {

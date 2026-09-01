@@ -274,6 +274,7 @@ private:
     void keep(Status status);
 
     static bool sameAnalogMode(const NormalInput& in);
+    static bool allTracking(const NormalInput& in);
     static const char* limitLabel(uint8_t index);
     static const char* analogText(NormalAnalogMode mode);
 

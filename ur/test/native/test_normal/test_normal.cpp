@@ -230,11 +230,12 @@ static void test_DSP_02_NRM_01_tela_principal_mostra_os_dois_eixos_no_formato_do
 
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:+045,5"));
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y:-012,3"));
-    // D3: os quatro limites, o enlace, o modo da saida - tudo na mesma tela, sem alternancia.
+    // D3: os quatro limites na mesma tela, sem alternancia. "ENLACE OK" e a linha de SAIDA
+    // RASTREANDO sairam na limpeza de 2026-09-01 (ver o bloco de testes de limpeza no fim deste
+    // arquivo); a de SAIDA volta assim que houver algo diferente de rastreio a dizer.
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:-- X2:--"));
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y1:-- Y2:--"));
-    TEST_ASSERT_TRUE(bancada.painel.showsExactly("ENLACE OK"));
-    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA:MEDICAO"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("ENLACE OK"));
     // Nada conta antes do present(): um quadro apresentado por ciclo.
     TEST_ASSERT_EQUAL_UINT32(1u, bancada.painel.presentCount());
     TEST_ASSERT_EQUAL_UINT32(1u, bancada.painel.clearCount());
@@ -383,10 +384,12 @@ static void test_A7_enlace_recuperado_com_latch_armado_continua_na_tela_de_rearm
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:AL X2:AL Y1:AL Y2:AL"));
     verificarQuadro(bancada.painel);
 
-    // Rearmado o latch, a tela principal volta inteira.
+    // Rearmado o latch, a tela principal volta inteira - que desde a limpeza de 2026-09-01
+    // significa os dois eixos e os quatro contatos, sem "ENLACE OK".
     entrada.linkLatched = false;
     bancada.ciclo(entrada);
-    TEST_ASSERT_TRUE(bancada.painel.showsExactly("ENLACE OK"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:AL X2:AL"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:+045,5"));
     TEST_ASSERT_FALSE(bancada.painel.shows("FALHA TRAVADA - REARMAR NO MENU"));
     verificarQuadro(bancada.painel);
 }
@@ -789,8 +792,10 @@ static void test_invariante2_modo_da_saida_analogica_e_por_eixo(void) {
     TEST_ASSERT_TRUE(outra.painel.showsExactly("SAIDA:CALIB"));
     outra.ciclo(enlaceEmFalha(NormalLinkState::CommFault));
     TEST_ASSERT_TRUE(outra.painel.showsExactly("SAIDA:FALHA"));
+    // Rastreando, a linha some da tela principal (limpeza de 2026-09-01) - o modo continua
+    // visivel na tela dedicada ao eixo, que e onde o tecnico de bancada o le.
     outra.ciclo(enlaceSaudavel(0, 0));
-    TEST_ASSERT_TRUE(outra.painel.showsExactly("SAIDA:MEDICAO"));
+    TEST_ASSERT_FALSE(outra.painel.shows("SAIDA"));
 }
 
 // Regra 4 do cabecalho de normal_screen.cpp: quando a coluna de status enche, quem cede lugar e
@@ -814,10 +819,12 @@ static void test_D1_item17_indicador_de_preset_tem_prioridade_sobre_enlace_ok(vo
     TEST_ASSERT_FALSE(bancada.painel.shows("ENLACE OK"));
     verificarQuadro(bancada.painel);
 
-    // Com um modo so, as cinco linhas comportam tudo.
+    // Com os dois eixos rastreando, a linha de SAIDA some e o indicador de Preset continua -
+    // a limpeza tirou o campo redundante, nunca a prova de que a leitura e relativa.
     entrada.analog[kNormalAxisX] = NormalAnalogMode::Tracking;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Tracking;
     bancada.ciclo(entrada);
-    TEST_ASSERT_TRUE(bancada.painel.showsExactly("ENLACE OK"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("SAIDA"));
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET:XY"));
     verificarQuadro(bancada.painel);
 }
@@ -1076,6 +1083,119 @@ static void test_layout_tela_do_eixo_y_segue_a_mesma_regra(void) {
     verificarQuadro(bancada.painel);
 }
 
+// --- LIMPEZA DA TELA PRINCIPAL (decisao do bigboss, 2026-09-01) -------------------------------
+//
+// Pedido: menos informacao na tela principal. Escolha registrada: sai "ENLACE OK" e sai a linha
+// de "SAIDA", fica o indicador de PSET.
+//
+// DESVIO DELIBERADO DA ESCOLHA, com o motivo: a linha de SAIDA nao sai por completo. Ela e o
+// UNICO lugar em que analogDead aparece - DAC recusando escrita com a leitura perfeita -, e a
+// tela de falha so cobre falha de ENLACE. Removida por inteiro, um conversor morto ficaria
+// invisivel no painel. Entao ela some quando a saida esta RASTREANDO, que e o caso que enche a
+// tela, e aparece quando NAO esta. Fica a limpeza pedida sem apagar um modo de falha.
+
+static void test_limpeza_tela_principal_nao_traz_mais_enlace_ok(void) {
+    Bancada bancada;
+    const NormalInput entrada = enlaceSaudavel(455, -123);
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_FALSE(bancada.painel.shows("ENLACE OK"));
+    // o que ela promete continua no ar
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:+045,5"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:-- X2:--"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y1:-- Y2:--"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_limpeza_saida_some_quando_esta_rastreando(void) {
+    Bancada bancada;
+    const NormalInput entrada = enlaceSaudavel(455, -123);
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_FALSE(bancada.painel.shows("SAIDA"));
+    verificarQuadro(bancada.painel);
+}
+
+// E VOLTA quando ha o que dizer. Este e o caso que a escolha original teria apagado.
+static void test_saida_em_falha_continua_visivel_na_tela_principal(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Fault;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Fault;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA:FALHA"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_saida_simulada_de_um_eixo_continua_visivel(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Calibrating;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Tracking;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA X:CALIB"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA Y:MEDICAO"));
+    verificarQuadro(bancada.painel);
+}
+
+// Com duas linhas a menos, a coluna passa a caber em Medium mesmo com o PSET no ar - que era o
+// caso em que ela tinha de encolher antes.
+static void test_limpeza_deixa_a_coluna_grande_mesmo_com_preset(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetActive[kNormalAxisY] = true;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET:XY"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Medium);
+    verificarQuadro(bancada.painel);
+}
+
+// O eixo Y sozinho em falha tem de acender a linha: verificar so o X deixaria um DAC morto no
+// eixo Y invisivel, que e exatamente o modo de falha que manteve esta linha na tela.
+static void test_saida_em_falha_so_no_eixo_y_ainda_aparece(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Tracking;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Fault;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA X:MEDICAO"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA Y:FALHA"));
+    verificarQuadro(bancada.painel);
+}
+
+// Pior caso de altura da coluna: modos diferentes (duas linhas de SAIDA) com Preset nos dois
+// eixos. Sao cinco linhas, que nao cabem em Medium - e a coluna tem de encolher em vez de
+// empurrar a ultima para fora do painel.
+static void test_coluna_encolhe_no_pior_caso_de_cinco_linhas(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Calibrating;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Tracking;
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetActive[kNormalAxisY] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = -120;
+    entrada.presetOffsetDeci[kNormalAxisY] = 250;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA X:CALIB"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA Y:MEDICAO"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET:XY"));
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Small);
+    verificarQuadro(bancada.painel);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
@@ -1100,6 +1220,13 @@ int main(int, char**) {
     RUN_TEST(test_layout_tela_de_eixo_encolhe_para_nao_esconder_o_preset);
     RUN_TEST(test_layout_valor_grande_do_eixo_nao_monta_sobre_as_linhas);
     RUN_TEST(test_layout_tela_do_eixo_y_segue_a_mesma_regra);
+    RUN_TEST(test_limpeza_tela_principal_nao_traz_mais_enlace_ok);
+    RUN_TEST(test_limpeza_saida_some_quando_esta_rastreando);
+    RUN_TEST(test_saida_em_falha_continua_visivel_na_tela_principal);
+    RUN_TEST(test_saida_simulada_de_um_eixo_continua_visivel);
+    RUN_TEST(test_limpeza_deixa_a_coluna_grande_mesmo_com_preset);
+    RUN_TEST(test_saida_em_falha_so_no_eixo_y_ainda_aparece);
+    RUN_TEST(test_coluna_encolhe_no_pior_caso_de_cinco_linhas);
     RUN_TEST(test_D3_NRM_02_down_percorre_as_telas_de_detalhe_e_volta);
     RUN_TEST(test_NRM_04_toque_simples_em_cima_nao_faz_nada_no_modo_normal);
     RUN_TEST(test_MAN_5_6_L152_duplo_toque_em_cima_chega_como_pset_e_nao_como_dois_toques);
