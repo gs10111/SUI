@@ -376,6 +376,46 @@ static void test_mascara_de_falha_dura_do_status_encolhe_so_do_bit_tolerado(void
     TEST_ASSERT_TRUE((comBypass & scl::kStatusSat) == 0u);
 }
 
+// --- O SEGUNDO PORTAO DO BYPASS: os bits RS ---------------------------------------------------
+//
+// Medido na bancada em 2026-09-01, com o bypass ja ligado: STATUS aceito (0x0001 tolerado), e
+// mesmo assim a leitura saia BUSY com RS_SCL = 3. O datasheet explica (6.3.1): os bits RS
+// sinalizam que existe erro no STATUS e so voltam a b'01' depois de o STATUS ser lido LIMPO.
+// Como o PIN_CONTINUITY reaparece a cada ciclo enquanto o C8 estiver aberto, o RS nunca sai de
+// erro - e o driver derrubava a leitura por causa dele, com o STATUS ja perdoado.
+//
+// A regra: com o bypass ligado, o RS de erro deixa de ser fatal SO quando o STATUS lido no
+// mesmo burst nao traz nada alem do que foi tolerado. Qualquer outro bit aceso volta a tornar
+// o RS fatal - senao o bypass viraria "ignore todo RS de erro", que e coisa completamente
+// diferente do que foi pedido.
+
+static void test_rs_de_erro_e_perdoado_quando_o_status_so_traz_o_bit_tolerado(void) {
+    TEST_ASSERT_TRUE(scl::rsErrorExplainedByBypass(scl::kStatusPinContinuity, true));
+    // acompanhado dos benignos de start-up continua explicado
+    const uint16_t comBenignos = static_cast<uint16_t>(scl::kStatusPinContinuity |
+                                                       scl::kStatusPwr | scl::kStatusModeChange);
+    TEST_ASSERT_TRUE(scl::rsErrorExplainedByBypass(comBenignos, true));
+    // STATUS limpo tambem: nao ha erro que o RS pudesse estar sinalizando
+    TEST_ASSERT_TRUE(scl::rsErrorExplainedByBypass(0x0000u, true));
+}
+
+static void test_rs_de_erro_continua_fatal_com_qualquer_outro_bit(void) {
+    const uint16_t outros[] = {scl::kStatusSat,   scl::kStatusMem,   scl::kStatusClk,
+                               scl::kStatusPd,    scl::kStatusTemp,  scl::kStatusDigi1,
+                               scl::kStatusDigi2};
+    for (size_t i = 0; i < sizeof(outros) / sizeof(outros[0]); ++i) {
+        const uint16_t comTolerado =
+            static_cast<uint16_t>(outros[i] | scl::kStatusPinContinuity);
+        TEST_ASSERT_FALSE(scl::rsErrorExplainedByBypass(outros[i], true));
+        TEST_ASSERT_FALSE(scl::rsErrorExplainedByBypass(comTolerado, true));
+    }
+}
+
+static void test_sem_bypass_nenhum_rs_de_erro_e_perdoado(void) {
+    TEST_ASSERT_FALSE(scl::rsErrorExplainedByBypass(scl::kStatusPinContinuity, false));
+    TEST_ASSERT_FALSE(scl::rsErrorExplainedByBypass(0x0000u, false));
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -406,5 +446,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_bypass_nao_tolera_mais_nada);
     RUN_TEST(test_bypass_desligado_e_o_padrao_do_argumento);
     RUN_TEST(test_mascara_de_falha_dura_do_status_encolhe_so_do_bit_tolerado);
+    RUN_TEST(test_rs_de_erro_e_perdoado_quando_o_status_so_traz_o_bit_tolerado);
+    RUN_TEST(test_rs_de_erro_continua_fatal_com_qualquer_outro_bit);
+    RUN_TEST(test_sem_bypass_nenhum_rs_de_erro_e_perdoado);
     return UNITY_END();
 }

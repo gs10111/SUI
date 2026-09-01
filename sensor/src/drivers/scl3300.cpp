@@ -181,7 +181,11 @@ Status Scl3300::begin() {
     if (lastRs_ == scl::Rs::Startup) {
         return Status(Err::Busy);
     }
-    if (lastRs_ != scl::Rs::Ok) {
+    // Mesma regra do read(): com o bypass ligado, o RS de erro produzido pelo proprio bit
+    // tolerado nao impede a inicializacao. Sem isto, "bypass on" seguido de "reinit" reprovaria
+    // o begin() e o bypass so funcionaria ate alguem reinicializar o driver.
+    if (lastRs_ != scl::Rs::Ok &&
+        !scl::rsErrorExplainedByBypass(lastStatus_, benchBypass_)) {
         captureErrorFlags();
         return Status(Err::HwFault);
     }
@@ -265,6 +269,11 @@ Status Scl3300::read(Tilt& out) {
     // leitura, e SO ele. Todo o resto continua invalidando.
     const bool hardFault =
         statusKnown && ((lastStatus_ & scl::statusHardMask(benchBypass_)) != 0);
+    // Com o bypass ligado, o RS de erro que o PROPRIO bit tolerado produz deixa de derrubar a
+    // leitura - e so ele. Exige o STATUS lido neste burst: sem o registrador nao ha como saber
+    // o que o RS esta sinalizando, e a duvida conta contra a leitura.
+    const bool rsErrorFatal =
+        rsErrorSeen && !(statusKnown && scl::rsErrorExplainedByBypass(lastStatus_, benchBypass_));
 
     if (frameOk[kIdxAngX]) {
         out.xDeci = scl::angleDeciDegrees(payload[kIdxAngX]);
@@ -293,7 +302,7 @@ Status Scl3300::read(Tilt& out) {
     if (linkBad || !statusKnown) {
         flags = static_cast<uint16_t>(flags | kStsSclNotResponding);
     }
-    if (startupSeen || (rsErrorSeen && !hardFault && !saturated)) {
+    if (startupSeen || (rsErrorFatal && !hardFault && !saturated)) {
         flags = static_cast<uint16_t>(flags | kStsSclStartup);
     }
     if (saturated) {
@@ -303,8 +312,11 @@ Status Scl3300::read(Tilt& out) {
         flags = static_cast<uint16_t>(flags | kStsSclSelfTestFail);
     }
 
-    const bool valid = allFramesOk && !crcBad && !linkBad && !startupSeen && !rsErrorSeen &&
-                       !saturated && !hardFault && (lastRs_ == scl::Rs::Ok);
+    const bool valid = allFramesOk && !crcBad && !linkBad && !startupSeen && !rsErrorFatal &&
+                       !saturated && !hardFault &&
+                       (lastRs_ == scl::Rs::Ok ||
+                        (lastRs_ == scl::Rs::Error &&
+                         scl::rsErrorExplainedByBypass(lastStatus_, benchBypass_)));
     if (valid) {
         flags = static_cast<uint16_t>(flags | kStsDataValid);
     }
@@ -323,7 +335,7 @@ Status Scl3300::read(Tilt& out) {
     if (saturated) {
         return Status(Err::Range);
     }
-    if (startupSeen || rsErrorSeen) {
+    if (startupSeen || rsErrorFatal) {
         return Status(Err::Busy);
     }
     if (!valid) {

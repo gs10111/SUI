@@ -163,6 +163,24 @@ constexpr uint16_t statusHardMask(bool benchBypass) {
     return static_cast<uint16_t>(kStatusFault & ~tolerado);
 }
 
+// SEGUNDO PORTAO DO BYPASS, medido na bancada. Os bits RS do quadro SPI sinalizam que existe
+// erro no STATUS e so voltam a b'01' depois de o STATUS ser lido LIMPO (datasheet 6.3.1).
+// Enquanto o C8 estiver aberto o PIN_CONTINUITY reaparece a cada ciclo, entao o RS nunca sai de
+// erro - e perdoar o STATUS sem perdoar o RS deixa a leitura BUSY para sempre, que foi
+// exatamente o que a bancada mostrou.
+//
+// O perdao e CONDICIONADO: vale so quando o STATUS lido no MESMO burst nao traz nada alem do
+// bit tolerado e dos dois benignos de start-up. Qualquer outro bit aceso torna o RS fatal de
+// novo. Sem essa condicao, o bypass viraria "ignore todo RS de erro", que e outra coisa.
+constexpr bool rsErrorExplainedByBypass(uint16_t status, bool benchBypass) {
+    if (!benchBypass) {
+        return false;
+    }
+    const uint32_t explicado =
+        static_cast<uint32_t>(kBenchBypassStatus) | static_cast<uint32_t>(kStatusStartupBenign);
+    return (static_cast<uint32_t>(status) & ~explicado) == 0u;
+}
+
 // Veredito do autoteste em um lugar so, sem Arduino, para que o teste de host prenda o criterio.
 // Bits reservados entram como falha de proposito: num supervisor de seguranca, bit indefinido
 // subindo e motivo para desconfiar da peca, e a mesma postura ja vale para kStatusFault.
