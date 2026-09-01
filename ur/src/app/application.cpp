@@ -27,6 +27,38 @@ domain::NormalLinkState mapLinkToScreen(LinkHealth health, bool stale) {
     return domain::NormalLinkState::CommFault;
 }
 
+domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
+                                     const domain::Parameters& params) {
+    domain::NormalInput in{};
+    for (uint8_t i = 0; i < domain::kNormalAxisCount; ++i) {
+        const domain::Axis axis = static_cast<domain::Axis>(i);
+        in.reading[i] = snap.reading[i];
+        in.unqualified[i] = snap.unqualified[i];
+        in.presetOffsetDeci[i] = params.presetOffsetDeci(axis);
+        in.presetActive[i] = in.presetOffsetDeci[i] != 0;
+        if (snap.overriding[i]) {
+            in.analog[i] = domain::NormalAnalogMode::Calibrating;
+        } else if (snap.link == LinkHealth::Ok && !snap.stale && !snap.analogDead) {
+            in.analog[i] = domain::NormalAnalogMode::Tracking;
+        } else {
+            // snap.analogDead entra aqui de proposito: com o DAC recusando escrita a saida esta
+            // encostada no POR do DAC8562 e o painel nao pode dizer "rastreando" sobre ela.
+            in.analog[i] = domain::NormalAnalogMode::Fault;
+        }
+    }
+    for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
+        in.limit[i].state = snap.limitState[i];
+        in.limit[i].value = params.limitValue(static_cast<domain::LimitId>(i));
+    }
+    in.link = mapLinkToScreen(snap.link, snap.stale);
+    // A7, e NAO A8: snap.configLatched e o latch de configuracao perdida, outra decisao com
+    // outra causa e outra saida.
+    in.linkLatched = snap.linkLatched;
+    in.heartbeatPhase =
+        static_cast<uint8_t>((snap.cycles / 10u) % domain::NormalScreen::kHeartbeatPhases);
+    return in;
+}
+
 
 Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBank& relayRef,
                          IAnalogOutput& analogRef, IWatchdog& watchdogRef)

@@ -117,6 +117,8 @@ enum class LinkHealth : uint8_t {
 // quem manda e a classificacao, nao a idade.
 domain::NormalLinkState mapLinkToScreen(LinkHealth health, bool stale);
 
+
+
 class Application {
 public:
     static constexpr uint16_t kCyclePeriodMs = 50;
@@ -324,5 +326,14 @@ private:
     bool stale_;
     bool relayBankDead_;
 };
+
+// Monta a entrada da tela principal a partir do snapshot e dos parametros ativos. Vive aqui, e
+// nao no composition root, pelo mesmo motivo de mapLinkToScreen: no main.cpp ela nao compila no
+// env native e nenhum teste a alcanca. O custo disso ja apareceu - a Emenda 2 acrescentou o campo
+// unqualified em Snapshot e em NormalInput, os testes de tela continuaram verdes porque montam o
+// NormalInput a mao, e a ligacao entre os dois ficou faltando: a leitura marcada nao chegava a
+// tela nenhuma. Aqui, um teste consegue exigir que cada campo atravesse.
+domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
+                                     const domain::Parameters& params);
 
 }  // namespace app

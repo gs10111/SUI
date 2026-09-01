@@ -461,36 +461,10 @@ domain::NormalLinkState mapLink(app::LinkHealth health, bool stale) {
     return app::mapLinkToScreen(health, stale);
 }
 
+// A montagem mora em app::buildNormalInput(), no dominio testavel. Aqui fica so o
+// encaminhamento com os parametros ativos: esta funcao nao compila no env native.
 domain::NormalInput buildNormalInput(const app::Application::Snapshot& snap) {
-    domain::NormalInput in{};
-    for (uint8_t i = 0; i < domain::kNormalAxisCount; ++i) {
-        const domain::Axis axis = static_cast<domain::Axis>(i);
-        in.reading[i] = snap.reading[i];
-        in.presetOffsetDeci[i] = g_params.presetOffsetDeci(axis);
-        in.presetActive[i] = in.presetOffsetDeci[i] != 0;
-        if (snap.overriding[i]) {
-            in.analog[i] = domain::NormalAnalogMode::Calibrating;
-        } else if (snap.link == app::LinkHealth::Ok && !snap.stale && !snap.analogDead) {
-            in.analog[i] = domain::NormalAnalogMode::Tracking;
-        } else {
-            // snap.analogDead entra aqui de proposito: com o DAC recusando escrita a saida esta
-            // encostada no POR do DAC8562 e o painel nao pode dizer "rastreando" sobre ela.
-            in.analog[i] = domain::NormalAnalogMode::Fault;
-        }
-    }
-    for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
-        in.limit[i].state = snap.limitState[i];
-        in.limit[i].value = g_params.limitValue(static_cast<domain::LimitId>(i));
-    }
-    in.link = mapLink(snap.link, snap.stale);
-    // A7, e NAO A8. Ate a etapa 8 esta linha lia snap.configLatched, que e o latch de
-    // configuracao perdida - outro sinal, outra decisao, outra saida (Reset Geral). Pior: com
-    // configLatched true o loop() retorna no ramo de CONFIG PERDIDA antes de chegar aqui, entao
-    // a tela principal nunca era desenhada com o latch ligado e a string
-    // NormalScreen::kTextLatched era codigo morto.
-    in.linkLatched = snap.linkLatched;
-    in.heartbeatPhase = static_cast<uint8_t>((snap.cycles / 10u) % domain::NormalScreen::kHeartbeatPhases);
-    return in;
+    return app::buildNormalInput(snap, g_params);
 }
 
 void startAssistant(domain::MenuAction action, const app::Application::Snapshot& snap) {

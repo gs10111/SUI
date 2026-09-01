@@ -854,6 +854,46 @@ static void test_A8_latch_de_configuracao_atravessa_o_publish(void) {
 // o operador procurar defeito num cabo perfeito. Aconteceu em bancada duas vezes.
 //
 // updateHealth() ja separa os dois casos pelo verdict_ do enlace. stale so pode impedir o "Ok".
+// A LIGACAO ENTRE O SNAPSHOT E A TELA TEM DE SER EXIGIDA CAMPO A CAMPO.
+//
+// Este teste existe por causa de um defeito real: a Emenda 2 acrescentou "unqualified" em
+// Snapshot e em NormalInput, os testes de tela continuaram verdes porque montam o NormalInput a
+// mao, e a ligacao entre os dois ficou faltando no composition root. A leitura marcada nao
+// chegava a tela nenhuma, e nenhuma suite reprovou. Campo novo sem travessia exigida e campo que
+// nao existe na placa.
+static void test_buildNormalInput_leva_todo_campo_do_snapshot_para_a_tela(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    for (uint8_t i = 0; i < 10u; ++i) {
+        scriptStatus(rig.link, 495, 9, 0x0008u, static_cast<uint16_t>(950u + i));
+        cycle(rig.clock, rig.app);
+    }
+
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    const domain::Parameters params = domain::Parameters::factoryDefaults();
+    const domain::NormalInput in = app::buildNormalInput(snap, params);
+
+    // O campo da Emenda 2: sem esta assercao o defeito volta em silencio.
+    TEST_ASSERT_TRUE_MESSAGE(in.unqualified[0] == snap.unqualified[0],
+                             "unqualified do eixo X tem de atravessar");
+    TEST_ASSERT_TRUE_MESSAGE(in.unqualified[1] == snap.unqualified[1],
+                             "unqualified do eixo Y tem de atravessar");
+    TEST_ASSERT_TRUE_MESSAGE(in.unqualified[0].valid(),
+                             "com quadro chegando tem de existir numero medido");
+    TEST_ASSERT_EQUAL_INT16(495, in.unqualified[0].deciDegrees());
+
+    // E os demais, para que a proxima adicao tambem seja pega.
+    TEST_ASSERT_TRUE(in.reading[0] == snap.reading[0]);
+    TEST_ASSERT_TRUE(in.reading[1] == snap.reading[1]);
+    TEST_ASSERT_TRUE(in.linkLatched == snap.linkLatched);
+    TEST_ASSERT_TRUE(in.link == app::mapLinkToScreen(snap.link, snap.stale));
+    for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
+        TEST_ASSERT_TRUE(in.limit[i].state == snap.limitState[i]);
+    }
+}
+
 static void test_sensora_respondendo_e_doente_mostra_falha_do_SENSOR_nao_do_cabo(void) {
     using domain::NormalLinkState;
     TEST_ASSERT_TRUE(app::mapLinkToScreen(LinkHealth::SensorFault, true) == NormalLinkState::SensorFault);
@@ -1148,6 +1188,7 @@ int main(int, char**) {
     RUN_TEST(test_o_credito_da_janela_de_commit_vale_um_unico_ciclo);
     RUN_TEST(test_bloqueio_alem_do_orcamento_declarado_nao_e_creditado);
     RUN_TEST(test_A8_latch_de_configuracao_atravessa_o_publish);
+    RUN_TEST(test_buildNormalInput_leva_todo_campo_do_snapshot_para_a_tela);
     RUN_TEST(test_sensora_respondendo_e_doente_mostra_falha_do_SENSOR_nao_do_cabo);
     RUN_TEST(test_enlace_mudo_continua_mostrando_falha_de_comunicacao);
     RUN_TEST(test_stale_nunca_deixa_a_tela_dizer_Ok);
