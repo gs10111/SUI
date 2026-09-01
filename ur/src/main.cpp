@@ -127,8 +127,6 @@ constexpr uint8_t kLineCap = 48;
 // O adaptador nao aplica contraste por conta propria; quem decide e este composition root.
 constexpr uint8_t kDisplayContrast = 255;
 
-constexpr const char* kMsgConfigLost = "CONFIG PERDIDA - REPROGRAMAR";
-constexpr const char* kMsgConfigLostHint = "Reset Geral: 5.11";
 constexpr const char* kMsgSaveFailed = "Falha de gravacao!";
 // D6 item 12, APROVADO (DECISIONS.md L1638), 2000 ms de permanencia - a mesma grafia que o
 // assistente ja usa em domain/ui/calibration_wizard.cpp. Nenhuma tela nova foi inventada aqui.
@@ -438,24 +436,15 @@ void applyFactoryReset() {
     showMessage(kMsgFactoryReset);
 }
 
-void drawCenteredLine(int16_t y, const char* text, TextFont font) {
-    const uint16_t width = g_display.textWidthPx(font, text);
-    const uint16_t screen = g_display.widthPx();
-    const int16_t x = (width < screen) ? static_cast<int16_t>((screen - width) / 2u) : 0;
-    g_display.drawText(x, y, text, font, TextInk::Normal);
-}
-
+// As tres telas moram em src/app/application.cpp: aqui elas nao compilam no env native e
+// nenhum teste as alcanca. Foi assim que renderMessage passou a vida desenhando
+// "FORA DA FAIXA +/-090,0" em fonte grande, 330 px num painel de 256, saindo pela direita.
 void renderMessage(const char* text) {
-    g_display.clear();
-    drawCenteredLine(kMessageY, text, TextFont::Large);
-    g_display.present();
+    app::renderMessage(g_display, text);
 }
 
 void renderConfigLost() {
-    g_display.clear();
-    drawCenteredLine(24, kMsgConfigLost, TextFont::Small);
-    drawCenteredLine(48, kMsgConfigLostHint, TextFont::Small);
-    g_display.present();
+    app::renderConfigLost(g_display);
 }
 
 // A traducao mora em app::mapLinkToScreen(), no dominio testavel. Aqui fica so o encaminhamento:
@@ -601,13 +590,7 @@ void servicePsetConfirm() {
             return;
         }
     }
-    char line[kLineCap];
-    if (g_preset.formatPendingConfirm(g_presetAxis, line, kLineCap)) {
-        g_display.clear();
-        g_display.drawText(0, kEditLineY, line, TextFont::Small, TextInk::Normal);
-        drawCenteredLine(60, domain::ui::PresetWizard::kConfirmHintText, TextFont::Small);
-        g_display.present();
-    }
+    app::renderPresetConfirm(g_display, g_preset, g_presetAxis);
 }
 
 void requestPset() {

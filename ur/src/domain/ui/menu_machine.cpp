@@ -20,6 +20,8 @@
 
 #include <string.h>
 
+#include "domain/ui/text_fit.h"
+
 namespace domain {
 namespace {
 
@@ -621,6 +623,16 @@ void MenuMachine::drawLine(int16_t y, const char* text, TextFont font) {
     display_.drawText(0, y, text, font, TextInk::Normal);
 }
 
+// Fonte de UMA linha de conteudo, por MEDICAO (domain/ui/text_fit.h). Substitui a escolha a mao
+// que eu tinha feito tela por tela: "Senha incorreta!" sobe para Medium e
+// "Valor Limite X1(graus):+000,0", com 29 caracteres, desce sozinha para Small - sem que
+// nenhuma das duas esteja escrita numa lista, e sem que encurtar o texto do manual entre em
+// discussao. Os ITENS DE LISTA ficam de fora de proposito: eles compartilham uma grade de
+// linhas de altura fixa, e fonte por item deixaria a lista com alturas diferentes.
+TextFont MenuMachine::contentFont(const char* text) const {
+    return ui::fontThatFits(display_, text, static_cast<int16_t>(display_.widthPx()));
+}
+
 void MenuMachine::drawList(const char* header, const char* const* items, uint8_t count,
                            uint8_t sel) {
     uint8_t inicio = 0;
@@ -684,12 +696,16 @@ void MenuMachine::render() {
             const uint8_t prefixo = buildFieldLine(kPrefixoLogin);
             drawEditLine(kConteudoY, line_,
                          static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
-                         TextFont::Medium);
+                         contentFont(line_));
             break;
         }
 
-        case MenuState::LoginErro: drawLine(kConteudoY, kMsgSenhaIncorreta, TextFont::Medium); break;
-        case MenuState::LoginBloqueado: drawLine(kConteudoY, kMsgBloqueado, TextFont::Medium); break;
+        case MenuState::LoginErro:
+            drawLine(kConteudoY, kMsgSenhaIncorreta, contentFont(kMsgSenhaIncorreta));
+            break;
+        case MenuState::LoginBloqueado:
+            drawLine(kConteudoY, kMsgBloqueado, contentFont(kMsgBloqueado));
+            break;
 
         // L112: a lista, com o item selecionado em Inverse (desvio declarado d).
         case MenuState::Menu: drawList(kCabecalhoMenu, kNomeItem, kItemCount, selTop_); break;
@@ -731,10 +747,11 @@ void MenuMachine::render() {
             n = appendTo(prefixo, kLineCap, n, kEtiquetaLimite[static_cast<uint8_t>(currentLimit())]);
             n = appendTo(prefixo, kLineCap, n, "(graus):");
             const uint8_t base = buildFieldLine(prefixo);
-            // 29 caracteres: em Medium seriam 261 px num painel de 256. Fica em Small, e a
-            // linha continua literal como REQ-DSP-03 exige.
+            // 29 caracteres: contentFont() mede e devolve Small sozinha, porque em Medium a
+            // linha daria 260 px num painel de 256. A linha continua literal, como REQ-DSP-03
+            // exige, e o dia em que o texto encurtar ela sobe sem ninguem revisar isto aqui.
             drawEditLine(kEditorY, line_, static_cast<uint8_t>(base + editor_.cursorTextIndex()),
-                         TextFont::Small);
+                         contentFont(line_));
             break;
         }
 
@@ -744,7 +761,7 @@ void MenuMachine::render() {
             n = appendTo(line_, kLineCap, n, kEtiquetaLimite[static_cast<uint8_t>(currentLimit())]);
             n = appendTo(line_, kLineCap, n, ":");
             drawLine(kRotuloY, line_, TextFont::Small);
-            drawLine(kConteudoY, kNomeOperacao[opSel_], TextFont::Medium);
+            drawLine(kConteudoY, kNomeOperacao[opSel_], contentFont(kNomeOperacao[opSel_]));
             break;
         }
 
@@ -754,31 +771,35 @@ void MenuMachine::render() {
             n = appendTo(line_, kLineCap, n, (axis_ == Axis::X) ? "X" : "Y");
             n = appendTo(line_, kLineCap, n, ":");
             drawLine(kRotuloY, line_, TextFont::Small);
-            drawLine(kConteudoY, kNomeSentido[dirSel_ & 1u], TextFont::Medium);
+            drawLine(kConteudoY, kNomeSentido[dirSel_ & 1u],
+                     contentFont(kNomeSentido[dirSel_ & 1u]));
             break;
         }
 
         // A9: aviso obrigatorio de 3 s, com o eixo e os dois limites a conferir (L199).
-        case MenuState::AvisoSentido:
-            drawLine(kConteudoY, (axis_ == Axis::X) ? kMsgSentidoX : kMsgSentidoY,
-                     TextFont::Medium);
-            // "Preset zerado - confira X1 X2" tem 29 caracteres: so cabe em Small.
-            drawLine(kDetalheY, (axis_ == Axis::X) ? kMsgPresetZeradoX : kMsgPresetZeradoY,
-                     TextFont::Small);
+        case MenuState::AvisoSentido: {
+            const char* aviso = (axis_ == Axis::X) ? kMsgSentidoX : kMsgSentidoY;
+            const char* detalhe = (axis_ == Axis::X) ? kMsgPresetZeradoX : kMsgPresetZeradoY;
+            drawLine(kConteudoY, aviso, contentFont(aviso));
+            // "Preset zerado - confira X1 X2" tem 29 caracteres: a medicao devolve Small.
+            drawLine(kDetalheY, detalhe, contentFont(detalhe));
             break;
+        }
 
         case MenuState::EditSenha: {
             const uint8_t prefixo = buildFieldLine(kPrefixoEditaSenha);
             drawEditLine(kConteudoY, line_,
                          static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
-                         TextFont::Medium);
+                         contentFont(line_));
             break;
         }
 
-        case MenuState::Recusa: drawLine(kConteudoY, recusaMsg_, TextFont::Medium); break;
-        case MenuState::GravOk: drawLine(kConteudoY, kMsgGravOk, TextFont::Medium); break;
-        case MenuState::FalhaGrav: drawLine(kConteudoY, kMsgFalhaGrav, TextFont::Medium); break;
-        case MenuState::Revisao: drawLine(kConteudoY, kMsgRevisao, TextFont::Medium); break;
+        case MenuState::Recusa: drawLine(kConteudoY, recusaMsg_, contentFont(recusaMsg_)); break;
+        case MenuState::GravOk: drawLine(kConteudoY, kMsgGravOk, contentFont(kMsgGravOk)); break;
+        case MenuState::FalhaGrav:
+            drawLine(kConteudoY, kMsgFalhaGrav, contentFont(kMsgFalhaGrav));
+            break;
+        case MenuState::Revisao: drawLine(kConteudoY, kMsgRevisao, contentFont(kMsgRevisao)); break;
     }
     display_.present();
 }

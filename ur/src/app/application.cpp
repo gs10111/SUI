@@ -10,6 +10,8 @@
 // fechou.
 #include "app/application.h"
 
+#include "domain/ui/text_fit.h"
+
 #include "domain/ui/preset_wizard.h"
 
 namespace app {
@@ -563,6 +565,68 @@ void Application::latchSnapshot() {
 
 Application::Snapshot Application::snapshot() const {
     return pub_;
+}
+
+const char kTextConfigLost[] = "CONFIG PERDIDA - REPROGRAMAR";
+const char kTextConfigLostHint[] = "Reset Geral: 5.11";
+
+namespace {
+
+// Centraliza na largura DISPONIVEL depois de escolher a fonte. O x nunca fica negativo: quando
+// nem a menor fonte cabe, o texto encosta em zero e o teste geometrico acusa - recortar em
+// silencio seria esconder o defeito.
+void drawCentered(IDisplay& display, int16_t y, const char* text, TextFont font) {
+    const uint16_t largura = display.textWidthPx(font, text);
+    const uint16_t painel = display.widthPx();
+    const int16_t x = (largura < painel) ? static_cast<int16_t>((painel - largura) / 2u) : 0;
+    display.drawText(x, y, text, font, TextInk::Normal);
+}
+
+}  // namespace
+
+void renderMessage(IDisplay& display, const char* text) {
+    if (text == nullptr) {
+        return;
+    }
+    const TextFont fonte = domain::ui::fontThatFits(
+        display, text, static_cast<int16_t>(display.widthPx()), TextFont::Large);
+    const int16_t y = static_cast<int16_t>(
+        (display.heightPx() - display.lineHeightPx(fonte)) / 2u);
+    display.clear();
+    drawCentered(display, y, text, fonte);
+    display.present();
+}
+
+void renderConfigLost(IDisplay& display) {
+    const int16_t largura = static_cast<int16_t>(display.widthPx());
+    const TextFont f1 = domain::ui::fontThatFits(display, kTextConfigLost, largura);
+    const TextFont f2 = domain::ui::fontThatFits(display, kTextConfigLostHint, largura);
+    const int16_t alturaTotal = static_cast<int16_t>(display.lineHeightPx(f1) + 4 +
+                                                     display.lineHeightPx(f2));
+    const int16_t y1 = static_cast<int16_t>((display.heightPx() - alturaTotal) / 2);
+    const int16_t y2 = static_cast<int16_t>(y1 + display.lineHeightPx(f1) + 4);
+    display.clear();
+    drawCentered(display, y1, kTextConfigLost, f1);
+    drawCentered(display, y2, kTextConfigLostHint, f2);
+    display.present();
+}
+
+void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& preset,
+                         domain::Axis axis) {
+    char linha[48];
+    if (!preset.formatPendingConfirm(axis, linha, sizeof(linha))) {
+        return;
+    }
+    const int16_t largura = static_cast<int16_t>(display.widthPx());
+    const TextFont fonteValor = domain::ui::fontThatFits(display, linha, largura);
+    const TextFont fonteDica =
+        domain::ui::fontThatFits(display, domain::ui::PresetWizard::kConfirmHintText, largura);
+    const int16_t yDica =
+        static_cast<int16_t>(display.heightPx() - display.lineHeightPx(fonteDica));
+    display.clear();
+    display.drawText(0, 20, linha, fonteValor, TextInk::Normal);
+    drawCentered(display, yDica, domain::ui::PresetWizard::kConfirmHintText, fonteDica);
+    display.present();
 }
 
 void renderPresetEdit(IDisplay& display, const domain::ui::PresetWizard& preset,

@@ -316,6 +316,7 @@ private:
     // --- desenho ---
     void render();
     void drawLine(int16_t y, const char* text, TextFont font);
+    TextFont contentFont(const char* text) const;
     // Cabecalho mais a janela de kListWindow entradas em torno da selecao, com o item
     // selecionado em Inverse (desvio declarado d).
     void drawList(const char* header, const char* const* items, uint8_t count, uint8_t sel);

@@ -9,6 +9,8 @@
 // sem til e sem circunflexo, porque e assim que o painel escreve.
 #include "domain/ui/calibration_wizard.h"
 
+#include "domain/ui/text_fit.h"
+
 namespace domain {
 
 namespace {
@@ -381,7 +383,13 @@ Status CalibrationWizard::render(IDisplay& display) const {
     if (resultado.failed()) {
         return resultado;
     }
-    resultado = display.drawText(kTextX, kTextY, texto, TextFont::Small, TextInk::Normal);
+    // A fonte sai da MEDICAO da propria linha (domain/ui/text_fit.h): as telas curtas sobem
+    // para Medium e a de fundo de escala, com 36 caracteres literais de L177, desce sozinha
+    // para Small. Nenhuma tela precisa estar escrita numa lista, e encurtar o texto seria
+    // errata de manual.
+    const TextFont fonte = ui::fontThatFits(
+        display, texto, static_cast<int16_t>(display.widthPx() - kTextX));
+    resultado = display.drawText(kTextX, kTextY, texto, fonte, TextInk::Normal);
     if (resultado.failed()) {
         return resultado;
     }
@@ -396,9 +404,12 @@ Status CalibrationWizard::render(IDisplay& display) const {
             }
             recorte[indice] = '\0';
             const char glifo[2] = {texto[indice], '\0'};
+            // Medido na MESMA fonte que desenhou a linha. Com a fonte variando por tela, medir
+            // numa fonte fixa poe o realce sobre o digito errado - e e com ele que o tecnico
+            // calibra a saida analogica.
             const int16_t x = static_cast<int16_t>(
-                kTextX + static_cast<int16_t>(display.textWidthPx(TextFont::Small, recorte)));
-            resultado = display.drawText(x, kTextY, glifo, TextFont::Small, TextInk::Inverse);
+                kTextX + static_cast<int16_t>(display.textWidthPx(fonte, recorte)));
+            resultado = display.drawText(x, kTextY, glifo, fonte, TextInk::Inverse);
             if (resultado.failed()) {
                 return resultado;
             }
@@ -406,15 +417,22 @@ Status CalibrationWizard::render(IDisplay& display) const {
     }
 
     if (overriding()) {
-        const int16_t passo = static_cast<int16_t>(display.lineHeightPx(TextFont::Small) + 1);
-        const int16_t avisoY2 = static_cast<int16_t>(display.heightPx() - passo);
-        const int16_t avisoY1 = static_cast<int16_t>(avisoY2 - passo);
-        resultado = display.drawText(kTextX, avisoY1, kWarnSimulated, TextFont::Small,
+        // A14: as duas linhas de aviso sao a unica coisa na tela que diz que a saida NAO esta
+        // rastreando o angulo. Sobem de fonte junto com o resto - as duas tem 14 caracteres e
+        // cabem folgadas -, mas a altura das duas faixas passa a sair da fonte escolhida.
+        const int16_t larguraAviso = static_cast<int16_t>(display.widthPx() - kTextX);
+        const TextFont fonteAviso1 = ui::fontThatFits(display, kWarnSimulated, larguraAviso);
+        const TextFont fonteAviso2 = ui::fontThatFits(display, kWarnBlockPlc, larguraAviso);
+        const int16_t alturaAviso2 = static_cast<int16_t>(display.lineHeightPx(fonteAviso2) + 1);
+        const int16_t alturaAviso1 = static_cast<int16_t>(display.lineHeightPx(fonteAviso1) + 1);
+        const int16_t avisoY2 = static_cast<int16_t>(display.heightPx() - alturaAviso2);
+        const int16_t avisoY1 = static_cast<int16_t>(avisoY2 - alturaAviso1);
+        resultado = display.drawText(kTextX, avisoY1, kWarnSimulated, fonteAviso1,
                                      TextInk::Normal);
         if (resultado.failed()) {
             return resultado;
         }
-        resultado = display.drawText(kTextX, avisoY2, kWarnBlockPlc, TextFont::Small,
+        resultado = display.drawText(kTextX, avisoY2, kWarnBlockPlc, fonteAviso2,
                                      TextInk::Normal);
         if (resultado.failed()) {
             return resultado;

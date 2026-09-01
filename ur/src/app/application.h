@@ -345,4 +345,18 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
 void renderPresetEdit(IDisplay& display, const domain::ui::PresetWizard& preset,
                       domain::Axis axis);
 
+// Confirmacao do PSET: o valor pendente mais o gesto que grava. Mesma razao de estar aqui.
+void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& preset,
+                         domain::Axis axis);
+
+// Mensagem temporizada centralizada (PSET aplicado, recusas, fora de faixa). A fonte sai da
+// MEDICAO: as curtas ficam grandes e as longas descem sozinhas. Antes era fonte grande fixa com
+// o x clampado em zero, e "FORA DA FAIXA +/-090,0" saia da tela pela direita em silencio.
+void renderMessage(IDisplay& display, const char* text);
+
+// A8: registro reprovado na carga. Tela estatica que fica no ar por semanas ate o Reset Geral.
+extern const char kTextConfigLost[];
+extern const char kTextConfigLostHint[];
+void renderConfigLost(IDisplay& display);
+
 }  // namespace app

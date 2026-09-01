@@ -41,6 +41,7 @@
 // O tempo vem do FakeClock canonico de test/fakes/fake_clock.h, que comeca em 0xFFFF0000:
 // todo prazo deste arquivo atravessa o wrap de 2^32 ms, entao prazo escrito como "a > b" em
 // vez da subtracao unsigned de ports/i_clock.h reprova aqui.
+#include <string.h>
 #include <unity.h>
 
 #include "domain/ui/calibration_wizard.h"
@@ -698,6 +699,11 @@ static void test_REQ_DSP_a_geometria_de_todas_as_telas_cabe_no_painel(void) {
 
 // REQ-DSP-04: o video inverso marca o DIGITO EM EDICAO. Perguntar so "existe algum inverso"
 // deixa passar o inverso piscando dentro da palavra "Ajuste".
+//
+// A posicao e medida na fonte que o proprio quadro usou (marcado->font), e nao numa fonte
+// escrita a mao: desde que a fonte da tela sai de fontThatFits(), fixar Small aqui prenderia o
+// teste a um detalhe que a regra escolhe, e nao ao invariante - que e o realce cair no fim do
+// recorte, seja qual for a fonte.
 static void test_REQ_DSP_04_o_video_inverso_cai_no_digito_em_edicao(void) {
     FakeClock clock;
     FakeDisplay display;
@@ -714,7 +720,7 @@ static void test_REQ_DSP_04_o_video_inverso_cai_no_digito_em_edicao(void) {
     TEST_ASSERT_NOT_NULL(marcado);
     TEST_ASSERT_EQUAL_STRING("2", marcado->text);
     TEST_ASSERT_EQUAL_INT16(
-        static_cast<int16_t>(display.textWidthPx(TextFont::Small, "Ajuste 0Vcc:573")),
+        static_cast<int16_t>(display.textWidthPx(marcado->font, "Ajuste 0Vcc:573")),
         marcado->x);
 
     toque(assistente, clock, Key::Menu);
@@ -723,7 +729,7 @@ static void test_REQ_DSP_04_o_video_inverso_cai_no_digito_em_edicao(void) {
     TEST_ASSERT_NOT_NULL(marcado);
     TEST_ASSERT_EQUAL_STRING("3", marcado->text);
     TEST_ASSERT_EQUAL_INT16(
-        static_cast<int16_t>(display.textWidthPx(TextFont::Small, "Ajuste 0Vcc:57")),
+        static_cast<int16_t>(display.textWidthPx(marcado->font, "Ajuste 0Vcc:57")),
         marcado->x);
 
     holdDeMenu(assistente, clock);
@@ -1051,6 +1057,78 @@ static void test_REQ_CAL_06_CAL_07_o_par_gravado_governa_proporcao_e_saturacao(v
     TEST_ASSERT_EQUAL_UINT16(6554u, escala.codeFor(Angle::fromDeciDegrees(-900)));
 }
 
+// --- FONTE DAS TELAS DO ASSISTENTE (2026-09-01) ----------------------------------------------
+//
+// Pedido do bigboss: as telas de configuracao SEGUINTES ao menu tambem tem de crescer. A regra e
+// a de domain/ui/text_fit.h - a maior fonte em que a string INTEIRA cabe - e nao uma escolha
+// tela por tela. Aqui isso se traduz assim: as sete telas curtas sobem para Medium e a de fundo
+// de escala, com 36 caracteres, desce sozinha para Small, sem estar escrita em lista nenhuma.
+static void test_telas_curtas_do_assistente_sobem_de_fonte(void) {
+    FakeClock clock;
+    FakeDisplay display;
+    AnalogCalibration cal;
+    CalibrationWizard assistente(cal, clock);
+
+    TEST_ASSERT_TRUE(assistente.begin(Axis::X, false).ok());
+    TEST_ASSERT_TRUE(telaMostra(assistente, display, kTelaAvisoX));
+    TEST_ASSERT_TRUE(display.fontOf(kTelaAvisoX) == TextFont::Medium);
+    conferirGeometria(display);
+
+    holdDeMenu(assistente, clock);
+    escreveCampo(assistente, clock, "0000");
+    TEST_ASSERT_TRUE(telaMostra(assistente, display, kTelaZeroEmZeros));
+    TEST_ASSERT_TRUE(display.fontOf(kTelaZeroEmZeros) == TextFont::Medium);
+    conferirGeometria(display);
+}
+
+static void test_tela_de_fundo_de_escala_desce_para_small_porque_nao_cabe(void) {
+    // "Angulo fim de escala X(graus):+045,0" tem 36 caracteres: 324 px em Medium num painel de
+    // 256. E a linha literal de L177 - encurtar e errata de manual, nao de layout.
+    FakeClock clock;
+    FakeDisplay display;
+    AnalogCalibration cal;
+    CalibrationWizard assistente(cal, clock);
+
+    TEST_ASSERT_TRUE(assistente.begin(Axis::X, false).ok());
+    holdDeMenu(assistente, clock);
+    escreveCampo(assistente, clock, "0000");
+    holdDeMenu(assistente, clock);
+
+    TEST_ASSERT_TRUE(telaMostra(assistente, display, kTelaAnguloX));
+    TEST_ASSERT_TRUE(display.fontOf(kTelaAnguloX) == TextFont::Small);
+    TEST_ASSERT_TRUE(display.textWidthPx(TextFont::Medium, kTelaAnguloX) > display.widthPx());
+    conferirGeometria(display);
+}
+
+// REQ-DSP-04 no assistente: o digito em edicao em video reverso tem de ser medido na MESMA
+// fonte que desenhou a linha. Com a fonte da linha variando por tela, medir na fonte fixa
+// poe o realce em cima do digito errado - e o tecnico calibra a saida analogica com ele.
+static void test_realce_do_digito_acompanha_a_fonte_da_tela(void) {
+    FakeClock clock;
+    FakeDisplay display;
+    AnalogCalibration cal;
+    CalibrationWizard assistente(cal, clock);
+
+    TEST_ASSERT_TRUE(assistente.begin(Axis::X, false).ok());
+    holdDeMenu(assistente, clock);
+    escreveCampo(assistente, clock, "0000");
+    TEST_ASSERT_TRUE(telaMostra(assistente, display, kTelaZeroEmZeros));
+
+    const FakeDisplay::Draw* inverso = unicoInverso(display);
+    TEST_ASSERT_NOT_NULL(inverso);
+    TEST_ASSERT_TRUE(inverso->font == TextFont::Medium);
+    // a caixa invertida comeca no fim do recorte MEDIDO em Medium
+    char recorte[64];
+    const uint8_t corte = static_cast<uint8_t>(strlen(kTelaZeroEmZeros) - 1u);
+    for (uint8_t i = 0; i < corte; ++i) {
+        recorte[i] = kTelaZeroEmZeros[i];
+    }
+    recorte[corte] = '\0';
+    TEST_ASSERT_EQUAL_INT16(static_cast<int16_t>(display.textWidthPx(TextFont::Medium, recorte)),
+                            inverso->x);
+    conferirGeometria(display);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_CAL_05_as_telas_literais_na_ordem_e_o_retorno_ao_modo_normal);
@@ -1081,5 +1159,8 @@ int main(int, char**) {
     RUN_TEST(test_ihm_F5_e_F6_ignoram_toda_tecla_e_nao_reiniciam_o_prazo);
     RUN_TEST(test_key_gesture_flush_e_pedido_em_toda_troca_de_tela_e_de_modo);
     RUN_TEST(test_REQ_CAL_06_CAL_07_o_par_gravado_governa_proporcao_e_saturacao);
+    RUN_TEST(test_telas_curtas_do_assistente_sobem_de_fonte);
+    RUN_TEST(test_tela_de_fundo_de_escala_desce_para_small_porque_nao_cabe);
+    RUN_TEST(test_realce_do_digito_acompanha_a_fonte_da_tela);
     return UNITY_END();
 }
