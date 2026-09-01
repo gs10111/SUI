@@ -531,6 +531,27 @@ void SensorConsole::cmdSelfTest() {
         return;
     }
     ctx_.io.printf("selftest: FALHA (%s)\r\n", errName(st.err));
+
+    // Um comando que reprova tem de dizer POR QUE na mesma tela. O selftest ja LEU os quatro
+    // registradores que explicam a reprovacao; exigir um 'status' depois e transformar um passo
+    // de bancada em dois, e foi assim que ERR_FLAG1 e ERR_FLAG2 ficaram invisiveis por uma
+    // sessao inteira.
+    InclinometerDiag diag;
+    ctx_.tilt.diagnostics(diag);
+    char flags[160];
+    ctx_.io.writeLine("-- por que reprovou (registradores lidos pelo proprio selftest) --");
+    scl::describeStatus(diag.status, flags, sizeof(flags));
+    ctx_.io.printf("STATUS       : 0x%04X  %s\r\n", static_cast<unsigned>(diag.status), flags);
+    scl::describeErrFlag1(diag.errFlag1, flags, sizeof(flags));
+    ctx_.io.printf("ERR_FLAG1    : 0x%04X  %s\r\n", static_cast<unsigned>(diag.errFlag1), flags);
+    scl::describeErrFlag2(diag.errFlag2, flags, sizeof(flags));
+    ctx_.io.printf("ERR_FLAG2    : 0x%04X  %s\r\n", static_cast<unsigned>(diag.errFlag2), flags);
+    ctx_.io.printf("STO          : 0x%04X  (%d com sinal)\r\n", static_cast<unsigned>(diag.sto),
+                   static_cast<int>(static_cast<int16_t>(diag.sto)));
+    ctx_.io.printf("RS_SCL       : %u  %s\r\n", static_cast<unsigned>(diag.returnStatus),
+                   scl::rsName(static_cast<scl::Rs>(diag.returnStatus)));
+    ctx_.io.writeLine("criterio atual: reprova se STATUS tiver bit fora de PWR|MODE_CHANGE,");
+    ctx_.io.writeLine("ou se ERR_FLAG1 ou ERR_FLAG2 forem diferentes de zero.");
 }
 
 void SensorConsole::cmdSpiLoop(const char* arg) {
