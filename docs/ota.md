@@ -238,6 +238,28 @@ abrir o modulo.
 
 ---
 
+## 8.5 Em que estados a placa aceita atualizacao
+
+| estado da supervisora | ponto de acesso | aceita pacote? |
+|---|---|---|
+| operacao normal | no ar | sim |
+| Modo Programacao / assistentes | no ar | sim - a tela de confirmacao toma o painel |
+| falha de enlace, latch de A7 | no ar | sim |
+| **CONFIG PERDIDA (A8)** | no ar | **sim** |
+| logomarca e autoteste do boot | no ar | **nao** - a pagina fica muda |
+
+**CONFIG PERDIDA merece a linha em negrito.** Aquele estado devolve o laco antes da IHM e fica no
+ar por semanas, ate alguem ir ao painel. Se a atualizacao vivesse atras daquele desvio, a placa
+que mais precisa de firmware novo - a que esta travada em falha - seria a unica que nao
+conseguiria receber. E e seguro: em CONFIG PERDIDA os quatro reles **ja** estao em alarme, entao
+nao ha o que declarar.
+
+Durante o **splash de boot** a pagina nao responde, de proposito: aceitar um pacote ali poria a
+tela de confirmacao atras da logomarca, o operador nao veria a pergunta e a sessao morreria por
+prazo sem ele entender por que. Sao poucos segundos.
+
+---
+
 ## 9. O que ainda nao foi medido
 
 Esta secao existe porque a atualizacao por WiFi foi implementada **antes** das medicoes que a

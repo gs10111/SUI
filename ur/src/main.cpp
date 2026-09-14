@@ -940,12 +940,6 @@ bool serviceOta() {
 void serviceHmi() {
     const app::Application::Snapshot snap = takeSnapshot();
     serviceBootProof(snap);
-    // ANTES DE QUALQUER OUTRA TELA. Uma atualizacao em curso e o unico estado em que o painel
-    // nao pertence a operacao normal: as saidas ja estao em alarme declarado e a pergunta na
-    // tela e a unica coisa que o operador pode responder.
-    if (serviceOta()) {
-        return;
-    }
     g_preset.sample(snap.raw[0], snap.raw[1]);
     g_preset.tick();
 
@@ -1250,6 +1244,10 @@ void loop() {
     }
 
     if (g_boot.ownsDisplay()) {
+        // O PORTAL FICA MUDO DURANTE O SPLASH, de proposito. O ponto de acesso ja esta no ar, mas
+        // aceitar um pacote aqui poria a tela de confirmacao atras da logomarca e do autoteste: o
+        // operador nao veria a pergunta e a sessao morreria por prazo, sem ele entender por que.
+        // Sao poucos segundos, e a pagina simplesmente nao responde enquanto isso.
         g_boot.tick();
         if (g_boot.finished()) {
             g_gesture.flush();
@@ -1258,6 +1256,22 @@ void loop() {
                 applyFactoryReset();
             }
         }
+        return;
+    }
+
+    // ANTES DO DESVIO DE CONFIG PERDIDA, e nao dentro de serviceHmi().
+    //
+    // CONFIG PERDIDA (A8) devolve o laco aqui embaixo e nunca chega a serviceHmi() - e esse
+    // estado fica no ar por SEMANAS, ate alguem ir ao painel. Com a atualizacao atras daquele
+    // desvio, a unica placa que mais precisa receber firmware novo - a que esta travada em falha -
+    // seria justamente a unica que nao consegue. Aqui ela consegue, e com seguranca: em CONFIG
+    // PERDIDA os quatro reles JA estao em alarme, entao nao ha o que declarar.
+    //
+    // Uma atualizacao em curso e o unico estado em que o painel nao pertence a operacao normal: as
+    // saidas estao em alarme declarado e a pergunta na tela e a unica coisa que o operador pode
+    // responder.
+    if (serviceOta()) {
+        g_configLostDrawn = false;  // ao sair da atualizacao, CONFIG PERDIDA se redesenha
         return;
     }
 
