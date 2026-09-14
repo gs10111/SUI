@@ -2634,7 +2634,15 @@ Cinco decisoes (1, 3, 4, 5 e 11) tocam neste parametro e todas as cinco declaram
 
 ## Decisao 15 - Escopo de software do firmware de aplicacao: Wi-Fi, portal web, simulador e comandos de atuacao do console fora do produto
 
-**Status:** PENDENTE DE APROVACAO
+> **SUBSTITUIDA EM PARTE PELA DECISAO 17 (2026-09-14), Parte 9.** Os itens 1, 2, 7 e 8 - Wi-Fi fora
+> do binario de producao - **nao valem mais**: o produto passou a ter atualizacao de firmware por
+> ponto de acesso WPA2 permanente nas duas placas. Os itens **3, 4, 5 e 6 continuam valendo sem uma
+> virgula alterada**: comandos de ATUACAO do console seguem fora do binario de producao. Um ponto
+> de acesso para atualizar firmware nao autoriza `relay all on` por console, e os dois assuntos
+> foram deliberadamente mantidos separados. A MEDICAO 26 descrita no fim desta decisao continua
+> sendo a medicao que qualifica a Decisao 17 - e continua nao tendo sido feita.
+
+**Status:** SUBSTITUIDA EM PARTE (ver aviso acima)
 **Impacto de seguranca:** alto
 **REQ afetados:** nenhum REQ de manual (e esse e o ponto); MAN-2.1-L27..L46 (a lista de caracteristicas do produto **nao** menciona nenhuma interface sem fio), MAN-8 (Conexoes Eletricas: nao existe antena, conector de rede ou porta de servico), base comum secao 7 (`#define UR_WIFI_ENABLED 0`, A_APROVAR), base comum secao 2 (tarefa ctrl no core 0, prio 5); codigo: `src/net/wifi_portal.cpp`, `src/net/wifi_portal.h`, `src/net/web_page.h`, `src/sim/sim_commands.cpp`, `src/cmds/cmd_relay.cpp:67`, `src/cmds/cmd_analog.cpp:85` e `:312`, `src/cmds/cmd_system.cpp:226` e `:248`, `src/tests/*`, `sensor/src/core/console.cpp:300` (comando `proto`)
 
@@ -2976,3 +2984,124 @@ o cabo real de 500 m), `M5` (nivel de repouso de IO34/IO35 — o `trace de tecla
 no console foi acrescentado para tornar essa medicao dispensavel no diagnostico do
 dia a dia), `M8` (dinamica da estrutura), `M10` (faixa angular e amarracao fisica
 do sentido).
+
+---
+
+# Parte 9 - Atualizacao de firmware por WiFi (sessao de 2026-09-14)
+
+## Decisao 17 - OTA nas duas placas, com ponto de acesso permanente e senha por equipamento
+
+**Status:** IMPLEMENTADA (autorizada pelo bigboss nesta sessao)
+**Impacto de seguranca:** alto
+**Substitui:** Decisao 15, itens 1, 2, 7 e 8 - **e so eles**
+**Documento normativo:** `docs/ota.md`
+**Codigo:** `lib_shared/depuri_ota/`, `ur/src/main.cpp`, `sensor/src/main.cpp`,
+`{ur,sensor}/src/ota_rollback_hook.cpp`, `scripts/empacota_ota.py`, `scripts/verifica_ota.cpp`
+
+### O que foi decidido
+
+Cada placa sobe um ponto de acesso WPA2 **proprio e permanente**. Quem precisa atualizar liga o
+celular naquela rede, abre a pagina e envia um arquivo `.ota`. A supervisora exige confirmacao no
+painel; a sensora, que nao tem painel, aceita direto.
+
+### O que muda em relacao a Decisao 15
+
+A Decisao 15 tirava o WiFi do binario de producao por exclusao de linkagem. O bigboss pediu o
+oposto, e o pedido e legitimo: sem OTA, toda correcao de firmware numa frota instalada e uma
+viagem com cabo USB ate um modulo que pode estar a 500 m do painel.
+
+**O que a Decisao 15 dizia e continua valendo, sem uma virgula alterada:**
+
+- **Item 3** - comandos de **atuacao** do console fora do binario de producao. Um ponto de acesso
+  para atualizar firmware nao autoriza `relay all on` por console. Os dois assuntos foram
+  deliberadamente mantidos separados.
+- **Itens 4, 5 e 6** - ensaio funcional sem comandos de atuacao, marcacao `BUILD=FACTORY`, mesma
+  regra nas duas placas.
+
+### O que foi construido, e por que cada peca existe
+
+1. **Gancho de rollback, primeiro de tudo.** Com `CONFIG_APP_ROLLBACK_ENABLE=y`, `initArduino()`
+   marca como valida qualquer imagem que apenas chegue a rodar, guardado so por dois simbolos
+   FRACOS (`esp32-hal-misc.c:203-238`). O produto define `verifyRollbackLater()` forte e decide por
+   criterio explicito: **5 ciclos bons continuos em ate 30 s**, sendo ciclo bom o enlace `Ok` na
+   supervisora e a leitura valida do inclinometro na sensora. "O firmware subiu" nao serve como
+   prova - e o que o core ja fazia.
+   **O gancho so existe na imagem que JA ESTA na placa.** Por isso a primeira gravacao de cada
+   placa da frota continua sendo por cabo.
+2. **Cabecalho de 64 bytes com o campo `alvo`.** O erro que este formato existe para impedir nao e
+   arquivo corrompido: e a imagem da OUTRA placa. As duas sobem o mesmo tipo de ponto de acesso,
+   com a mesma pagina, e uma imagem da supervisora gravada na sensora e uma imagem valida que sobe,
+   nao tem SCL3300 e nao tem como ser atualizada de novo.
+3. **Alarme declarado, com aviso na tela antes** (escolha do bigboss). Quatro reles em alarme e as
+   duas saidas em 3932 desde ANTES da primeira escrita ate o reinicio. Nao e latch e nao reusa o
+   latch de A8 - um operador que veja "configuracao perdida" em toda atualizacao aprende a ignorar
+   a mensagem que um dia vai ser verdadeira.
+4. **Dois relogios na gravacao**, porque o modo de falha de campo e o operador que confirma, comeca
+   a subir e vai almocar: estagnacao (60 s sem byte) e teto absoluto (300 s). Um fluxo lento porem
+   continuo nunca estagna; um fluxo morto nunca estoura o teto.
+5. **`esp_ota_begin(..., OTA_WITH_SEQUENTIAL_WRITES)` em vez de `Update.h`.** `Updater.cpp:213-217`
+   apaga 64 KiB numa chamada - ate 2000 ms - o que estoura o token de liveness da supervisora
+   (800 ms) e o `tWD` minimo do STWD100 da sensora (1120 ms).
+6. **Empacotamento no build.** O `.ota` sai junto do `firmware.bin` com o alvo vindo do proprio
+   env. Um empacotamento manual erra o alvo exatamente no dia corrido.
+
+### Senha: o que foi decidido e o que ainda nao existe
+
+O bigboss escolheu **WPA2 com senha por equipamento**, impressa na etiqueta, rejeitando
+explicitamente senha unica de fabrica e ponto de acesso aberto. Motivo registrado: *"Quem esta no
+patio precisa do equipamento na mao para ler a senha. A Decisao 15 item 8 exige explicitamente
+autenticacao que NAO seja a senha de 4 digitos publicada."*
+
+O firmware le a senha de NVS (`ota`/`pw`) e **cai numa derivacao do MAC** quando ela nao existe.
+
+> **PENDENCIA DE PRODUCAO, e e a mais importante desta decisao.** A derivacao do MAC **nao vale
+> como controle de acesso**: ela so e secreta enquanto o firmware for secreto, e o firmware e
+> justamente o arquivo que entregamos ao cliente. O BSSID vai no ar em texto claro em toda baliza.
+> Quem tiver um `.ota` calcula a senha de qualquer equipamento do patio sem chegar perto dele.
+> **Enquanto o jig nao sortear e gravar a senha, toda placa da frota esta no caminho degradado** e
+> o requisito do item 8 da Decisao 15 NAO esta cumprido. Nao se conserta trocando o sal.
+
+### Precisa de medicao de bancada - e nenhuma foi feita
+
+- **MEDICAO 26 - jitter da tarefa `ctrl` com o radio ligado.** As tarefas do stack WiFi rodam em
+  prioridade 22 e 23 **no core 0**, que e onde vive a `ctrl`. Esta propria DECISIONS.md, na
+  Decisao 15, **espera que esta medicao REPROVE**. O ponto de acesso permanentemente no ar e hoje
+  uma escolha assumida, nao uma propriedade verificada, e esta registrada como tal no proprio
+  `setup()` de `ur/src/main.cpp`.
+- **MEDICAO 12 - ruido de RF do radio no SCL3300.** `WiFi.mode(WIFI_OFF)` estava na sensora desde o
+  inicio por este motivo. O inclinometro e a funcao inteira do produto. Caminho de volta imediato,
+  sem regravar: comando `wifi off` no console, que de proposito **nao persiste** no boot seguinte -
+  uma placa que se lembrasse de estar sem radio seria uma placa que ninguem atualiza mais sem cabo.
+- **MEDICAO NOVA - alcance util do ponto de acesso.** Nao ha um unico dado de RF neste repositorio.
+  Potencia fixada em 11 dBm e 2 clientes porque o alcance pretendido e o lado da maquina.
+
+### Precisa de decisao humana
+
+1. **A frota vai para campo antes da MEDICAO 26?** Se a medicao reprovar, as opcoes sao: (a) radio
+   ligado so sob comando, com o equipamento fora de operacao; (b) mover a `ctrl` para o core 1;
+   (c) aceitar o jitter medido e revisar o orcamento de 50 ms. **Nenhuma delas e escolhivel sem o
+   numero.**
+2. **Quando o jig passa a sortear e gravar a senha?** Ate la o item 8 da Decisao 15 nao esta
+   cumprido.
+3. **Secao de manual.** O item 8 da Decisao 15 exigia "secao nova de manual, superficie de ataque
+   declarada". `docs/ota.md` cobre a parte de engenharia; **a secao de manual do cliente ainda nao
+   existe**.
+
+### O que a revisao adversarial derrubou durante a implementacao
+
+- **Refutado: "`Update.h` resolve".** Apaga 64 KiB por chamada e reseta a placa no meio da
+  gravacao.
+- **Refutado: "`esp_ota_end()` ja valida, o cabecalho proprio e redundante".** Valida - depois de
+  escrever 1280 KiB, e sem responder de que placa e o arquivo, que e a pergunta que importa.
+- **Refutado: "basta bater o watchdog no gancho de keep-alive nas duas placas".** Sao situacoes
+  diferentes: na supervisora quem bate e a `ctrl` no core 0, que sobrevive ao envio bloqueante, e o
+  gancho serve para mexer o painel; na sensora o gancho E o batimento. Confundir as duas custa uma
+  sensora resetando no meio de todo envio.
+- **Corrigido por mutante sobrevivente:** escrever prazo como `nowMs >= marco + prazo` expira a
+  sessao 5 ms depois de comecar quando a soma atravessa o wrap de 2^32 - e o teste em `prazo-1` nao
+  ve isso, porque a essa altura os dois lados ja estouraram juntos.
+- **Corrigido por mutante sobrevivente:** o teste de `apSsid()` aceitava uma versao que escrevia
+  **fora do buffer** e so depois devolvia 0.
+- **Corrigido por mutante sobrevivente:** nenhum teste impedia uma senha de 12 caracteres iguais -
+  5 bits de entropia em vez de 60 - que passava por deterministica, distinta entre placas e dentro
+  do alfabeto.

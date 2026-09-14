@@ -1,0 +1,300 @@
+# Atualizacao de firmware por WiFi (OTA) - SUI-DI141388XY
+
+Contrato da atualizacao de firmware das **duas** placas do produto: a Unidade Remota
+`DE-PURI-DI261924` (supervisora) e a placa sensora `PUSI-DI261930`.
+
+**Regra de autoria deste arquivo:** o que esta descrito como "implementado" foi lido no
+codigo-fonte ou medido, nao presumido. O que nao foi medido esta na secao
+[9. O que ainda nao foi medido](#9-o-que-ainda-nao-foi-medido), e essa secao e a parte mais
+importante do documento.
+
+---
+
+## 1. Em uma frase
+
+Cada placa sobe um ponto de acesso WPA2 proprio, permanentemente. Quem precisa atualizar liga o
+celular naquela rede, abre a pagina, escolhe o arquivo `.ota` e envia. A supervisora exige
+confirmacao no painel, com aviso do que vai acontecer com as saidas; a sensora, que nao tem
+painel, aceita direto.
+
+---
+
+## 2. O erro que o formato existe para impedir
+
+Nao e "arquivo corrompido". E **a imagem da outra placa**.
+
+As duas placas sobem o mesmo tipo de ponto de acesso, com a mesma pagina, e quem atualiza esta no
+patio com o celular na mao. Uma imagem da supervisora gravada na sensora e uma imagem
+**valida**: ela sobe, passa em toda verificacao que a IDF faz, e nao tem SCL3300, nao tem RS-485
+escravo e nao tem como ser atualizada de novo. Vira caminhonete com cabo USB.
+
+Por isso todo pacote comeca com 64 bytes de cabecalho, conferidos **antes de o primeiro byte ir
+para a flash**:
+
+| desl. | tam. | campo |
+|---|---|---|
+| 0 | 8 | magica `DEPURIOT` |
+| 8 | 2 | versao do cabecalho (1) |
+| 10 | 2 | **alvo**: 1 = supervisora, 2 = sensora |
+| 12 | 4 | tamanho da imagem, sem contar estes 64 |
+| 16 | 4 | CRC-32 da imagem |
+| 20 | 32 | SHA-256 da imagem |
+| 52 | 3 | versao maior.menor.correcao |
+| 55 | 5 | reservado (tem de ser zero) |
+| 60 | 4 | CRC-32 deste cabecalho, sobre os bytes 0..59 |
+
+A ordem das conferencias e deliberada e a mensagem na tela depende dela: tamanho do buffer,
+magica, **CRC do cabecalho**, versao do formato, alvo, tamanho da imagem, reservados. O CRC vem
+antes de qualquer campo porque, sem ele, um bit trocado no campo `alvo` seria lido como um alvo
+valido.
+
+Layout e regras em `lib_shared/depuri_ota/include/ota_package.h`.
+
+---
+
+## 3. Isto NAO e autenticacao
+
+CRC-32 responde "o arquivo chegou inteiro?". SHA-256 responde "este arquivo e *aquele* arquivo?".
+**Nenhum dos dois responde "quem mandou este arquivo?"** - nao ha assinatura. Quem produz o
+arquivo produz o resumo.
+
+O unico controle de acesso e a senha WPA2 do ponto de acesso. Ela tem dois caminhos:
+
+1. **Caminho normal** - a senha e sorteada na producao, gravada em NVS (`ota`/`pw`) pelo jig e
+   impressa na etiqueta da placa. Nao esta em firmware nenhum. Quem quiser entrar precisa do
+   equipamento na mao para ler a etiqueta. E o que a Decisao 15 item 8 exige: autenticacao que
+   nao seja a senha de 4 digitos publicada no manual.
+2. **Caminho degradado** - placa que nunca passou pelo jig, ou NVS apagada: a senha e derivada do
+   MAC para que a placa continue atualizavel, e o firmware **avisa no console**.
+
+> **A senha derivada nao vale como controle de acesso.** Ela so e secreta enquanto o firmware for
+> secreto, e o firmware e justamente o arquivo que entregamos ao cliente. O BSSID de um ponto de
+> acesso vai no ar, em texto claro, em toda baliza. Quem tiver um `.ota` e um analisador calcula a
+> senha de qualquer equipamento do patio sem chegar perto dele. Nao adianta trocar o sal nem
+> espalhar mais o resumo: o problema e a entrada e o algoritmo serem ambos publicos. **O conserto
+> e a senha sorteada na producao**, e enquanto ela nao existir no jig, toda placa do campo esta no
+> caminho degradado.
+
+Detalhes em `lib_shared/depuri_ota/include/ota_credentials.h`.
+
+---
+
+## 4. O que acontece com as saidas
+
+Escolha do operador, registrada: **alarme declarado, com aviso na tela antes**.
+
+Do instante da confirmacao ate a placa reiniciar:
+
+- os **quatro reles** vao a `Signalled`;
+- as **duas saidas analogicas** vao ao codigo de falha 3932 (-11,00 V, fora de banda).
+
+Isto nao e uma falha detectada - e uma declaracao, feita **antes da primeira escrita na flash**.
+Apagar um setor trava os dois nucleos por dezenas de milissegundos; quatro reles seguindo leitura
+velha sao piores que quatro reles em alarme anunciado.
+
+**Nao e latch.** Sai sozinho quando a sessao termina ou morre. Exigir rearme humano a cada
+gravacao poria alguem na frente do painel toda vez.
+
+**Nao se confunde com A8.** "Configuracao perdida" diz *ninguem sabe com que limites este
+equipamento opera*; o alarme de atualizacao diz *estou me regravando, de proposito, por um
+minuto*. Um operador que veja "configuracao perdida" em toda atualizacao aprende a ignorar a
+mensagem que um dia vai ser verdadeira.
+
+Na **sensora** nao ha rele: o alarme sai porque o enlace para de responder e a supervisora declara
+falha por conta propria (decisao A5).
+
+---
+
+## 5. Os relogios que impedem a maquina de ficar parada
+
+O modo de falha de campo de verdade nao e o arquivo corrompido. E: o operador confirma, comeca a
+subir, o celular bloqueia a tela, ele vai almocar - e a maquina fica travada em alarme sem ninguem
+entender por que.
+
+| relogio | valor | o que mata |
+|---|---|---|
+| confirmacao | 60 s | pacote aceito e ninguem confirmou no painel |
+| estagnacao | 60 s | parou de chegar byte |
+| teto da gravacao | 300 s | fluxo lento porem continuo, que nunca estagna |
+| mensagem na tela | 10 s | recusa ou erro sai sozinho e a placa volta a aceitar |
+
+Os dois primeiros da gravacao existem juntos porque **um fluxo lento porem continuo nunca estagna
+e um fluxo morto nunca estoura o teto**. Vencido qualquer um, a sessao morre e as saidas voltam.
+
+Ha um caso que nenhum destes relogios cobre e que resolve sozinho: se o cliente parar de enviar
+**sem desconectar**, o `WebServer` do core fica em `while(!client.available() && client.connected())
+delay(2)` (`Parsing.cpp:339`), que nao tem prazo. Nenhum pedaco chega, o gancho de keep-alive nao
+e chamado, e o watchdog externo reseta a placa. **Isso e aceitavel e e o comportamento desejado:**
+nada foi ativado, a `otadata` nao foi tocada e a particao que esta rodando esta intacta - a placa
+volta no firmware antigo.
+
+---
+
+## 6. Por que nao `Update.h`
+
+`Updater.cpp:213-217` do core Arduino apaga blocos de **64 KiB numa unica chamada** - ate 2000 ms
+parado. Isso estoura o token de liveness da supervisora (800 ms) e o `tWD` minimo do STWD100 da
+sensora (1120 ms): a placa reseta no meio da gravacao.
+
+O produto usa `esp_ota_begin(..., OTA_WITH_SEQUENTIAL_WRITES)`, que faz a IDF apagar **setor a
+setor (4 KiB)** durante a escrita, e fatia cada `write()` em 4 KiB para que a chamada volte rapido.
+
+`maiorEscritaMs()` e **medido, nao estimado**: `esp_ota_ops.c` vem pre-compilado no framework e o
+tempo de apagamento depende do chip de flash soldado na placa. A placa mede e informa.
+
+### A diferenca entre as placas que custa caro
+
+`WebServer::handleClient()` le o corpo inteiro do POST **dentro de uma unica chamada**
+(`Parsing.cpp:429-471`) e so devolve quando o envio termina. O laco principal nao roda nesse
+intervalo.
+
+- **Supervisora:** o batimento do watchdog e da tarefa `ctrl`, que vive no **core 0** e continua
+  rodando. O watchdog nao depende do gancho. O gancho serve para mexer o painel - sem ele a barra
+  de progresso congela em 0% e quem esta na frente da maquina conclui que travou.
+- **Sensora:** nao ha segunda tarefa. O laco e um so, e e ele que renova o token de liveness.
+  **Sem batimento no gancho a placa reseta no meio de todo envio.**
+
+---
+
+## 7. Rollback: a placa decide se a imagem nova presta
+
+Sem isto o primeiro OTA seria irrecuperavel.
+
+Com `CONFIG_APP_ROLLBACK_ENABLE=y`, `initArduino()` chama
+`esp_ota_mark_app_valid_cancel_rollback()` **antes do `setup()`** (`esp32-hal-misc.c:203-238`),
+guardado so por dois simbolos **fracos**. De fabrica, portanto, qualquer imagem que apenas chegue a
+rodar e dada por boa - inclusive uma sensora que sobe e nao fala com o SCL3300.
+
+O produto define `verifyRollbackLater()` **forte**, devolvendo `true`
+(`{ur,sensor}/src/ota_rollback_hook.cpp`), o que faz o core pular o bloco inteiro, e passa a
+decidir por criterio explicito:
+
+- **5 ciclos bons CONTINUOS em ate 30 s.** Ciclo ruim zera a contagem - cinco ciclos bons
+  intercalados com ruins descrevem um equipamento intermitente.
+- **Ciclo bom** = enlace `Ok` e nao `stale` na supervisora; leitura valida do inclinometro na
+  sensora. "O firmware subiu" nao serve: e o que o core ja fazia.
+- **Reprovado nao retorna:** `esp_ota_mark_app_invalid_rollback_and_reboot()` reinicia e o
+  bootloader sobe a particao anterior.
+
+> **O gancho so serve na imagem que JA ESTA na placa.** Nao adianta ele estar na imagem que vai
+> subir. Por isso ele foi a primeira peca implementada, e por isso a **primeira** gravacao de cada
+> placa da frota tem de ser **por cabo**.
+
+`check_rollback_hook.py` roda como pos-script do build nas duas placas e exige ` T
+verifyRollbackLater` no ELF via `nm`: um gancho que voltasse a ser simbolo fraco passaria
+despercebido sem isso.
+
+---
+
+## 8. Procedimento
+
+### 8.1 Gerar o pacote
+
+O `.ota` sai **automaticamente** junto do `firmware.bin`, com alvo e versao ja preenchidos:
+
+```
+cd ur     && pio run -e esp32dev   # -> .pio/build/esp32dev/firmware-supervisora-0.1.0.ota
+cd sensor && pio run -e pusi       # -> .pio/build/pusi/firmware-sensora-0.2.0.ota
+```
+
+Isto e passo de build e nao comando que alguem lembra de rodar, porque o campo que importa e o
+**alvo**, e um empacotamento manual erra o alvo exatamente no dia corrido.
+
+A mao, quando necessario:
+
+```
+python3 scripts/empacota_ota.py <firmware.bin> -a supervisora|sensora -v 0.2.0
+```
+
+### 8.2 Conferir antes de ir ao patio
+
+Com o **mesmo parser que roda na placa**:
+
+```
+g++ -std=gnu++17 -I lib_shared/depuri_ota/include -o /tmp/verifica_ota scripts/verifica_ota.cpp
+/tmp/verifica_ota ur/.pio/build/esp32dev/firmware-supervisora-0.1.0.ota 1
+```
+
+Vale mais a pena rodar com o alvo **errado** de proposito: tem de dar veredito 5 (`AlvoErrado`).
+
+### 8.3 Atualizar
+
+1. No celular, ligue na rede `SUI-UR-XXXXXX` (supervisora) ou `SUI-SEN-XXXXXX` (sensora), onde
+   `XXXXXX` sao os tres ultimos bytes do MAC. A senha esta na etiqueta da placa.
+2. Abra qualquer endereco no navegador - a pagina aparece sozinha.
+3. Escolha o `.ota` e toque em **Enviar**.
+4. **Supervisora:** o painel mostra `ATUALIZAR FIRMWARE?` com o aviso `SAIDAS VAO PARA ALARME` e a
+   versao. Confirme **segurando MENU por 3 s**; **DOWN** cancela. (Mesmo gesto do commit de
+   Preset: um toque solto perto de um painel nao e decisao.)
+   **Sensora:** comeca direto.
+5. A barra anda; ao fim a placa reinicia sozinha.
+6. A imagem nova entra **em prova**: 5 ciclos bons em ate 30 s ou a placa volta para a anterior.
+
+### 8.4 Conferir o que ficou gravado
+
+O console de bancada registra o SHA-256 do pacote no instante em que ele e aceito. Confira contra
+o que o `empacota_ota.py` imprimiu. E o unico jeito de afirmar **qual** arquivo ficou na placa sem
+abrir o modulo.
+
+---
+
+## 9. O que ainda nao foi medido
+
+Esta secao existe porque a atualizacao por WiFi foi implementada **antes** das medicoes que a
+qualificam. As duas abaixo podem reabrir a decisao.
+
+### MEDICAO 26 - jitter da tarefa `ctrl` com o radio ligado (supervisora)
+
+As tarefas do stack WiFi do ESP-IDF rodam em prioridades 22 e 23 **no core 0**, que e onde vive a
+tarefa `ctrl`. Todo o orcamento de 50 ms do ciclo de seguranca foi calculado num core cujo unico
+ocupante de alta prioridade e o `esp_timer`.
+
+**A DECISIONS.md espera que esta medicao REPROVE.** Ela nunca foi feita. Ate que exista, o ponto de
+acesso permanentemente no ar e uma **escolha assumida, nao uma propriedade verificada** - e esta
+registrada como tal no proprio `setup()` de `ur/src/main.cpp`.
+
+Aceitacao: periodo entre ticks <= 55 ms em 100.000 de 100.000 e zero transacoes Modbus perdidas
+por atraso.
+
+### MEDICAO 12 - ruido de RF do radio no SCL3300 (sensora)
+
+`WiFi.mode(WIFI_OFF)` estava na sensora **desde o inicio por este motivo**. O inclinometro e a
+funcao inteira do produto, e o radio agora fica ligado 100% do tempo, nao so durante a
+atualizacao.
+
+Caminho de volta, imediato e sem regravar nada:
+
+```
+wifi off        # no console de bancada da sensora, 115200
+```
+
+Desligar **nao persiste** no boot seguinte, de proposito: e ferramenta de medicao, nao
+configuracao. Uma placa que se lembrasse de estar sem radio seria uma placa que ninguem atualiza
+mais sem cabo.
+
+### MEDICAO NOVA - alcance util do ponto de acesso
+
+**Nao ha um unico dado de RF neste repositorio.** O produto preve ate 500 m entre a supervisora e
+a sensora, e as duas ficam em modulos separados. O ponto de acesso foi configurado em 11 dBm e 2
+clientes justamente porque o alcance util pretendido e *o lado da maquina* - quem atualiza precisa
+estar perto o bastante para ler a etiqueta. Se na pratica nao der para chegar perto de uma das
+placas, isso e requisito novo, nao ajuste de potencia.
+
+---
+
+## 10. Relacao com a Decisao 15
+
+A Decisao 15 declarava WiFi **fora** do binario de producao, por exclusao de linkagem, com
+verificacao por `nm` no release. A **Decisao 17** a substitui nos itens 1, 2, 7 e 8 - e so neles.
+
+Continua valendo, sem alteracao:
+
+- **Item 3** - comandos de **atuacao** do console (`relay`, `ao raw`, `ao mode`, `test`,
+  `cal erase`) fora do binario de producao. Um ponto de acesso para atualizar firmware nao
+  autoriza escrever em rele por console.
+- **Itens 4, 5 e 6** - ensaio funcional sem comandos de atuacao, marcacao `BUILD=FACTORY`, e a
+  mesma regra nas duas placas.
+
+O item 8 previa que acesso remoto, se pedido, exigiria "secao nova de manual, superficie de ataque
+declarada, autenticacao que nao seja uma senha de 4 digitos publicada, e uma decisao propria".
+**A secao de manual ainda nao existe** - ver a pendencia no fim da Decisao 17.
