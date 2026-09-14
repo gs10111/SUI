@@ -284,7 +284,7 @@ realmente escreve. **Nao ha registrador de escrita.**
 | 3 | `STATUS` | uint16 BE | bitfield | — | ver secao 7 | Palavra de saude do sensor. **E o unico criterio de validade do dado** |
 | 4 | `TEMP` | uint16 BE | int16 com sinal | decimo de grau Celsius | tipico -400 a +900 | Temperatura interna do SCL3300 |
 | 5 | `WHO_AM_I` | uint16 BE | constante | — | `0x00C1` ou `0x0000` | `0x00C1` quando o SCL3300 respondeu ao menos uma vez; `0x0000` desde o boot ate a primeira leitura boa |
-| 6 | `FW_VERSION` | uint16 BE | empacotado | — | `(major << 8) \| minor` | Versao do firmware da sensora. **Hoje fixo em `0x0001`** — ver pendencia P5 |
+| 6 | `FW_VERSION` | uint16 BE | empacotado | — | `(major << 8) \| minor` | Versao do firmware da sensora, **derivada do `fw_version` do build** e publicada desde o boot (P5 FECHADA em 2026-09-14). `0x0000` significa "nao publicado": campo acima de 255 satura no proprio byte e texto mal formado devolve zero, nunca um numero plausivel |
 | 7 | `UPTIME` | uint16 BE | uint16 | segundo | 0 a 65535 | Uptime da sensora truncado a 16 bits. **Envolve a cada 65535 s = 18 h 12 min 15 s.** So avanca em leitura **boa** do SCL3300 — ver 7.3 e pendencia P4 |
 | — | `kRegCount` | — | — | — | **8** | Contagem total. `start + count` nunca pode ultrapassar este valor |
 
@@ -601,7 +601,7 @@ Nenhuma delas e opcional: sem elas o enlace descrito aqui nao funciona.
 | `sensor/src/main.cpp` | `g_activeProtocol = &g_modbusSlave` no boot | **Bloqueador P1** |
 | `sensor/src/main.cpp` | `g_registers[kRegStatus] = kStsSclNotResponding` (atribuicao, nao `\|=`) | Limpar `DATA_VALID` na falha |
 | `sensor/src/main.cpp` | Zerar `ANG_X/Y/Z` ou marca-los invalidos na falha | Nao publicar angulo congelado |
-| `sensor/src/main.cpp` | Registrador 6 derivado de `FW_VERSION` e publicado desde o boot | Pendencia P5 |
+| `sensor/src/main.cpp` | Registrador 6 derivado de `FW_VERSION` e publicado desde o boot | **FEITO em 2026-09-14** (P5) |
 | `sensor/src/proto/jig_slave.*` | Atras de flag de build do ambiente de fabrica | Ausente do firmware de produto |
 
 ---
@@ -614,7 +614,7 @@ Nenhuma delas e opcional: sem elas o enlace descrito aqui nao funciona.
 | **P2** | O mestre da UR le **2** registradores (`kRegisterCount = 2`) e nunca olha o status; `kRxCap = 16` nao comporta a resposta de 21 bytes | Confirmado | Sem correcao, a UR nao consegue nem receber a leitura completa, nem aplicar a regra de aceitacao |
 | **P3** | Em falha do SCL3300 a sensora **congela** os angulos no ultimo valor bom e faz apenas `\|= 0x0010` no status, produzindo `0x0011` = `DATA_VALID` **e** `SCL_NOT_RESPONDING` juntos | Confirmado (`sensor/src/main.cpp`) | Mestre que use mascara de bit aceita angulo velho de sensor morto **indefinidamente**. Enquanto nao for corrigido, a regra `status == 0x0001` exata e **obrigatoria** |
 | **P4** | O registrador 7 e uptime em **segundos**, atualizado so em leitura boa. Granularidade grosseira demais para detectar laco travado | Confirmado | Deteccao de sensora congelada leva ~3 s. Proposta a fechar: trocar por **heartbeat incrementado a cada ciclo de 10 ms, fora do ramo de leitura boa**, o que baixaria a deteccao para 150 ms |
-| **P5** | Registrador 6 hardcoded em `kFwMajor = 0` / `kFwMinor = 1`, independente de `FW_VERSION` do `platformio.ini`; e so escrito dentro de `publishTilt()` | Confirmado | Subir a versao de build nao muda o registrador; placa com inclinometro morto publica versao `0x0000` |
+| **P5** | ~~Registrador 6 hardcoded~~ | **FECHADA em 2026-09-14** | O registrador sai de `sensormap::kFwVersionReg`, derivado do `fw_version` do build por `fwVersionReg()`, e e publicado por `publishIdentity()` ANTES de o RS-485 subir — inclusive quando o SCL3300 nao inicializa. O defeito ficava invisivel por coincidencia: `0.1.0` codifica exatamente o `0x0001` que estava cravado. Sobra para o bigboss a decisao de PRODUTO: a UR le o campo e continua descartando; usa-lo como gate de compatibilidade muda o comportamento de seguranca |
 | **P6** | `kStsWdtReset` (`0x0040`) **nao e escrito por nenhuma linha** do firmware | Confirmado por busca | Reset por watchdog e invisivel para a UR |
 | **P7** | Comentarios de cabecalho da sensora citam pinos errados (`rs485.cpp` diz "DE/RE 14"; o correto e 13. `ext_wdt.cpp` diz "WDI IO19"; o correto e 14) | Confirmado | O binario esta certo (usa `board_pins.h`); quem documentar lendo o comentario publica pinagem errada |
 | **P8** | Numeracao dos bornes do sensor diverge entre manual (CN1-4..8) e esquematico (CN2A..D). Nao ha mapa no repositorio | Confirmado | Risco de cablar A/B na borneira errada na instalacao. Fechar antes de imprimir etiqueta |

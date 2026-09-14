@@ -27,8 +27,6 @@ constexpr uint32_t kTiltPeriodMs = 10;
 constexpr uint32_t kLedPeriodMs = 500;
 constexpr uint32_t kReadPollMs = 2;
 constexpr uint32_t kMinGapUs = 750;
-constexpr uint16_t kFwMajor = 0;
-constexpr uint16_t kFwMinor = 1;
 
 SPIClass g_sclSpi(VSPI);
 SpiBus g_sclBus(g_sclSpi, board::kSclSclk, board::kSclMiso, board::kSclMosi, "VSPI/SCL3300");
@@ -112,6 +110,16 @@ SensorCtx g_ctx{g_io,
 
 SensorConsole g_console(g_ctx);
 
+// IDENTIDADE PUBLICADA NO BOOT, e nao so dentro de publishTilt(). Segunda metade da pendencia
+// P5: os campos que NAO dependem de leitura - versao de firmware e WHOAMI - tem de estar no fio
+// desde o primeiro quadro Modbus, porque uma sensora que nunca consegue ler o SCL3300 nunca
+// chamaria publishTilt() e ficaria anunciando versao 0x0000 para sempre. E justamente na sensora
+// doente que o mestre mais precisa saber com qual firmware esta falando.
+void publishIdentity() {
+    g_registers[sensormap::kRegFwVersion] = sensormap::kFwVersionReg;
+    g_registers[sensormap::kRegWhoAmI] = g_tilt.whoAmI();
+}
+
 void publishTilt(const Tilt& tilt, uint32_t uptimeS) {
     g_registers[sensormap::kRegAngleX] = static_cast<uint16_t>(tilt.xDeci);
     g_registers[sensormap::kRegAngleY] = static_cast<uint16_t>(tilt.yDeci);
@@ -119,7 +127,7 @@ void publishTilt(const Tilt& tilt, uint32_t uptimeS) {
     g_registers[sensormap::kRegStatus] = tilt.status;
     g_registers[sensormap::kRegTempDeciC] = static_cast<uint16_t>(tilt.tempDeciC);
     g_registers[sensormap::kRegWhoAmI] = g_tilt.whoAmI();
-    g_registers[sensormap::kRegFwVersion] = static_cast<uint16_t>((kFwMajor << 8) | kFwMinor);
+    g_registers[sensormap::kRegFwVersion] = sensormap::kFwVersionReg;
     g_registers[sensormap::kRegUptimeS] = static_cast<uint16_t>(uptimeS & 0xFFFFu);
 }
 
@@ -184,6 +192,12 @@ void setup() {
     if (tiltStatus.failed()) {
         g_io.printf("ALERTA: SCL3300 nao inicializou (%s): use 'status' e 'reinit'\r\n", errName(tiltStatus.err));
     }
+
+    // ANTES do RS-485 subir, e nao depois: assim o PRIMEIRO quadro que o mestre conseguir ler ja
+    // traz a versao de firmware desta sensora. Vale sobretudo quando o g_tilt.begin() acima
+    // falhou - e exatamente na sensora doente que o mestre mais precisa saber com qual firmware
+    // esta falando, e ela nunca chamaria publishTilt().
+    publishIdentity();
 
     const Status linkStatus = g_link.begin(board::kRs485DefaultBaud, 8, 'N', 1);
     if (linkStatus.failed()) {
