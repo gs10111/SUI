@@ -1,5 +1,10 @@
-# Guarda de arquitetura: reprova o build se o dominio ou a camada de aplicacao passarem a
-# depender de hardware. Exigido pelo criterio de aceitacao 3 do briefing.
+# Guarda de arquitetura, copia da que roda na supervisora. A PUSI-DI261930 nao tem camadas: aqui
+# ela existe por causa de lib_shared/depuri_ota, que as duas placas compartilham.
+#
+# Sem esta copia, uma violacao na metade pura da biblioteca de atualizacao so seria apanhada por
+# quem compilasse a supervisora. O caminho que decide "esta imagem vira a particao de boot?" e o
+# mais perigoso do produto nas DUAS placas, e um build verde da sensora nao pode significar menos
+# do que um build verde da supervisora.
 #
 # A regra vem do DIP: src/domain/ e src/app/ conhecem apenas as portas de src/ports/. Quem
 # fala com o mundo e src/adapters/, e so ele. Sem esta guarda a violacao entra silenciosa e

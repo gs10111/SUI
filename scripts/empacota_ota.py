@@ -96,7 +96,7 @@ def main() -> int:
     print(f"imagem : {len(imagem)} bytes")
     print(f"crc32  : 0x{binascii.crc32(imagem) & 0xFFFFFFFF:08X}")
     print(f"sha256 : {hashlib.sha256(imagem).hexdigest()}")
-    print("\nO sha256 acima e o que a placa mostra no fim da atualizacao. Confira os dois.")
+    print("\nO sha256 identifica exatamente este arquivo. A placa registra o dela no console\nde bancada assim que aceita o cabecalho - e assim que se confere que o que subiu foi este.")
     return 0
 
 

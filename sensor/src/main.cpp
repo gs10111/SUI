@@ -200,6 +200,21 @@ void serviceOta(uint32_t nowMs) {
     // proprio estado da sessao - nao ha nada a aplicar antes.
     g_ota.service(nowMs, g_ota.saidasEmAlarme());
 
+    // O resumo, uma vez so, quando o pacote e aceito: e a unica coisa que liga o arquivo que
+    // subiu ao arquivo que saiu do sistema de compilacao. Esta placa nao tem painel nenhum, entao
+    // o console de bancada e o unico lugar onde isso pode ser conferido.
+    static ota::Phase faseAnterior = ota::Phase::Ocioso;
+    if (faseAnterior == ota::Phase::Ocioso && g_ota.phase() == ota::Phase::Preparando) {
+        const ota::PackageHeader& h = g_ota.header();
+        g_io.printf("ota: pacote aceito, versao %u.%u.%u  sha256 ", static_cast<unsigned>(h.versaoMaior),
+                    static_cast<unsigned>(h.versaoMenor), static_cast<unsigned>(h.versaoCorrecao));
+        for (uint8_t i = 0; i < ota::kSha256Bytes; ++i) {
+            g_io.printf("%02X", static_cast<unsigned>(h.sha256Imagem[i]));
+        }
+        g_io.writeLine("");
+    }
+    faseAnterior = g_ota.phase();
+
     PortalStatus st;
     g_ota.preencherStatusDoPortal(st);
     g_portal.publish(st);

@@ -900,6 +900,25 @@ bool serviceOta() {
         }
         if (g_ota.phase() == ota::Phase::Aguardando) {
             const ota::PackageHeader& h = g_ota.header();
+            // UMA VEZ SO, quando o pacote e aceito: o resumo e a unica coisa que liga o arquivo
+            // que subiu ao arquivo que saiu do sistema de compilacao. Nao cabe no painel de
+            // 256x64 - cabe aqui, e e aqui que a bancada confere.
+            if (!g_otaDesenhandoConfirm) {
+                Serial.print(F("ota: pacote aceito, versao "));
+                Serial.print(h.versaoMaior);
+                Serial.print('.');
+                Serial.print(h.versaoMenor);
+                Serial.print('.');
+                Serial.print(h.versaoCorrecao);
+                Serial.print(F("  sha256 "));
+                for (uint8_t i = 0; i < ota::kSha256Bytes; ++i) {
+                    if (h.sha256Imagem[i] < 0x10u) {
+                        Serial.print('0');
+                    }
+                    Serial.print(h.sha256Imagem[i], HEX);
+                }
+                Serial.println();
+            }
             app::renderOtaConfirm(g_display, h.versaoMaior, h.versaoMenor, h.versaoCorrecao);
             g_otaDesenhandoConfirm = true;
             return true;
