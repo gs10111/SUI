@@ -1090,6 +1090,84 @@ static void test_configLatched_forca_alarme_e_3932_mesmo_com_enlace_Ok(void) {
     TEST_ASSERT_EQUAL_UINT16(kFaultCode, rig.analog.lastCode(AnalogAxis::Y));
 }
 
+// --- alarme declarado durante atualizacao de firmware (decisao 17) -----------------------
+
+// O operador escolheu "alarme declarado, com aviso na tela antes". Aqui esta o alarme: os quatro
+// reles em Signalled e as duas saidas em 3932, com o enlace perfeito e o angulo parado. Nao e
+// uma falha detectada - e uma declaracao, feita ANTES da primeira escrita na flash, porque
+// apagar um setor trava os dois nucleos e quatro reles seguindo leitura velha sao piores que
+// quatro reles em alarme anunciado.
+static void test_otaHold_forca_alarme_e_3932_com_o_enlace_perfeito(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllClear, rig.app.snapshot().relayMask);
+
+    rig.app.setOtaHold(true);
+    TEST_ASSERT_FALSE_MESSAGE(rig.app.otaHold(),
+                              "o pedido sozinho nao arma: quem arma e a tarefa ctrl");
+    rig.app.applyPublished();
+    TEST_ASSERT_TRUE(rig.app.otaHold());
+
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 920);
+    cycles(rig.clock, rig.app, 4);
+
+    TEST_ASSERT_TRUE(rig.app.link() == LinkHealth::Ok);
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllSignalled, rig.app.snapshot().relayMask);
+    TEST_ASSERT_EQUAL_UINT16(kFaultCode, rig.analog.lastCode(AnalogAxis::X));
+    TEST_ASSERT_EQUAL_UINT16(kFaultCode, rig.analog.lastCode(AnalogAxis::Y));
+    TEST_ASSERT_TRUE(rig.app.snapshot().otaHold);
+}
+
+// E NAO E LATCH. Quem segura o alarme e a sessao de atualizacao, que tem prazo; exigir rearme
+// humano depois de toda atualizacao poria um operador na frente do painel a cada gravacao.
+static void test_otaHold_sai_sozinho_sem_rearme(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    rig.app.setOtaHold(true);
+    rig.app.applyPublished();
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 930);
+    cycles(rig.clock, rig.app, 4);
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllSignalled, rig.app.snapshot().relayMask);
+
+    rig.app.setOtaHold(false);
+    rig.app.applyPublished();
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 934);
+    cycles(rig.clock, rig.app, 4);
+    TEST_ASSERT_FALSE(rig.app.otaHold());
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllClear, rig.app.snapshot().relayMask,
+                                    "atualizacao abortada tem de devolver as saidas sozinha");
+    TEST_ASSERT_TRUE(rig.analog.lastCode(AnalogAxis::X) != kFaultCode);
+}
+
+// SAO DOIS FATOS DIFERENTES SOBRE O EQUIPAMENTO e a tela precisa distingui-los. A8 diz "a
+// configuracao se perdeu e ninguem sabe com que limites este equipamento esta operando"; o
+// alarme de atualizacao diz "estou me regravando, de proposito, por um minuto". Um operador que
+// veja "configuracao perdida" em toda atualizacao aprende a ignorar a mensagem que um dia vai
+// ser verdadeira.
+static void test_otaHold_nao_se_confunde_com_o_latch_de_configuracao(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    rig.app.setOtaHold(true);
+    rig.app.applyPublished();
+    scriptGood(rig.link, kQuietDeci, kQuietDeci, 940);
+    cycles(rig.clock, rig.app, 2);
+    TEST_ASSERT_TRUE(rig.app.snapshot().otaHold);
+    TEST_ASSERT_FALSE_MESSAGE(rig.app.snapshot().configLatched,
+                              "atualizar nao pode se anunciar como configuracao perdida");
+
+    rig.app.setOtaHold(false);
+    rig.app.setConfigLatched(true);
+    rig.app.applyPublished();
+    cycles(rig.clock, rig.app, 2);
+    TEST_ASSERT_TRUE(rig.app.snapshot().configLatched);
+    TEST_ASSERT_FALSE(rig.app.snapshot().otaHold);
+}
+
 // --- travessia de nucleo: publicacao e snapshot -----------------------------------------
 
 static void test_o_conjunto_publicado_so_entra_em_applyPublished_e_entra_inteiro(void) {
@@ -1240,5 +1318,8 @@ int main(int, char**) {
     RUN_TEST(test_o_batimento_do_watchdog_e_a_ULTIMA_acao_do_ciclo);
     RUN_TEST(test_buildNormalInput_leva_a_porcentagem_da_saida);
     RUN_TEST(test_buildNormalInput_usa_a_calibracao_gravada_e_nao_a_nominal);
+    RUN_TEST(test_otaHold_forca_alarme_e_3932_com_o_enlace_perfeito);
+    RUN_TEST(test_otaHold_sai_sozinho_sem_rearme);
+    RUN_TEST(test_otaHold_nao_se_confunde_com_o_latch_de_configuracao);
     return UNITY_END();
 }

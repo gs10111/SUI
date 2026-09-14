@@ -10,6 +10,8 @@
 // fechou.
 #include "app/application.h"
 
+#include <stdio.h>
+
 #include "domain/ui/text_fit.h"
 
 #include "domain/ui/preset_wizard.h"
@@ -111,6 +113,8 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       pendingValid_(false),
       pendingConfigLatched_(false),
       pendingConfigLatchedValid_(false),
+      pendingOtaHold_(false),
+      pendingOtaHoldValid_(false),
       pendingLinkLatchClear_(false),
       pendingCommitValid_(false),
       commitCredit_(false),
@@ -118,6 +122,7 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       reloadPending_(true),
       cycleOpen_(false),
       configLatched_(false),
+      otaHold_(false),
       linkLatched_(false),
       analogDead_(false),
       stale_(false),
@@ -182,6 +187,11 @@ void Application::setConfigLatched(bool latched) {
     pendingConfigLatchedValid_ = true;
 }
 
+void Application::setOtaHold(bool held) {
+    pendingOtaHold_ = held;
+    pendingOtaHoldValid_ = true;
+}
+
 void Application::initConfigLatched(bool latched) {
     configLatched_ = latched;
     pendingConfigLatchedValid_ = false;
@@ -231,6 +241,10 @@ void Application::applyPublished() {
     if (pendingConfigLatchedValid_) {
         configLatched_ = pendingConfigLatched_;
         pendingConfigLatchedValid_ = false;
+    }
+    if (pendingOtaHoldValid_) {
+        otaHold_ = pendingOtaHold_;
+        pendingOtaHoldValid_ = false;
     }
     if (pendingLinkLatchClear_) {
         linkLatched_ = false;
@@ -411,7 +425,12 @@ void Application::driveRelays(bool fresh) {
     // o texto de rearme subindo para a primeira linha) e o que docs/ihm-estados.md B7 descreve:
     // "com o enlace ja recuperado e o latch ainda armado ... a tela continua sendo B7, porque os
     // quatro reles continuam em alarme ate o rearme".
-    if (stale_ || linkLatched_) {
+    // O alarme da atualizacao passa por cima do veredito pela MESMA razao das duas linhas
+    // acima, e com uma diferenca que importa: aqui nao ha falha nenhuma sendo detectada - o
+    // alarme e DECLARADO, antes da primeira escrita na flash, porque apagar um setor trava os
+    // dois nucleos por dezenas de ms e quatro reles seguindo leitura velha sao piores que quatro
+    // reles em alarme anunciado. Foi o que o operador escolheu, com aviso na tela antes.
+    if (stale_ || linkLatched_ || otaHold_) {
         wanted = kRelayMaskAllSignalled;
     }
     if (relays_.applyMask(wanted).failed()) {
@@ -437,7 +456,7 @@ void Application::driveAnalog(uint32_t nowMs) {
         if (overrideActive_[i] && deadlineReached(overrideSinceMs_[i], nowMs, kOverrideMaxAgeMs)) {
             overrideActive_[i] = false;
         }
-        if (configLatched_) {
+        if (configLatched_ || otaHold_) {
             analogCode_[i] = analog_.faultCode();
         } else if (overrideActive_[i]) {
             analogCode_[i] = overrideCode_[i];
@@ -564,6 +583,7 @@ void Application::latchSnapshot() {
     out.relayWriteErrors = relayErrors_;
     out.analogWriteErrors = analogErrors_;
     out.configLatched = configLatched_;
+    out.otaHold = otaHold_;
     out.linkLatched = linkLatched_;
     out.analogDead = analogDead_;
     out.stale = stale_;
@@ -616,6 +636,67 @@ void renderConfigLost(IDisplay& display) {
     display.clear();
     drawCentered(display, y1, kTextConfigLost, f1);
     drawCentered(display, y2, kTextConfigLostHint, f2);
+    display.present();
+}
+
+// O TEXTO E O QUE O OPERADOR VAI LER DE PE, NA FRENTE DA MAQUINA, ANTES DE DECIDIR. Ele diz o
+// que vai acontecer com as saidas, e nao so que ha uma atualizacao disponivel - "ATUALIZAR?" sem
+// a consequencia e a pergunta que todo mundo responde sim.
+const char kTextOtaTitulo[] = "ATUALIZAR FIRMWARE?";
+const char kTextOtaAviso[] = "SAIDAS VAO PARA ALARME";
+const char kTextOtaGesto[] = "Segure MENU 3s / DOWN sai";
+
+void renderOtaConfirm(IDisplay& display, uint8_t versaoMaior, uint8_t versaoMenor,
+                      uint8_t versaoCorrecao) {
+    char versao[32];
+    snprintf(versao, sizeof(versao), "Versao %u.%u.%u", static_cast<unsigned>(versaoMaior),
+             static_cast<unsigned>(versaoMenor), static_cast<unsigned>(versaoCorrecao));
+
+    const int16_t largura = static_cast<int16_t>(display.widthPx());
+    const TextFont f1 = domain::ui::fontThatFits(display, kTextOtaTitulo, largura);
+    const TextFont f2 = domain::ui::fontThatFits(display, kTextOtaAviso, largura);
+    const TextFont f3 = domain::ui::fontThatFits(display, versao, largura, TextFont::Small);
+    const TextFont f4 = domain::ui::fontThatFits(display, kTextOtaGesto, largura, TextFont::Small);
+
+    display.clear();
+    drawCentered(display, 0, kTextOtaTitulo, f1);
+    drawCentered(display, static_cast<int16_t>(display.lineHeightPx(f1) + 2), kTextOtaAviso, f2);
+    drawCentered(display, static_cast<int16_t>(display.heightPx() - display.lineHeightPx(f4) -
+                                               display.lineHeightPx(f3) - 2),
+                 versao, f3);
+    drawCentered(display, static_cast<int16_t>(display.heightPx() - display.lineHeightPx(f4)),
+                 kTextOtaGesto, f4);
+    display.present();
+}
+
+void renderOtaProgresso(IDisplay& display, const char* fase, const char* detalhe,
+                        uint16_t progressoPorMil) {
+    const int16_t largura = static_cast<int16_t>(display.widthPx());
+    const TextFont f1 = domain::ui::fontThatFits(display, fase == nullptr ? "" : fase, largura);
+    display.clear();
+    drawCentered(display, 0, fase == nullptr ? "" : fase, f1);
+
+    if (detalhe != nullptr && detalhe[0] != '\0') {
+        const TextFont f2 = domain::ui::fontThatFits(display, detalhe, largura);
+        drawCentered(display, static_cast<int16_t>(display.lineHeightPx(f1) + 2), detalhe, f2);
+    } else {
+        // Barra em caracteres: o painel e monocromatico e nao ha primitiva de retangulo na porta
+        // IDisplay. Vinte blocos dao 5% de resolucao, que e o que se enxerga a um metro.
+        char barra[24];
+        const uint16_t cheios = static_cast<uint16_t>((progressoPorMil * 20u) / 1000u);
+        for (uint8_t i = 0; i < 20u; ++i) {
+            barra[i] = (i < cheios) ? '#' : '.';
+        }
+        barra[20] = '\0';
+        const TextFont f2 = domain::ui::fontThatFits(display, barra, largura);
+        drawCentered(display, static_cast<int16_t>(display.lineHeightPx(f1) + 6), barra, f2);
+
+        char pct[16];
+        snprintf(pct, sizeof(pct), "%u%%", static_cast<unsigned>(progressoPorMil / 10u));
+        const TextFont f3 = domain::ui::fontThatFits(display, pct, largura);
+        drawCentered(display,
+                     static_cast<int16_t>(display.heightPx() - display.lineHeightPx(f3)), pct, f3);
+    }
     display.present();
 }
 

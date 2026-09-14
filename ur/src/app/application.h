@@ -180,6 +180,7 @@ public:
         uint32_t relayWriteErrors;
         uint32_t analogWriteErrors;
         bool configLatched;
+        bool otaHold;
         // A7: latch de flapping do ENLACE. E o sinal que a tela principal le em
         // NormalInput::linkLatched - nunca configLatched, que e outra decisao (A8) com outra
         // causa e outra saida.
@@ -215,6 +216,21 @@ public:
     // dono unico dos dois campos e a ctrl.
     void setConfigLatched(bool latched);
     bool configLatched() const { return configLatched_; }
+
+    // ALARME DECLARADO DURANTE UMA ATUALIZACAO DE FIRMWARE (decisao 17). Publicado pela IHM como
+    // qualquer outra travessia de nucleo, e aplicado por applyPublished().
+    //
+    // POR QUE NAO REUSAR configLatched_. Sao dois fatos diferentes sobre o equipamento, e a tela
+    // e o registro tem de poder distingui-los: A8 diz "a configuracao se perdeu e ninguem sabe
+    // com que limites este equipamento esta operando"; isto aqui diz "estou me regravando, e as
+    // saidas estao em alarme de proposito, por um minuto". Um operador que veja "configuracao
+    // perdida" durante uma atualizacao normal aprende a ignorar a mensagem que um dia vai ser
+    // verdadeira.
+    //
+    // E NAO E LATCH: sai sozinho quando a sessao de atualizacao termina ou morre. O que segura o
+    // alarme e a sessao, que tem prazo (ota_session.h), e nao um travamento que exigiria rearme.
+    void setOtaHold(bool held);
+    bool otaHold() const { return otaHold_; }
 
     // So antes de a tarefa ctrl existir. Depois disso, use setConfigLatched().
     void initConfigLatched(bool latched);
@@ -316,6 +332,8 @@ private:
     bool pendingValid_;
     bool pendingConfigLatched_;
     bool pendingConfigLatchedValid_;
+    bool pendingOtaHold_;
+    bool pendingOtaHoldValid_;
     bool pendingLinkLatchClear_;
     bool pendingCommitValid_;
     bool commitCredit_;
@@ -323,6 +341,7 @@ private:
     bool reloadPending_;
     bool cycleOpen_;
     bool configLatched_;
+    bool otaHold_;
     bool linkLatched_;
     bool analogDead_;
     bool stale_;
@@ -361,5 +380,16 @@ void renderMessage(IDisplay& display, const char* text);
 extern const char kTextConfigLost[];
 extern const char kTextConfigLostHint[];
 void renderConfigLost(IDisplay& display);
+
+// AS TELAS DA ATUALIZACAO DE FIRMWARE (decisao 17).
+//
+// renderOtaConfirm e a tela que o operador escolheu: o aviso ANTES de comecar. Ela nao e um
+// item de menu por decisao - aparece sozinha quando um pacote valido chega, porque e nesse
+// instante que a pergunta existe. Um aviso que so aparece se alguem for procurar nao e aviso.
+void renderOtaConfirm(IDisplay& display, uint8_t versaoMaior, uint8_t versaoMenor,
+                      uint8_t versaoCorrecao);
+// Progresso e desfecho. progressoPorMil e 0..1000; linha2 pode ser vazia.
+void renderOtaProgresso(IDisplay& display, const char* fase, const char* detalhe,
+                        uint16_t progressoPorMil);
 
 }  // namespace app

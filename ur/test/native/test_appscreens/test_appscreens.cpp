@@ -124,6 +124,72 @@ static void test_confirmacao_de_pset_mostra_valor_e_gesto(void) {
     conferirQuadro(tela);
 }
 
+// A TELA QUE O OPERADOR VE DE PE, NA FRENTE DA MAQUINA, ANTES DE DECIDIR. Ela tem de dizer o que
+// vai acontecer com as SAIDAS - "ATUALIZAR?" sem a consequencia e a pergunta que todo mundo
+// responde sim - e tem de caber na tela, que e o defeito que ja aconteceu duas vezes neste
+// arquivo.
+static void test_confirmacao_de_ota_avisa_das_saidas_e_cabe(void) {
+    FakeDisplay painel;
+    app::renderOtaConfirm(painel, 1, 4, 2);
+    conferirQuadro(painel);
+
+    bool aviso = false;
+    bool versao = false;
+    bool gesto = false;
+    for (uint8_t i = 0; i < painel.drawCount(); ++i) {
+        const char* t = painel.draw(i).text;
+        if (strstr(t, "ALARME") != nullptr) { aviso = true; }
+        if (strstr(t, "1.4.2") != nullptr) { versao = true; }
+        if (strstr(t, "MENU") != nullptr) { gesto = true; }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(aviso, "a tela tem de dizer que as saidas vao para alarme");
+    TEST_ASSERT_TRUE_MESSAGE(versao, "a tela tem de dizer QUAL versao vai entrar");
+    TEST_ASSERT_TRUE_MESSAGE(gesto, "a tela tem de dizer como cancelar");
+}
+
+// Progresso: a barra tem de andar, e o quadro tem de caber em 0%, no meio e em 100%.
+static void test_progresso_de_ota_anda_e_cabe_em_todos_os_pontos(void) {
+    const uint16_t kPontos[] = {0, 1, 499, 500, 999, 1000};
+    uint16_t cheiosAnterior = 0;
+    for (size_t i = 0; i < sizeof(kPontos) / sizeof(kPontos[0]); ++i) {
+        FakeDisplay painel;
+        app::renderOtaProgresso(painel, "GRAVANDO", "", kPontos[i]);
+        conferirQuadro(painel);
+
+        uint16_t cheios = 0;
+        bool achouPct = false;
+        for (uint8_t d = 0; d < painel.drawCount(); ++d) {
+            const char* t = painel.draw(d).text;
+            for (const char* c = t; *c != '\0'; ++c) {
+                if (*c == '#') { ++cheios; }
+            }
+            if (strchr(t, '%') != nullptr) { achouPct = true; }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(achouPct, "falta a porcentagem em numero");
+        TEST_ASSERT_TRUE_MESSAGE(cheios >= cheiosAnterior, "a barra andou para tras");
+        cheiosAnterior = cheios;
+    }
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(20, cheiosAnterior, "100% tem de encher a barra inteira");
+}
+
+// E o desfecho: com detalhe, a barra da lugar ao motivo. Um "FALHOU" sem motivo manda o operador
+// adivinhar.
+static void test_desfecho_de_ota_mostra_o_motivo_no_lugar_da_barra(void) {
+    FakeDisplay painel;
+    app::renderOtaProgresso(painel, "FALHOU", "O ENVIO PAROU NO MEIO", 430);
+    conferirQuadro(painel);
+
+    bool motivo = false;
+    bool barra = false;
+    for (uint8_t i = 0; i < painel.drawCount(); ++i) {
+        const char* t = painel.draw(i).text;
+        if (strstr(t, "PAROU NO MEIO") != nullptr) { motivo = true; }
+        if (strchr(t, '#') != nullptr || strchr(t, '.') != nullptr) { barra = true; }
+    }
+    TEST_ASSERT_TRUE_MESSAGE(motivo, "o motivo da falha tem de aparecer");
+    TEST_ASSERT_FALSE_MESSAGE(barra, "progresso parado nao pode continuar desenhando barra");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_mensagem_curta_usa_a_fonte_grande);
@@ -131,5 +197,8 @@ int main(int, char**) {
     RUN_TEST(test_todas_as_mensagens_do_produto_cabem_na_tela);
     RUN_TEST(test_config_perdida_traz_as_duas_linhas_e_cabe);
     RUN_TEST(test_confirmacao_de_pset_mostra_valor_e_gesto);
+    RUN_TEST(test_confirmacao_de_ota_avisa_das_saidas_e_cabe);
+    RUN_TEST(test_progresso_de_ota_anda_e_cabe_em_todos_os_pontos);
+    RUN_TEST(test_desfecho_de_ota_mostra_o_motivo_no_lugar_da_barra);
     return UNITY_END();
 }

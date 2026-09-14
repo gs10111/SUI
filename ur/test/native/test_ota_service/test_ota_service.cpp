@@ -12,7 +12,7 @@
 #include <unity.h>
 
 #include "fakes/fake_firmware_store.h"
-#include "app/ota_service.h"
+#include "ota_service.h"
 
 void setUp(void) {}
 void tearDown(void) {}

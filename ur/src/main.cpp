@@ -76,7 +76,9 @@
 // em silencio (A8 / decisao 2 item 10): ele trava em falha, com os quatro reles em alarme e as
 // duas saidas em 3932, e so o Reset Geral de 5.11 sai desse estado.
 #include <Arduino.h>
+#include <Preferences.h>
 #include <SPI.h>
+#include <WiFi.h>
 #include <driver/gpio.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
@@ -91,8 +93,12 @@
 #include "adapters/stwd100_watchdog.h"
 #include "adapters/xtr300_analog_output.h"
 #include "app/application.h"
+#include "esp_firmware_store.h"
+#include "ota_credentials.h"
 #include "ota_partition.h"
 #include "ota_proof.h"
+#include "ota_service.h"
+#include "wifi_update_portal.h"
 #include "app/boot_sequence.h"
 #include "app/persist_queue.h"
 #include "board_pins.h"
@@ -209,6 +215,27 @@ domain::ui::PresetWizard g_preset(g_clock);
 
 app::Application g_app(g_clock, g_link, g_relays, g_analog, g_wdt);
 app::BootSequence g_boot(g_display, g_keypad, g_clock, FW_VERSION);
+
+// ================================ ATUALIZACAO DE FIRMWARE (decisao 17) ======================
+// O ponto de acesso fica NO AR O TEMPO TODO, por escolha do operador: quem chega no patio liga o
+// celular na rede do equipamento e sobe o arquivo, sem gesto nenhum no painel antes. O que NAO
+// acontece sozinho e a gravacao - ela exige confirmacao aqui, com a consequencia escrita na tela.
+//
+// A ordem de composicao importa: o portal empurra bytes para g_ota, que decide; g_ota nao sabe o
+// que e um rele, e quem poe os quatro em alarme e este arquivo, pelo mesmo caminho publicado que
+// toda outra travessia de nucleo usa.
+EspFirmwareStore g_fwStore;
+WifiUpdatePortal g_portal;
+app::OtaService g_ota(g_fwStore, ota::kAlvoSupervisora, /*exigeConfirmacao=*/true);
+
+char g_otaSsid[33] = {0};
+char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
+// Verdadeiro quando a senha saiu do MAC em vez da producao. Nesse estado ela NAO vale como
+// controle de acesso (ota_credentials.h explica), e o painel tem de dizer isso.
+bool g_otaSenhaDerivada = false;
+bool g_otaNoAr = false;
+uint32_t g_otaUltimoDesenhoMs = 0;
+bool g_otaDesenhandoConfirm = false;
 
 portMUX_TYPE g_pubMux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t g_ctrlTask = nullptr;
@@ -761,9 +788,145 @@ void serviceBootProof(const app::Application::Snapshot& snap) {
     g_bootProofDone = ota::applyVerdict(veredito);
 }
 
+// O UNICO CODIGO NOSSO QUE RODA DURANTE UM ENVIO. Ver ota_portal.h: handleClient() le o corpo
+// inteiro do POST sem devolver o controle, entao o laco nao passa aqui - este gancho passa.
+//
+// Na supervisora ele NAO bate o watchdog: quem bate e a tarefa ctrl, no core 0, que continua
+// rodando. O que ele faz e mexer o painel - sem isto a barra de progresso fica congelada no 0%
+// durante o envio inteiro, e quem esta na frente da maquina conclui que travou.
+void otaKeepAlive(void*) {
+    const uint32_t agora = g_clock.nowMs();
+    if (static_cast<uint32_t>(agora - g_otaUltimoDesenhoMs) < 200u) {
+        return;  // 5 quadros por segundo bastam e nao disputam o SPI com o envio
+    }
+    g_otaUltimoDesenhoMs = agora;
+    app::renderOtaProgresso(g_display, app::textoDaFase(g_ota.phase()), "",
+                            g_ota.progressoPorMil());
+}
+
+// Sobe o ponto de acesso. E o ULTIMO passo do setup(), de proposito: uma falha de radio nao pode
+// impedir um supervisor de inclinacao de supervisionar inclinacao.
+void startUpdatePortal() {
+    uint8_t mac[ota::kMacBytes] = {0};
+    WiFi.macAddress(mac);
+    ota::apSsid(ota::kAlvoSupervisora, mac, g_otaSsid, sizeof(g_otaSsid));
+
+    // CAMINHO NORMAL: a senha foi sorteada na producao e gravada pelo jig; nao esta em firmware
+    // nenhum, e quem quiser entrar precisa ler a etiqueta da placa. CAMINHO DEGRADADO: placa que
+    // nunca passou pelo jig, ou NVS apagada - deriva do MAC para continuar atualizavel, e avisa.
+    Preferences prefs;
+    g_otaSenha[0] = '\0';
+    if (prefs.begin("ota", true)) {
+        prefs.getString("pw", g_otaSenha, sizeof(g_otaSenha));
+        prefs.end();
+    }
+    g_otaSenhaDerivada = !ota::passwordWellFormed(g_otaSenha);
+    if (g_otaSenhaDerivada) {
+        char derivada[ota::kPasswordChars + 1u];
+        ota::derivedPassword(mac, derivada);
+        for (uint8_t i = 0; i <= ota::kPasswordChars; ++i) {
+            g_otaSenha[i] = derivada[i];
+        }
+    }
+
+    g_portal.setKeepAlive(&otaKeepAlive, nullptr);
+    const Status st = g_portal.begin(g_otaSsid, g_otaSenha, g_ota);
+    g_otaNoAr = st.ok();
+
+    Serial.print(F("ota: ponto de acesso "));
+    Serial.print(g_otaNoAr ? F("NO AR ") : F("FALHOU "));
+    Serial.print(g_otaSsid);
+    Serial.print(F(" senha "));
+    Serial.print(g_otaSenha);
+    Serial.println(g_otaSenhaDerivada ? F("  (DERIVADA DO MAC - ver docs/ota.md)")
+                                      : F("  (gravada na producao)"));
+}
+
+// Devolve true quando a atualizacao tomou conta do painel e o resto da IHM nao deve desenhar.
+bool serviceOta() {
+    if (!g_otaNoAr) {
+        return false;
+    }
+    const uint32_t agora = g_clock.nowMs();
+
+    // As saidas TEM de estar aplicadas antes de a flash abrir. Publicar e barato e idempotente;
+    // o que nao pode e a flash abrir sem isto ter atravessado o nucleo.
+    static bool ultimoHold = false;
+    const bool hold = g_ota.saidasEmAlarme();
+    if (hold != ultimoHold) {
+        taskENTER_CRITICAL(&g_pubMux);
+        g_app.setOtaHold(hold);
+        taskEXIT_CRITICAL(&g_pubMux);
+        ultimoHold = hold;
+    }
+    // O ciclo da ctrl e de 50 ms; esperar um snapshot que ja enxergue o alarme e mais honesto do
+    // que confiar que "publicou" e o mesmo que "aplicou".
+    const bool aplicadas = takeSnapshot().otaHold;
+    g_ota.service(agora, aplicadas);
+
+    PortalStatus st;
+    g_ota.preencherStatusDoPortal(st);
+    g_portal.publish(st);
+    g_portal.service();
+
+    if (!g_ota.emCurso()) {
+        g_otaDesenhandoConfirm = false;
+        return false;
+    }
+
+    // Reinicio: a placa nova so sobe depois de o operador ler o que aconteceu.
+    if (g_ota.reinicioPendente()) {
+        app::renderOtaProgresso(g_display, app::textoDaFase(g_ota.phase()), "", 1000);
+        Serial.println(F("ota: particao trocada - reiniciando"));
+        Serial.flush();
+        delay(1500);
+        ESP.restart();
+    }
+
+    if (g_ota.phase() == ota::Phase::Aguardando) {
+        // A confirmacao e por gesto, no painel, e nao pela pagina: quem autoriza parar as saidas
+        // de uma maquina tem de estar na frente dela. Mesmo gesto do commit de Preset - MENU
+        // segurado por 3 s - porque um toque solto perto de um painel nao e decisao.
+        domain::Gesture gesto{};
+        while (g_gesture.takeGesture(gesto)) {
+            if (gesto.kind == domain::GestureKind::Hold && gesto.key == Key::Menu) {
+                g_ota.confirmar(agora);
+                break;
+            }
+            if (gesto.kind == domain::GestureKind::ShortTap && gesto.key == Key::Down) {
+                g_ota.cancelar(agora);
+                break;
+            }
+        }
+        if (g_ota.phase() == ota::Phase::Aguardando) {
+            const ota::PackageHeader& h = g_ota.header();
+            app::renderOtaConfirm(g_display, h.versaoMaior, h.versaoMenor, h.versaoCorrecao);
+            g_otaDesenhandoConfirm = true;
+            return true;
+        }
+    }
+
+    const char* detalhe = "";
+    if (g_ota.phase() == ota::Phase::Recusado) {
+        detalhe = app::textoDaRecusa(g_ota.rejectReason());
+    } else if (g_ota.phase() == ota::Phase::Falhou) {
+        detalhe = app::textoDaFalha(g_ota.failReason());
+    }
+    app::renderOtaProgresso(g_display, app::textoDaFase(g_ota.phase()), detalhe,
+                            g_ota.progressoPorMil());
+    g_otaUltimoDesenhoMs = agora;
+    return true;
+}
+
 void serviceHmi() {
     const app::Application::Snapshot snap = takeSnapshot();
     serviceBootProof(snap);
+    // ANTES DE QUALQUER OUTRA TELA. Uma atualizacao em curso e o unico estado em que o painel
+    // nao pertence a operacao normal: as saidas ja estao em alarme declarado e a pergunta na
+    // tela e a unica coisa que o operador pode responder.
+    if (serviceOta()) {
+        return;
+    }
     g_preset.sample(snap.raw[0], snap.raw[1]);
     g_preset.tick();
 
@@ -989,6 +1152,16 @@ void setup() {
     if (g_bootProofPending) {
         Serial.println(F("ota: imagem EM PROVA - 5 ciclos bons em ate 30 s ou reverte"));
     }
+
+    // ULTIMO PASSO DO BOOT, e nao um dos primeiros. Se o radio nao subir, a placa continua
+    // supervisionando inclinacao: um supervisor de seguranca que nao arranca porque o WiFi
+    // falhou trocou a funcao dele pela conveniencia de atualizar.
+    //
+    // PENDENCIA REGISTRADA (docs/ota.md, MEDICAO 26): o efeito do radio no jitter da tarefa ctrl
+    // do core 0 nunca foi medido nesta placa. A DECISIONS.md espera que a medicao REPROVE. Ate
+    // ela existir, o ponto de acesso no ar o tempo todo e uma escolha assumida, nao uma
+    // propriedade verificada.
+    startUpdatePortal();
 
     g_boot.begin(bootAtMs, g_bootKeyMask);
     g_hmiMs = g_clock.nowMs();

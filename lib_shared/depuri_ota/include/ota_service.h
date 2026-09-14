@@ -1,6 +1,11 @@
-// src/app/ota_service.h
-// O DONO DA ATUALIZACAO NA UNIDADE REMOTA. Camada de aplicacao pura: recebe as portas por
-// referencia, nao instancia nada, nao inclui Arduino.h, nao usa ponto flutuante.
+// lib_shared/depuri_ota/include/ota_service.h
+// O DONO DA ATUALIZACAO, NAS DUAS PLACAS. Puro: recebe as portas por referencia, nao instancia
+// nada, nao inclui Arduino.h, nao usa ponto flutuante.
+//
+// POR QUE EM lib_shared E NAO EM ur/src/app. Este e o caminho que decide se uma imagem vira a
+// particao de boot. Duas copias dele - uma na supervisora, outra na sensora - divergiriam, e a
+// divergencia apareceria no dia em que uma das duas aceitasse o que a outra recusa. Mesmo motivo
+// de ota_partition.h.
 //
 // AMARRA TRES PECAS QUE NAO SE CONHECEM:
 //   ota::Session       - quando pode gravar (lib_shared/depuri_ota/ota_session.h)
@@ -21,8 +26,8 @@
 
 #include <stdint.h>
 
-#include "ports/i_firmware_store.h"
-#include "ports/i_update_portal.h"
+#include "ota_firmware_store.h"
+#include "ota_portal.h"
 #include "ota_package.h"
 #include "ota_session.h"
 

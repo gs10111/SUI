@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include "ports/i_firmware_store.h"
+#include "ota_firmware_store.h"
 
 class FakeFirmwareStore : public IFirmwareStore {
 public:

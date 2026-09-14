@@ -1,4 +1,4 @@
-#include "app/ota_service.h"
+#include "ota_service.h"
 
 namespace app {
 

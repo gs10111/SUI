@@ -1,7 +1,7 @@
 {
   "name": "depuri_ota",
   "version": "1.0.0",
-  "description": "Regras puras de atualizacao de firmware comuns a supervisora DE-PURI-DI261924 e a sensora PUSI-DI261930: prova de boot, rollback e formato de pacote.",
+  "description": "Atualizacao de firmware comum a supervisora DE-PURI-DI261924 e a sensora PUSI-DI261930: prova de boot, rollback, formato de pacote, maquina de fases, ponto de acesso e particao ociosa. O que e puro compila no host; o que fala com a IDF fica sob #if !defined(HOST_BUILD).",
   "build": {
     "flags": ["-I include"]
   }
