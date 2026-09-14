@@ -30,11 +30,13 @@ namespace {
 //   kRotuloY   - rotulo/cabecalho FIXO, Small (12 px), colado em (0,0)
 //   kConteudoY - item escolhido, opcao, mensagem: Medium (15 px)
 //   kDetalheY  - linha secundaria longa que NAO cabe em Medium: Small
-//   kEditorY   - editor numerico do manual, linha unica de 29 caracteres: so cabe em Small
+//   kCampoGrandeY - campo numerico do editor de Valor Limite, em fonte GRANDE, sob o rotulo
 constexpr int16_t kRotuloY = 0;
 constexpr int16_t kConteudoY = 18;
 constexpr int16_t kDetalheY = 40;
-constexpr int16_t kEditorY = 24;
+// Campo numerico em fonte grande, abaixo do rotulo. 0..15 do rotulo em Medium, folga, e
+// 22..50 do numero em Large.
+constexpr int16_t kCampoGrandeY = 22;
 
 // Lista deslizante: cabecalho Small em y=0 e a janela de tres entradas Medium logo abaixo
 // (desvio declarado d do cabecalho). Os 14 px do primeiro item saem dos 12 px do cabecalho
@@ -782,18 +784,28 @@ void MenuMachine::render() {
         }
 
         case MenuState::EditValor: {
-            // L214 a L217: "Valor Limite X1(<grau>):+000,0", em ASCII "(graus)".
+            // ERRATA DE REQ-DSP-03 AUTORIZADA PELO BIGBOSS EM 2026-09-14. O manual imprime
+            // "Valor Limite X1(graus):+000,0" em UMA linha (L214 a L217). Sao 29 caracteres:
+            // 173 px em fonte pequena, 260 em media, num painel de 256. Em linha unica a tela
+            // fica presa na menor fonte da IHM justamente onde se programa o ponto de atuacao de
+            // um rele de seguranca.
+            //
+            // Partida em duas, o conteudo cabe: o rotulo em cima, e o NUMERO - que e o que o
+            // tecnico confere - em fonte grande embaixo. O texto continua literal, so deixou de
+            // caber numa linha so.
             char prefixo[kLineCap];
             prefixo[0] = '\0';
             uint8_t n = appendTo(prefixo, kLineCap, 0, "Valor Limite ");
             n = appendTo(prefixo, kLineCap, n, kEtiquetaLimite[static_cast<uint8_t>(currentLimit())]);
-            n = appendTo(prefixo, kLineCap, n, "(graus):");
-            const uint8_t base = buildFieldLine(prefixo);
-            // 29 caracteres: contentFont() mede e devolve Small sozinha, porque em Medium a
-            // linha daria 260 px num painel de 256. A linha continua literal, como REQ-DSP-03
-            // exige, e o dia em que o texto encurtar ela sobe sem ninguem revisar isto aqui.
-            drawEditLine(kEditorY, line_, static_cast<uint8_t>(base + editor_.cursorTextIndex()),
-                         contentFont(line_));
+            appendTo(prefixo, kLineCap, n, "(graus):");
+            drawLine(kRotuloY, prefixo, contentFont(prefixo));
+
+            char campo[DigitEditor::kTextCap];
+            if (editor_.format(campo, DigitEditor::kTextCap)) {
+                // O cursor passa a indexar o CAMPO, e nao a linha inteira: sem o prefixo na
+                // frente, somar o comprimento dele poria o realce fora do numero.
+                drawEditLine(kCampoGrandeY, campo, editor_.cursorTextIndex(), TextFont::Large);
+            }
             break;
         }
 

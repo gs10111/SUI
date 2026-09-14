@@ -2940,6 +2940,7 @@ reconstruidos a partir do log de commits.
 
 ## 8.2 Errata de manual que estas decisoes obrigam
 
+0. **5.9 (L214 a L217)** imprimem `Valor Limite Xn(graus):+000,0` em UMA linha. A tela passou a ter **duas**: rotulo em cima, numero em fonte grande embaixo.
 1. **5.6 (L148)** imprime `Preset>Voltar   Preset X   Preset Y`. Sao **quatro** itens agora, com `Zerar Preset`.
 2. **5.6 (L149 a L152)** descreve a tela de digitacao do Preset. **Ela nao existe mais**: o Preset e capturado, nao digitado.
 3. **5.9 e Tabela 4** voltam a valer sem errata por causa de B1 — mas a **legenda dos LEDs** precisa dizer que alarme ACENDE.
@@ -2963,6 +2964,7 @@ reconstruidos a partir do log de commits.
 | B8 | **Modo do SCL3300** | **REVERTIDO PARA MODO 1 em 2026-09-14.** A escolha do modo 3 foi ERRADA e reprovou em bancada: a secao 2.11.1 do datasheet (pagina 16) limita os modos de inclinacao a **+-10 graus**, e este produto atua em +-90,0 graus. Passando de 10 graus o bit SAT sobe e, por 6.3, "all acceleration, inclination, and STO output data is invalid" - a leitura inteira e recusada e os quatro reles vao a alarme. O argumento que produziu o erro (Tabela 12: 182 LSB/grau nos quatro modos) era verdadeiro sobre RESOLUCAO e silencioso sobre FAIXA. Um `static_assert` em `sensor/src/main.cpp` agora amarra o modo a faixa de atuacao: voltar aos modos 3 ou 4 quebra a compilacao. A preocupacao original (choque de carga passa de 1,2 g no modo 1) continua aberta e tem saida legitima no **modo 2** (+-2,4 g, filtro de 70 Hz, mesma resolucao angular) - decisao de M8 |
 | B9 | **Duplo toque em CIMA** | **MANTIDO.** Convive com a captura pelo menu, com as mesmas regras (3 s parado, confirmacao acima de 5 graus) e com o portao de armamento de 120 s que o menu abre |
 | B10 | **`kRequirePassword`** | **`true`.** A Emenda 1 a A13 (senha fora do MVP) fica encerrada. O hold de MENU passa a abrir "Senha de acesso:0000"; senha de fabrica 1234, cinco erros bloqueiam por 60 s |
+| B13 | **Editor de Valor Limite em DUAS linhas** (2026-09-14) | Errata de REQ-DSP-03 autorizada pelo bigboss. O manual imprime "Valor Limite X1(graus):+000,0" em uma linha (L214 a L217): 29 caracteres, 260 px em fonte media num painel de 256, o que prendia a tela na MENOR fonte da IHM justamente onde se programa o ponto de atuacao de um rele. Agora o rotulo fica em cima e o NUMERO em fonte grande embaixo. O texto continua literal - so deixou de caber numa linha so |
 | B12 | **Item "Rearmar" no menu** (2026-09-14) | O texto de A7 prometia "FALHA TRAVADA - REARMAR NO MENU" desde o inicio e o menu nao tinha rearme: ele acontecia em silencio, ao atravessar o portao de senha. Agora e o decimo primeiro item, antes de "Sair", e o rearme implicito FOI REMOVIDO - limpar um latch de seguranca sem que ninguem tenha pedido e o oposto do que o latch existe para fazer. Errata: L112 lista dez itens, sao onze |
 | B11 | **`kStoFaultRun = 20`** | **MANTIDO** (200 ms continuos), com a ressalva de que o numero e deste produto e nao do datasheet, e que M8 e quem mede o espectro real |
 

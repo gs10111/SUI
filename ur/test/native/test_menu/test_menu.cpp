@@ -40,6 +40,7 @@
 // wrap de 2^32 ms, entao um prazo escrito como "a > b" reprova aqui. Todo prazo e afirmado
 // pelo NUMERO da decisao ou do manual, e pela FRONTEIRA: um milissegundo antes nao dispara, no
 // prazo exato dispara.
+#include <string.h>
 #include <unity.h>
 
 #include "domain/parameters.h"
@@ -162,6 +163,30 @@ void hold(Bancada& b) {
 void esperar(Bancada& b, uint32_t ms) {
     b.relogio.advanceMs(ms);
     bombear(b);
+}
+
+// A TELA DO EDITOR DE VALOR LIMITE VIROU DUAS LINHAS em 2026-09-14 (errata de REQ-DSP-03
+// autorizada pelo bigboss): rotulo em cima, numero em fonte GRANDE embaixo. Os 29 caracteres da
+// linha do manual so cabiam na menor fonte da IHM, justamente na tela onde se programa o ponto
+// de atuacao de um rele de seguranca.
+//
+// Este helper recebe a linha LITERAL do manual e afirma as duas partes, para que todo teste
+// continue citando o manual byte a byte em vez de citar o layout.
+bool mostraTelaDeValor(const Bancada& b, const char* linhaDoManual) {
+    const char* corte = strstr(linhaDoManual, "):");
+    if (corte == nullptr) {
+        return false;
+    }
+    char rotulo[48];
+    const size_t n = static_cast<size_t>(corte - linhaDoManual) + 2u;
+    if (n + 1u >= sizeof(rotulo)) {
+        return false;
+    }
+    for (size_t i = 0; i < n; ++i) {
+        rotulo[i] = linhaDoManual[i];
+    }
+    rotulo[n] = '\0';
+    return b.tela.showsExactly(rotulo) && b.tela.showsExactly(corte + 2);
 }
 
 int code(MenuState estado) { return static_cast<int>(estado); }
@@ -445,7 +470,7 @@ static void test_A13_emenda_1_sem_senha_o_hold_abre_o_menu_e_programa_igual(void
     toque(b, Key::Menu);
     toque(b, Key::Down);
     toque(b, Key::Menu);
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+000,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+000,0"));
     toque(b, Key::Up);
     hold(b);
     TEST_ASSERT_TRUE(b.tela.showsExactly("Alteracao bem sucedida!"));
@@ -567,7 +592,7 @@ static void test_REQ_PRG_02_menu_habilita_a_edicao_do_valor_limite(void) {
     // MENU curto habilita a edicao (L212: "Pressione a tecla MENU para habilitar a edicao").
     toque(b, Key::Menu);
     TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(b.menu.state()));
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+000,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+000,0"));
 
     // Com o campo aberto, MENU curto move o cursor (L213) e NAO sai da edicao.
     toque(b, Key::Menu);
@@ -593,12 +618,12 @@ static void test_REQ_PRG_02_os_quatro_limites_tem_etiqueta_e_destino_proprios(vo
         toque(b, Key::Menu);
         TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(b.menu.state()));
         // O campo abre no valor CORRENTE do rascunho, que aqui e o de fabrica da Tabela 2.
-        TEST_ASSERT_TRUE(b.tela.showsExactly(kTelaValorDeFabrica[i]));
+        TEST_ASSERT_TRUE(mostraTelaDeValor(b, kTelaValorDeFabrica[i]));
 
         for (uint8_t passo = 0; passo <= i; ++passo) {
             toque(b, Key::Up);
         }
-        TEST_ASSERT_TRUE(b.tela.showsExactly(kTelaValorProgramado[i]));
+        TEST_ASSERT_TRUE(mostraTelaDeValor(b, kTelaValorProgramado[i]));
         hold(b);
         TEST_ASSERT_EQUAL_INT(code(MenuState::GravOk), code(b.menu.state()));
         esperar(b, 1500);
@@ -909,7 +934,7 @@ static void test_REQ_DSP_03_telas_do_modo_programacao_sao_literais_do_manual(voi
     toque(b, Key::Menu);
 
     // L217: "Valor Limite Y2(<grau>):+000,0" - em ASCII, "(graus)".
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+000,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+000,0"));
 
     // L220 traz o mesmo campo programado em +025,0: MENU move o cursor para a esquerda e UP
     // sobe o digito (regra unica de cursor de A13).
@@ -920,7 +945,7 @@ static void test_REQ_DSP_03_telas_do_modo_programacao_sao_literais_do_manual(voi
     toque(b, Key::Menu);
     toque(b, Key::Up);
     toque(b, Key::Up);
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+025,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+025,0"));
 
     // L183: "Alteracao bem sucedida!", sem cedilha e sem til, como o manual imprime.
     hold(b);
@@ -1038,7 +1063,7 @@ static void test_A13_recusa_valor_fora_de_faixa_sem_clamp_silencioso(void) {
     for (uint8_t i = 0; i < 9; ++i) {
         toque(b, Key::Up);
     }
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+900,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+900,0"));
 
     hold(b);
     TEST_ASSERT_EQUAL_INT(code(MenuState::Recusa), code(b.menu.state()));
@@ -1054,7 +1079,7 @@ static void test_A13_recusa_valor_fora_de_faixa_sem_clamp_silencioso(void) {
     TEST_ASSERT_EQUAL_INT(code(MenuState::Recusa), code(b.menu.state()));
     esperar(b, 1);
     TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(b.menu.state()));
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+900,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+900,0"));
 }
 
 static void test_A13_timeout_nao_descarta_a_edicao_e_deixa_config_pendente(void) {
@@ -1166,7 +1191,7 @@ static void test_A13_confirmacao_sem_alteracao_nao_marca_config_pendente(void) {
     toque(b, Key::Menu);
     toque(b, Key::Down);
     toque(b, Key::Menu);
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+000,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+000,0"));
     hold(b);
     TEST_ASSERT_TRUE(b.tela.showsExactly("Alteracao bem sucedida!"));
     TEST_ASSERT_FALSE(b.menu.pendingConfig());
@@ -1258,7 +1283,7 @@ static void test_A13_gesto_em_tela_temporizada_e_ignorado(void) {
     TEST_ASSERT_FALSE(c.menu.pendingConfig());
     esperar(c, 500);
     TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(c.menu.state()));
-    TEST_ASSERT_TRUE(c.tela.showsExactly("Valor Limite Y2(graus):+900,0"));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(c, "Valor Limite Y2(graus):+900,0"));
 
     // E na recusa de senha (C2), idem.
     Bancada d;
@@ -1309,10 +1334,11 @@ namespace {
 // cabecalho de lista em Small colado em (0,0); item de lista, opcao escolhida e mensagem em
 // Medium.
 //
-// A TELA DO EDITOR NUMERICO NAO SOBE DE FONTE, e isso e deliberado: "Valor Limite X1(graus):
-// +000,0" tem 29 caracteres e so cabe nos 256 px em Small. Parti-la em rotulo pequeno mais
-// campo grande contraria REQ-DSP-03, que exige a linha literal do manual - e mudanca de manual,
-// nao de layout. Fica registrado aqui para quem for propor a errata.
+// A TELA DO EDITOR NUMERICO VIROU DUAS LINHAS em 2026-09-14, com a errata de REQ-DSP-03
+// autorizada: rotulo em cima, numero em fonte GRANDE embaixo. Em linha unica ela ficava presa na
+// MENOR fonte da IHM - 29 caracteres dao 260 px em media num painel de 256 - justamente na tela
+// onde se programa o ponto de atuacao de um rele de seguranca. O texto continua literal; so
+// deixou de caber numa linha so.
 //
 // O invariante geometrico e o que impede a regra de virar promessa: com fonte maior, uma linha
 // que antes cabia passa a vazar do painel ou a montar em cima da outra, e nenhum teste de
@@ -1397,9 +1423,7 @@ static void test_layout_submenu_de_limite_tambem_cabe_com_a_fonte_maior(void) {
     verificarQuadroMenu(b.tela);
 }
 
-static void test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_tela(void) {
-    // REQ-DSP-03: a linha do manual e uma so, com rotulo e valor juntos. 29 caracteres so cabem
-    // nos 256 px em Small - por isso este e o unico texto da IHM que NAO sobe de fonte.
+static void test_layout_editor_numerico_parte_rotulo_e_numero_grande(void) {
     Bancada b;
     entrarNoMenu(b);
     descerAte(b, MenuItem::Limite4);
@@ -1408,8 +1432,44 @@ static void test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_t
     toque(b, Key::Menu);
 
     TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(b.menu.state()));
-    TEST_ASSERT_TRUE(b.tela.showsExactly("Valor Limite Y2(graus):+000,0"));
-    TEST_ASSERT_TRUE(b.tela.fontOf("Valor Limite Y2(graus):+000,0") == TextFont::Small);
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite Y2(graus):+000,0"));
+
+    // O rotulo vai para o topo; o NUMERO, que e o que o tecnico confere, fica em fonte grande.
+    TEST_ASSERT_EQUAL_INT16(0, b.tela.yOf("Valor Limite Y2(graus):"));
+    TEST_ASSERT_TRUE(b.tela.fontOf("+000,0") == TextFont::Large);
+    TEST_ASSERT_TRUE(b.tela.yOf("+000,0") > b.tela.yOf("Valor Limite Y2(graus):"));
+
+    // E a linha unica do manual NAO esta mais na tela: quem afirmar o formato antigo tem de
+    // reprovar, em vez de passar por acaso porque a string sumiu.
+    TEST_ASSERT_FALSE(b.tela.shows("Valor Limite Y2(graus):+000,0"));
+    verificarQuadroMenu(b.tela);
+}
+
+// REQ-DSP-04 no campo grande: o realce tem de cair no digito do cursor, medido na fonte GRANDE.
+// Com o prefixo fora da linha, somar o comprimento dele - como a versao de linha unica fazia -
+// poria o retangulo invertido fora do numero.
+static void test_realce_do_valor_limite_cai_no_digito_e_e_medido_em_large(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Limite4);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+
+    TEST_ASSERT_TRUE(b.tela.hasInverse());
+    bool achou = false;
+    for (uint8_t i = 0; i < b.tela.drawCount(); ++i) {
+        if (b.tela.draw(i).ink != TextInk::Inverse) {
+            continue;
+        }
+        achou = true;
+        TEST_ASSERT_TRUE(b.tela.draw(i).font == TextFont::Large);
+        // cursor abre no digito mais a direita de "+000,0": o recorte e "+000,"
+        TEST_ASSERT_EQUAL_INT16(
+            static_cast<int16_t>(b.tela.textWidthPx(TextFont::Large, "+000,")),
+            b.tela.draw(i).x);
+    }
+    TEST_ASSERT_TRUE(achou);
     verificarQuadroMenu(b.tela);
 }
 
@@ -1663,7 +1723,8 @@ int main(int, char**) {
     RUN_TEST(test_layout_cabecalho_fixo_fica_pequeno_no_canto_superior_esquerdo);
     RUN_TEST(test_layout_itens_da_lista_usam_a_fonte_maior);
     RUN_TEST(test_layout_submenu_de_limite_tambem_cabe_com_a_fonte_maior);
-    RUN_TEST(test_layout_editor_numerico_continua_literal_do_manual_e_dentro_da_tela);
+    RUN_TEST(test_layout_editor_numerico_parte_rotulo_e_numero_grande);
+    RUN_TEST(test_realce_do_valor_limite_cai_no_digito_e_e_medido_em_large);
     RUN_TEST(test_captura_do_assistente_sobrevive_a_confirmacao_do_sair);
     RUN_TEST(test_adotar_o_externo_nao_descarta_a_edicao_pendente_do_menu);
     RUN_TEST(test_submenu_de_preset_tem_o_quarto_item_zerar);
