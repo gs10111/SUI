@@ -77,6 +77,28 @@ O unico controle de acesso e a senha WPA2 do ponto de acesso. Ela tem dois camin
 
 Detalhes em `lib_shared/depuri_ota/include/ota_credentials.h`.
 
+### Como descobrir a senha de uma placa
+
+**A propria placa imprime as duas, SSID e senha, no console de 115200 assim que liga:**
+
+```
+ota: ponto de acesso NO AR SUI-UR-123456 senha T55JEFC3QQHS  (DERIVADA DO MAC - ver docs/ota.md)
+```
+
+O sufixo entre parenteses diz em qual dos dois caminhos aquela placa esta. `(gravada na producao)`
+significa que a senha veio do jig e esta na etiqueta; `(DERIVADA DO MAC ...)` significa caminho
+degradado.
+
+Sem ligar a placa, so com o MAC (util para imprimir etiqueta em lote, e so no caminho degradado):
+
+```
+python3 scripts/senha_ap.py 3C:71:BF:12:34:56 -a supervisora
+```
+
+O script reproduz exatamente `ota::derivedPassword()` - conferido byte a byte contra o C++ que
+roda na placa. **Ele tambem e a demonstracao do problema descrito acima:** com o arquivo e o MAC,
+que vai no ar em toda baliza, qualquer um entra.
+
 ---
 
 ## 4. O que acontece com as saidas
