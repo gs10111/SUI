@@ -1,0 +1,8 @@
+{
+  "name": "depuri_ota",
+  "version": "1.0.0",
+  "description": "Regras puras de atualizacao de firmware comuns a supervisora DE-PURI-DI261924 e a sensora PUSI-DI261930: prova de boot, rollback e formato de pacote.",
+  "build": {
+    "flags": ["-I include"]
+  }
+}

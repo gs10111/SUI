@@ -7,6 +7,8 @@
 #include <esp_system.h>
 
 #include "board_pins.h"
+#include "ota_partition.h"
+#include "ota_proof.h"
 #include "core/console.h"
 #include "core/sensor_ctx.h"
 #include "drivers/ext_wdt.h"
@@ -110,6 +112,42 @@ SensorCtx g_ctx{g_io,
 
 SensorConsole g_console(g_ctx);
 
+// PROVA DE BOOT DE UMA IMAGEM RECEM-SUBIDA. Ver lib_shared/depuri_ota/include/ota_proof.h: o
+// core do Arduino marca como valida qualquer imagem que apenas suba, e o gancho em
+// src/ota_rollback_hook.cpp desarma isso para que a decisao seja desta placa.
+//
+// O criterio de "ciclo bom" AQUI e o inclinometro respondendo com leitura valida. Uma sensora
+// que sobe e nao fala com o SCL3300 nao esta funcionando, por mais que o laco esteja rodando - e
+// e justamente esse o caso que, sem este mecanismo, ficaria a 500 m dentro de um modulo sem
+// caminho de volta.
+ota::BootProof g_bootProof;
+bool g_bootProofPending = false;
+bool g_bootProofDone = false;
+
+void serviceBootProof(const Tilt& tilt, uint32_t nowMs) {
+    if (g_bootProofDone || !g_bootProofPending) {
+        return;
+    }
+    g_bootProof.begin(nowMs);
+    if (tilt.valid) {
+        g_bootProof.noteGood(nowMs);
+    } else {
+        g_bootProof.noteBad();
+    }
+
+    const ota::ProofVerdict veredito = g_bootProof.verdict(nowMs);
+    if (veredito == ota::ProofVerdict::Provando) {
+        return;
+    }
+    if (veredito == ota::ProofVerdict::Aprovado) {
+        g_io.writeLine("ota: imagem APROVADA na prova de boot - particao marcada valida");
+    } else {
+        // Nao retorna: a placa reinicia na particao anterior.
+        g_io.writeLine("ota: imagem REPROVADA na prova de boot - revertendo para a anterior");
+    }
+    g_bootProofDone = ota::applyVerdict(veredito);
+}
+
 // IDENTIDADE PUBLICADA NO BOOT, e nao so dentro de publishTilt(). Segunda metade da pendencia
 // P5: os campos que NAO dependem de leitura - versao de firmware e WHOAMI - tem de estar no fio
 // desde o primeiro quadro Modbus, porque uma sensora que nunca consegue ler o SCL3300 nunca
@@ -197,6 +235,13 @@ void setup() {
     // traz a versao de firmware desta sensora. Vale sobretudo quando o g_tilt.begin() acima
     // falhou - e exatamente na sensora doente que o mestre mais precisa saber com qual firmware
     // esta falando, e ela nunca chamaria publishTilt().
+    // So aqui se descobre se esta imagem esta em prova: em boot normal isto devolve false e o
+    // mecanismo inteiro fica inerte.
+    g_bootProofPending = ota::pendingVerify();
+    if (g_bootProofPending) {
+        g_io.writeLine("ota: imagem EM PROVA - 5 leituras validas em ate 30 s ou reverte");
+    }
+
     publishIdentity();
 
     const Status linkStatus = g_link.begin(board::kRs485DefaultBaud, 8, 'N', 1);
@@ -245,6 +290,7 @@ void loop() {
         Tilt tilt = {0, 0, 0, 0, 0, false};
         g_tilt.read(tilt);
         publishTilt(tilt, nowMs / 1000u);
+        serviceBootProof(tilt, nowMs);
     }
 
     serviceLink();

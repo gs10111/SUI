@@ -91,6 +91,8 @@
 #include "adapters/stwd100_watchdog.h"
 #include "adapters/xtr300_analog_output.h"
 #include "app/application.h"
+#include "ota_partition.h"
+#include "ota_proof.h"
 #include "app/boot_sequence.h"
 #include "app/persist_queue.h"
 #include "board_pins.h"
@@ -231,6 +233,18 @@ volatile bool g_linkBeginDone = false;
 bool g_linkReported = false;
 
 uint8_t g_bootKeyMask = 0;
+
+// PROVA DE BOOT DE UMA IMAGEM RECEM-SUBIDA (ota::BootProof, puro e testado no host).
+//
+// So faz alguma coisa quando a particao corrente esta em PENDING_VERIFY, isto e, logo depois de
+// um OTA. Em boot normal g_bootProofPending nasce falso e o mecanismo inteiro fica inerte.
+//
+// O criterio de "ciclo bom" desta placa e o que define funcionar: enlace com a sensora saudavel
+// e leitura fresca. Cinco ciclos consecutivos aprovam; 30 s sem consegui-los reprovam, e a
+// reprovacao REINICIA a placa na imagem anterior - e o unico caminho automatico de volta.
+ota::BootProof g_bootProof;
+bool g_bootProofPending = false;
+bool g_bootProofDone = false;
 // Ultima mascara de tecla impressa no console. 0xFF = nada impresso ainda, para que a primeira
 // passagem sempre publique o estado de repouso das tres linhas.
 uint8_t g_lastKeyMask = 0xFFu;
@@ -715,8 +729,41 @@ void requestPset() {
     }
 }
 
+// A PROVA DE BOOT, uma passagem por ciclo de IHM. Inerte em boot normal.
+void serviceBootProof(const app::Application::Snapshot& snap) {
+    if (g_bootProofDone || !g_bootProofPending) {
+        return;
+    }
+    const uint32_t nowMs = g_clock.nowMs();
+    g_bootProof.begin(nowMs);
+
+    // O QUE CONTA COMO CICLO BOM NESTA PLACA: enlace saudavel e leitura fresca. Nao basta o
+    // firmware ter subido - era exatamente isso que o core do Arduino ja dava por bom, e e o
+    // motivo de este mecanismo existir. Uma UR que sobe e nao enxerga a sensora NAO esta
+    // funcionando, por mais que o loop() esteja rodando.
+    if (snap.link == app::LinkHealth::Ok && !snap.stale) {
+        g_bootProof.noteGood(nowMs);
+    } else {
+        g_bootProof.noteBad();
+    }
+
+    const ota::ProofVerdict veredito = g_bootProof.verdict(nowMs);
+    if (veredito == ota::ProofVerdict::Provando) {
+        return;
+    }
+    if (veredito == ota::ProofVerdict::Aprovado) {
+        Serial.println(F("ota: imagem APROVADA na prova de boot - particao marcada valida"));
+    } else {
+        // Nao retorna: a placa reinicia na particao anterior.
+        Serial.println(F("ota: imagem REPROVADA na prova de boot - revertendo para a anterior"));
+        Serial.flush();
+    }
+    g_bootProofDone = ota::applyVerdict(veredito);
+}
+
 void serviceHmi() {
     const app::Application::Snapshot snap = takeSnapshot();
+    serviceBootProof(snap);
     g_preset.sample(snap.raw[0], snap.raw[1]);
     g_preset.tick();
 
@@ -936,6 +983,13 @@ void setup() {
     }
 
     g_wdt.enablePowerLed();
+    // So aqui se descobre se esta imagem esta em prova: esp_ota_get_state_partition() le a
+    // otadata, e em boot normal isto devolve false e o mecanismo inteiro fica inerte.
+    g_bootProofPending = ota::pendingVerify();
+    if (g_bootProofPending) {
+        Serial.println(F("ota: imagem EM PROVA - 5 ciclos bons em ate 30 s ou reverte"));
+    }
+
     g_boot.begin(bootAtMs, g_bootKeyMask);
     g_hmiMs = g_clock.nowMs();
     g_originMs = g_clock.nowMs();
