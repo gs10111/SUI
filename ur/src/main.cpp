@@ -232,7 +232,9 @@ char g_otaSsid[33] = {0};
 char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
 // Verdadeiro quando a senha saiu do MAC em vez da producao. Nesse estado ela NAO vale como
 // controle de acesso (ota_credentials.h explica), e o painel tem de dizer isso.
-bool g_otaSenhaDerivada = false;
+// Verdadeiro quando a placa esta com a senha PADRAO de fabrica, por nao ter senha propria
+// gravada na producao. Nesse estado a senha nao distingue um equipamento do outro.
+bool g_otaSenhaPadrao = false;
 bool g_otaNoAr = false;
 uint32_t g_otaUltimoDesenhoMs = 0;
 bool g_otaDesenhandoConfirm = false;
@@ -811,22 +813,26 @@ void startUpdatePortal() {
     WiFi.macAddress(mac);
     ota::apSsid(ota::kAlvoSupervisora, mac, g_otaSsid, sizeof(g_otaSsid));
 
-    // CAMINHO NORMAL: a senha foi sorteada na producao e gravada pelo jig; nao esta em firmware
-    // nenhum, e quem quiser entrar precisa ler a etiqueta da placa. CAMINHO DEGRADADO: placa que
-    // nunca passou pelo jig, ou NVS apagada - deriva do MAC para continuar atualizavel, e avisa.
+    // A SENHA DE NVS GANHA SEMPRE. Quando a producao passar a sortear e gravar, nenhuma linha
+    // daqui muda: as placas novas saem com senha propria e as antigas seguem com a padrao ate
+    // serem regravadas. Sem senha em NVS - que e o caso de hoje - vale a padrao de fabrica.
     Preferences prefs;
     g_otaSenha[0] = '\0';
     if (prefs.begin("ota", true)) {
         prefs.getString("pw", g_otaSenha, sizeof(g_otaSenha));
         prefs.end();
     }
-    g_otaSenhaDerivada = !ota::passwordWellFormed(g_otaSenha);
-    if (g_otaSenhaDerivada) {
-        char derivada[ota::kPasswordChars + 1u];
-        ota::derivedPassword(mac, derivada);
-        for (uint8_t i = 0; i <= ota::kPasswordChars; ++i) {
-            g_otaSenha[i] = derivada[i];
+    // Sem senha propria: cai na padrao de fabrica. Ver ota_credentials.h - a padrao esta no
+    // firmware, e o firmware e o arquivo que entregamos ao cliente. Escolha declarada.
+    g_otaSenhaPadrao = !ota::passwordWellFormed(g_otaSenha);
+    if (g_otaSenhaPadrao) {
+        const char* padrao = ota::defaultPassword();
+        uint8_t i = 0;
+        while (padrao[i] != '\0' && i < sizeof(g_otaSenha) - 1u) {
+            g_otaSenha[i] = padrao[i];
+            ++i;
         }
+        g_otaSenha[i] = '\0';
     }
 
     g_portal.setKeepAlive(&otaKeepAlive, nullptr);
@@ -838,7 +844,7 @@ void startUpdatePortal() {
     Serial.print(g_otaSsid);
     Serial.print(F(" senha "));
     Serial.print(g_otaSenha);
-    Serial.println(g_otaSenhaDerivada ? F("  (DERIVADA DO MAC - ver docs/ota.md)")
+    Serial.println(g_otaSenhaPadrao ? F("  (PADRAO DE FABRICA - ver docs/ota.md)")
                                       : F("  (gravada na producao)"));
 }
 

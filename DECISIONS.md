@@ -3052,14 +3052,27 @@ explicitamente senha unica de fabrica e ponto de acesso aberto. Motivo registrad
 patio precisa do equipamento na mao para ler a senha. A Decisao 15 item 8 exige explicitamente
 autenticacao que NAO seja a senha de 4 digitos publicada."*
 
-O firmware le a senha de NVS (`ota`/`pw`) e **cai numa derivacao do MAC** quando ela nao existe.
+**EMENDA DE 2026-09-14, no mesmo dia:** o bigboss reviu a escolha e definiu **senha padrao unica
+de fabrica, `dieletrons-2025`**, no lugar da derivacao do MAC. A derivacao foi REMOVIDA do codigo,
+junto do `scripts/senha_ap.py` que a reproduzia.
 
-> **PENDENCIA DE PRODUCAO, e e a mais importante desta decisao.** A derivacao do MAC **nao vale
-> como controle de acesso**: ela so e secreta enquanto o firmware for secreto, e o firmware e
-> justamente o arquivo que entregamos ao cliente. O BSSID vai no ar em texto claro em toda baliza.
-> Quem tiver um `.ota` calcula a senha de qualquer equipamento do patio sem chegar perto dele.
-> **Enquanto o jig nao sortear e gravar a senha, toda placa da frota esta no caminho degradado** e
-> o requisito do item 8 da Decisao 15 NAO esta cumprido. Nao se conserta trocando o sal.
+O firmware le a senha de NVS (`ota`/`pw`) e **cai na senha padrao** quando ela nao existe. A
+ordem de precedencia nao mudou: **NVS ganha sempre**.
+
+> **PENDENCIA DE PRODUCAO, e continua sendo a mais importante desta decisao.** A senha padrao esta
+> no firmware, e o firmware e o arquivo que entregamos ao cliente: um unico `.ota` que vaze abre a
+> frota inteira, para sempre, e nao ha como trocar sem regravar todas as placas.
+>
+> **Isto NAO foi uma piora em relacao a derivacao do MAC** - e por isso a emenda foi aceita sem
+> briga. A derivacao tambem era publica: o MAC vai no ar em texto claro em toda baliza e o
+> algoritmo estava no mesmo firmware, entao qualquer um com um `.ota` calculava a senha de
+> qualquer equipamento do patio. As duas sao publicas; a fixa e mais honesta e muito mais facil de
+> usar no patio. O que se perdeu foi a APARENCIA de senha por equipamento, que nunca foi real.
+>
+> **Enquanto o jig nao sortear e gravar a senha em NVS, o item 8 da Decisao 15 NAO esta cumprido**,
+> e nenhuma escolha de senha padrao o cumpre. O caminho esta pronto e nao custa firmware: quando a
+> producao sortear, nenhuma linha muda - placas novas saem com senha propria, as antigas seguem
+> com a padrao ate serem regravadas.
 
 ### Precisa de medicao de bancada - e nenhuma foi feita
 
@@ -3081,8 +3094,9 @@ O firmware le a senha de NVS (`ota`/`pw`) e **cai numa derivacao do MAC** quando
    ligado so sob comando, com o equipamento fora de operacao; (b) mover a `ctrl` para o core 1;
    (c) aceitar o jitter medido e revisar o orcamento de 50 ms. **Nenhuma delas e escolhivel sem o
    numero.**
-2. **Quando o jig passa a sortear e gravar a senha?** Ate la o item 8 da Decisao 15 nao esta
-   cumprido.
+2. **Quando o jig passa a sortear e gravar a senha?** Ate la vale `dieletrons-2025` em toda a
+   frota e o item 8 da Decisao 15 nao esta cumprido. Esta e a unica pendencia desta decisao que
+   depende de producao e nao de bancada.
 3. **Secao de manual.** O item 8 da Decisao 15 exigia "secao nova de manual, superficie de ataque
    declarada". `docs/ota.md` cobre a parte de engenharia; **a secao de manual do cliente ainda nao
    existe**.
@@ -3104,4 +3118,9 @@ O firmware le a senha de NVS (`ota`/`pw`) e **cai numa derivacao do MAC** quando
   **fora do buffer** e so depois devolvia 0.
 - **Corrigido por mutante sobrevivente:** nenhum teste impedia uma senha de 12 caracteres iguais -
   5 bits de entropia em vez de 60 - que passava por deterministica, distinta entre placas e dentro
-  do alfabeto.
+  do alfabeto. (Obsoleto pela emenda, que removeu a derivacao; fica registrado porque foi o
+  defeito de teste que mais custou a achar.)
+- **Mantido depois da emenda:** `passwordWellFormed()` continua sendo aplicado TAMBEM a senha
+  padrao. Uma edicao desatenta daquela constante - um caractere a menos, um acento, um espaco no
+  fim - passaria por toda revisao humana e faria o `softAP` subir ABERTO em toda placa da frota na
+  proxima gravacao. Ha teste e ha mutante para cada um desses casos.

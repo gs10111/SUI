@@ -1,5 +1,6 @@
-// NOME E SENHA DO PONTO DE ACESSO. O que estes testes protegem nao e criptografia - e o
-// equipamento nao ficar gravavel por quem passar perto do patio.
+// NOME E SENHA DO PONTO DE ACESSO. O que estes testes protegem nao e criptografia - a senha
+// padrao esta no firmware e o firmware vai para o cliente, o que e escolha declarada da
+// Decisao 17. O que eles protegem e o equipamento nao ficar ABERTO, sem senha nenhuma.
 //
 // O caso que mata: WiFi.softAP(ssid, senha) com uma senha de 7 caracteres nao devolve erro - sobe
 // o ponto de acesso ABERTO. Uma senha mal formada vinda da producao viraria, em silencio, um
@@ -75,76 +76,38 @@ static void test_ssid_que_nao_cabe_falha_sem_escrever_fora_do_buffer(void) {
     TEST_ASSERT_EQUAL_UINT32(0, ota::apSsid(ota::kAlvoSupervisora, nullptr, buf, sizeof(buf)));
 }
 
-// A senha derivada tem de servir para WPA2 - senao o caminho degradado sobe um ponto de acesso
-// aberto, que e pior do que nao subir.
-static void test_a_senha_derivada_serve_para_wpa2(void) {
-    char pw[ota::kPasswordChars + 1u];
-    ota::derivedPassword(kMacA, pw);
-    TEST_ASSERT_EQUAL_UINT32(ota::kPasswordChars, strlen(pw));
-    TEST_ASSERT_TRUE(ota::passwordWellFormed(pw));
-    TEST_ASSERT_TRUE(ota::kPasswordChars >= ota::kWpa2MinChars);
+// A SENHA PADRAO DE FABRICA TEM DE SERVIR PARA WPA2. Ela e uma constante de texto num arquivo de
+// cabecalho: uma edicao desatenta - um caractere a menos, um acento, um espaco no fim - passa por
+// toda revisao humana e faz o softAP subir ABERTO em toda placa da frota na proxima gravacao.
+// Este teste e a unica coisa entre essa edicao e o campo.
+static void test_a_senha_padrao_serve_para_wpa2(void) {
+    const char* padrao = ota::defaultPassword();
+    TEST_ASSERT_NOT_NULL(padrao);
+    TEST_ASSERT_TRUE_MESSAGE(ota::passwordWellFormed(padrao),
+                             "a senha padrao nao serve para WPA2 - o softAP subiria ABERTO");
+    TEST_ASSERT_TRUE(strlen(padrao) >= ota::kWpa2MinChars);
+    TEST_ASSERT_TRUE(strlen(padrao) <= ota::kWpa2MaxChars);
 }
 
-// Alguem vai ler isto de uma etiqueta pequena e digitar no celular. 0/O e 1/I/L sao o mesmo
-// caractere para um olho cansado.
-static void test_a_senha_nao_usa_caracteres_que_se_confundem_na_etiqueta(void) {
-    char pw[ota::kPasswordChars + 1u];
-    const uint8_t* macs[2] = {kMacA, kMacB};
-    for (int m = 0; m < 2; ++m) {
-        ota::derivedPassword(macs[m], pw);
-        for (size_t i = 0; i < ota::kPasswordChars; ++i) {
-            TEST_ASSERT_TRUE(strchr("0O1IL", pw[i]) == nullptr);
-            TEST_ASSERT_TRUE(strchr(ota::passwordAlphabet(), pw[i]) != nullptr);
-        }
-    }
-    // E o alfabeto tem de ter mesmo 32 entradas: um alfabeto menor faria o resto enviesar as
-    // primeiras letras.
-    TEST_ASSERT_EQUAL_UINT32(ota::kAlphabetSize, strlen(ota::passwordAlphabet()));
+// E TEM DE SER A QUE ESTA ESCRITA NA DOCUMENTACAO E NA ETIQUETA. Trocar a constante sem trocar
+// docs/ota.md produz uma frota que ninguem consegue atualizar: a senha certa existe, esta no
+// firmware, e nao esta em lugar nenhum que alguem leia.
+static void test_a_senha_padrao_e_a_que_esta_documentada(void) {
+    TEST_ASSERT_EQUAL_STRING("dieletrons-2025", ota::defaultPassword());
 }
 
-// UM RESUMO DE 32 BYTES USADO ERRADO da uma senha de 12 caracteres IGUAIS - deterministica,
-// diferente entre placas, toda dentro do alfabeto, e com 5 bits de entropia em vez de 60. Passou
-// por todos os outros testes daqui; foi um mutante sobrevivente que apontou a falta deste.
-static void test_a_senha_usa_o_resumo_inteiro_e_nao_um_byte_so(void) {
-    const uint8_t macs[4][ota::kMacBytes] = {{0x3C, 0x71, 0xBF, 0x12, 0x34, 0x56},
-                                             {0x3C, 0x71, 0xBF, 0x12, 0x34, 0x57},
-                                             {0x24, 0x6F, 0x28, 0x00, 0x00, 0x01},
-                                             {0xA4, 0xCF, 0x12, 0xFF, 0xFE, 0xFD}};
-    for (int m = 0; m < 4; ++m) {
-        char pw[ota::kPasswordChars + 1u];
-        ota::derivedPassword(macs[m], pw);
-        bool visto[256] = {false};
-        size_t distintos = 0;
-        for (size_t i = 0; i < ota::kPasswordChars; ++i) {
-            const unsigned char c = static_cast<unsigned char>(pw[i]);
-            if (!visto[c]) {
-                visto[c] = true;
-                ++distintos;
-            }
-        }
-        // Com 12 sorteios em 32 simbolos, menos de 6 distintos e praticamente impossivel por
-        // acaso e certeiro quando o resumo esta sendo desperdicado.
-        TEST_ASSERT_TRUE(distintos >= 6);
-    }
-}
-
-// Deterministica: o operador anotou a senha ha cinco minutos. Se ela mudar no reinicio, ele nao
-// entra mais e o equipamento vira caminhonete.
-static void test_a_senha_derivada_nao_muda_entre_reinicios(void) {
-    char um[ota::kPasswordChars + 1u];
-    char dois[ota::kPasswordChars + 1u];
-    ota::derivedPassword(kMacA, um);
-    ota::derivedPassword(kMacA, dois);
-    TEST_ASSERT_EQUAL_STRING(um, dois);
-}
-
-// E dois equipamentos nao podem cair na mesma senha - um MAC de diferenca tem de mudar tudo.
-static void test_equipamentos_diferentes_tem_senhas_diferentes(void) {
-    char a[ota::kPasswordChars + 1u];
-    char b[ota::kPasswordChars + 1u];
-    ota::derivedPassword(kMacA, a);
-    ota::derivedPassword(kMacB, b);
-    TEST_ASSERT_TRUE(strcmp(a, b) != 0);
+// A senha padrao NAO distingue um equipamento do outro - e essa e exatamente a propriedade que
+// ela nao tem. O teste existe para que ninguem a confunda com a senha por equipamento da
+// Decisao 15 item 8: quem quiser aquela propriedade tem de gravar senha em NVS na producao.
+// O que continua distinguindo equipamentos e o SSID, e so ele.
+static void test_a_senha_padrao_e_igual_em_toda_a_frota_e_o_ssid_nao(void) {
+    char a[ota::kSsidMaxChars + 1u];
+    char b[ota::kSsidMaxChars + 1u];
+    ota::apSsid(ota::kAlvoSupervisora, kMacA, a, sizeof(a));
+    ota::apSsid(ota::kAlvoSupervisora, kMacB, b, sizeof(b));
+    TEST_ASSERT_TRUE_MESSAGE(strcmp(a, b) != 0, "o SSID tem de distinguir equipamentos");
+    // A senha nao tem argumento nenhum: nao ha o que variar por placa.
+    TEST_ASSERT_EQUAL_STRING(ota::defaultPassword(), ota::defaultPassword());
 }
 
 // O CASO QUE MATA. WiFi.softAP() com senha de 7 caracteres NAO devolve erro: sobe o ponto de
@@ -172,11 +135,9 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_o_ssid_distingue_a_placa_e_o_equipamento);
     RUN_TEST(test_ssid_que_nao_cabe_falha_sem_escrever_fora_do_buffer);
-    RUN_TEST(test_a_senha_derivada_serve_para_wpa2);
-    RUN_TEST(test_a_senha_nao_usa_caracteres_que_se_confundem_na_etiqueta);
-    RUN_TEST(test_a_senha_usa_o_resumo_inteiro_e_nao_um_byte_so);
-    RUN_TEST(test_a_senha_derivada_nao_muda_entre_reinicios);
-    RUN_TEST(test_equipamentos_diferentes_tem_senhas_diferentes);
+    RUN_TEST(test_a_senha_padrao_serve_para_wpa2);
+    RUN_TEST(test_a_senha_padrao_e_a_que_esta_documentada);
+    RUN_TEST(test_a_senha_padrao_e_igual_em_toda_a_frota_e_o_ssid_nao);
     RUN_TEST(test_senha_que_o_wpa2_recusaria_e_reprovada_aqui);
     return UNITY_END();
 }

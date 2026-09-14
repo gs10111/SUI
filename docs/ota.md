@@ -58,46 +58,48 @@ CRC-32 responde "o arquivo chegou inteiro?". SHA-256 responde "este arquivo e *a
 **Nenhum dos dois responde "quem mandou este arquivo?"** - nao ha assinatura. Quem produz o
 arquivo produz o resumo.
 
-O unico controle de acesso e a senha WPA2 do ponto de acesso. Ela tem dois caminhos:
+O unico controle de acesso e a senha WPA2 do ponto de acesso, e ela tem dois caminhos, nesta
+ordem de precedencia:
 
-1. **Caminho normal** - a senha e sorteada na producao, gravada em NVS (`ota`/`pw`) pelo jig e
-   impressa na etiqueta da placa. Nao esta em firmware nenhum. Quem quiser entrar precisa do
-   equipamento na mao para ler a etiqueta. E o que a Decisao 15 item 8 exige: autenticacao que
-   nao seja a senha de 4 digitos publicada no manual.
-2. **Caminho degradado** - placa que nunca passou pelo jig, ou NVS apagada: a senha e derivada do
-   MAC para que a placa continue atualizavel, e o firmware **avisa no console**.
+1. **NVS `ota`/`pw`** - senha **sorteada na producao**, gravada pelo jig, impressa na etiqueta da
+   placa. Nao esta em firmware nenhum. Se existir, **ganha**. E o que a Decisao 15 item 8 exige.
+2. **Senha padrao de fabrica** - `dieletrons-2025`. Vale enquanto o jig nao sortear nada, que e
+   **hoje, em toda a frota**.
 
-> **A senha derivada nao vale como controle de acesso.** Ela so e secreta enquanto o firmware for
-> secreto, e o firmware e justamente o arquivo que entregamos ao cliente. O BSSID de um ponto de
-> acesso vai no ar, em texto claro, em toda baliza. Quem tiver um `.ota` e um analisador calcula a
-> senha de qualquer equipamento do patio sem chegar perto dele. Nao adianta trocar o sal nem
-> espalhar mais o resumo: o problema e a entrada e o algoritmo serem ambos publicos. **O conserto
-> e a senha sorteada na producao**, e enquanto ela nao existir no jig, toda placa do campo esta no
-> caminho degradado.
+> **A senha padrao esta no firmware, e o firmware e o arquivo que entregamos ao cliente.** Um
+> unico `.ota` que vaze abre a frota inteira, para sempre, e nao ha como trocar sem regravar todas
+> as placas. Isso foi escolhido conscientemente em 2026-09-14, com o custo declarado - nao e um
+> descuido a ser descoberto depois.
+>
+> **O que isso NAO piorou:** a alternativa anterior derivava a senha do MAC, e o MAC vai no ar em
+> texto claro em toda baliza; qualquer um com o firmware calculava a senha de qualquer
+> equipamento do patio. As duas sao publicas. A fixa so e mais honesta sobre isso.
+>
+> **O caminho para a senha de verdade continua aberto e nao custa firmware:** quando a producao
+> passar a sortear e gravar em NVS, nenhuma linha muda. Placas novas saem com senha propria; as
+> antigas seguem com a padrao ate serem regravadas.
+
+O que continua distinguindo um equipamento do outro e o **SSID**, e so ele.
 
 Detalhes em `lib_shared/depuri_ota/include/ota_credentials.h`.
 
 ### Como descobrir a senha de uma placa
 
-**A propria placa imprime as duas, SSID e senha, no console de 115200 assim que liga:**
+A senha e `dieletrons-2025`, igual em toda placa que nao tenha senha propria gravada na producao.
+
+O que muda de placa para placa e o **SSID**, e a propria placa imprime os dois no console de
+115200 assim que liga:
 
 ```
-ota: ponto de acesso NO AR SUI-UR-123456 senha T55JEFC3QQHS  (DERIVADA DO MAC - ver docs/ota.md)
+ota: ponto de acesso NO AR SUI-UR-123456 senha dieletrons-2025  (PADRAO DE FABRICA - ver docs/ota.md)
 ```
 
-O sufixo entre parenteses diz em qual dos dois caminhos aquela placa esta. `(gravada na producao)`
-significa que a senha veio do jig e esta na etiqueta; `(DERIVADA DO MAC ...)` significa caminho
-degradado.
+O sufixo entre parenteses diz em qual dos dois caminhos aquela placa esta:
 
-Sem ligar a placa, so com o MAC (util para imprimir etiqueta em lote, e so no caminho degradado):
-
-```
-python3 scripts/senha_ap.py 3C:71:BF:12:34:56 -a supervisora
-```
-
-O script reproduz exatamente `ota::derivedPassword()` - conferido byte a byte contra o C++ que
-roda na placa. **Ele tambem e a demonstracao do problema descrito acima:** com o arquivo e o MAC,
-que vai no ar em toda baliza, qualquer um entra.
+| sufixo | significa |
+|---|---|
+| `(PADRAO DE FABRICA ...)` | sem senha em NVS; vale `dieletrons-2025` |
+| `(gravada na producao)` | tem senha propria; esta na etiqueta, nao aqui |
 
 ---
 

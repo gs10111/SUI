@@ -148,7 +148,9 @@ app::OtaService g_ota(g_fwStore, ota::kAlvoSensora, /*exigeConfirmacao=*/false);
 
 char g_otaSsid[33] = {0};
 char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
-bool g_otaSenhaDerivada = false;
+// Verdadeiro quando a placa esta com a senha PADRAO de fabrica, por nao ter senha propria
+// gravada na producao. Nesse estado a senha nao distingue um equipamento do outro.
+bool g_otaSenhaPadrao = false;
 bool g_otaNoAr = false;
 
 // O UNICO CODIGO DESTA PLACA QUE RODA DURANTE UM ENVIO, e aqui isso e questao de vida ou morte,
@@ -170,13 +172,17 @@ void startUpdatePortal() {
         prefs.getString("pw", g_otaSenha, sizeof(g_otaSenha));
         prefs.end();
     }
-    g_otaSenhaDerivada = !ota::passwordWellFormed(g_otaSenha);
-    if (g_otaSenhaDerivada) {
-        char derivada[ota::kPasswordChars + 1u];
-        ota::derivedPassword(mac, derivada);
-        for (uint8_t i = 0; i <= ota::kPasswordChars; ++i) {
-            g_otaSenha[i] = derivada[i];
+    // Sem senha propria: cai na padrao de fabrica. Ver ota_credentials.h - a padrao esta no
+    // firmware, e o firmware e o arquivo que entregamos ao cliente. Escolha declarada.
+    g_otaSenhaPadrao = !ota::passwordWellFormed(g_otaSenha);
+    if (g_otaSenhaPadrao) {
+        const char* padrao = ota::defaultPassword();
+        uint8_t i = 0;
+        while (padrao[i] != '\0' && i < sizeof(g_otaSenha) - 1u) {
+            g_otaSenha[i] = padrao[i];
+            ++i;
         }
+        g_otaSenha[i] = '\0';
     }
 
     g_portal.setKeepAlive(&otaKeepAlive, nullptr);
@@ -187,7 +193,7 @@ void startUpdatePortal() {
     g_io.write(g_otaSsid);
     g_io.write(" senha ");
     g_io.write(g_otaSenha);
-    g_io.writeLine(g_otaSenhaDerivada ? "  (DERIVADA DO MAC - ver docs/ota.md)"
+    g_io.writeLine(g_otaSenhaPadrao ? "  (PADRAO DE FABRICA - ver docs/ota.md)"
                                       : "  (gravada na producao)");
 }
 
