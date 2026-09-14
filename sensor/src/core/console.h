@@ -32,6 +32,7 @@ private:
     void cmdLink();
     void cmdProto(const char* arg);
     void cmdWdt();
+    void cmdWifi(const char* arg);
     void cmdVer();
     void cmdProbe(const char* arg);
     void cmdTrace();

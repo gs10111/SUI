@@ -2,13 +2,18 @@
 // Unico lugar que constroi objetos concretos e o unico que conhece temporizacao de enquadramento.
 #include <Arduino.h>
 #include <SPI.h>
+#include <Preferences.h>
 #include <WiFi.h>
 #include <esp_bt.h>
 #include <esp_system.h>
 
 #include "board_pins.h"
+#include "esp_firmware_store.h"
+#include "ota_credentials.h"
 #include "ota_partition.h"
 #include "ota_proof.h"
+#include "ota_service.h"
+#include "wifi_update_portal.h"
 #include "core/console.h"
 #include "core/sensor_ctx.h"
 #include "drivers/ext_wdt.h"
@@ -124,6 +129,90 @@ ota::BootProof g_bootProof;
 bool g_bootProofPending = false;
 bool g_bootProofDone = false;
 
+// ================================ ATUALIZACAO DE FIRMWARE (decisao 17) ======================
+// Ponto de acesso proprio, no ar o tempo todo, com senha WPA2 por equipamento. A sensora NAO tem
+// painel nem teclado: nao ha onde confirmar, e por isso a sessao dela nao exige confirmacao. O
+// alarme sai do mesmo jeito - a supervisora ve o enlace cair e leva os quatro reles a alarme por
+// conta propria (decisao A5).
+//
+// ================================ PENDENCIA QUE NAO FOI FECHADA ============================
+// WiFi.mode(WIFI_OFF) estava nesta placa desde o inicio POR UM MOTIVO: a MEDICAO 12 - ruido de RF
+// da radio no SCL3300 - nunca foi feita. O inclinometro e a funcao inteira deste produto, e a
+// radio agora fica ligada 100% do tempo, nao so durante a atualizacao. Se a medicao reprovar,
+// quem decide e o produto, e o caminho de volta ja existe: o comando de console "wifi off"
+// derruba a radio sem regravar nada. Registrado em docs/ota.md.
+// ==========================================================================================
+EspFirmwareStore g_fwStore;
+WifiUpdatePortal g_portal;
+app::OtaService g_ota(g_fwStore, ota::kAlvoSensora, /*exigeConfirmacao=*/false);
+
+char g_otaSsid[33] = {0};
+char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
+bool g_otaSenhaDerivada = false;
+bool g_otaNoAr = false;
+
+// O UNICO CODIGO DESTA PLACA QUE RODA DURANTE UM ENVIO, e aqui isso e questao de vida ou morte,
+// nao de conforto: ver ota_portal.h. handleClient() le o corpo inteiro do POST sem devolver o
+// controle, o laco nao passa, e nesta placa e o LACO que renova o token de liveness. Sem esta
+// funcao a sensora reseta no meio de todo envio, com a particao ociosa pela metade.
+void otaKeepAlive(void*) {
+    g_wdt.heartbeat();
+}
+
+void startUpdatePortal() {
+    uint8_t mac[ota::kMacBytes] = {0};
+    WiFi.macAddress(mac);
+    ota::apSsid(ota::kAlvoSensora, mac, g_otaSsid, sizeof(g_otaSsid));
+
+    Preferences prefs;
+    g_otaSenha[0] = '\0';
+    if (prefs.begin("ota", true)) {
+        prefs.getString("pw", g_otaSenha, sizeof(g_otaSenha));
+        prefs.end();
+    }
+    g_otaSenhaDerivada = !ota::passwordWellFormed(g_otaSenha);
+    if (g_otaSenhaDerivada) {
+        char derivada[ota::kPasswordChars + 1u];
+        ota::derivedPassword(mac, derivada);
+        for (uint8_t i = 0; i <= ota::kPasswordChars; ++i) {
+            g_otaSenha[i] = derivada[i];
+        }
+    }
+
+    g_portal.setKeepAlive(&otaKeepAlive, nullptr);
+    g_otaNoAr = g_portal.begin(g_otaSsid, g_otaSenha, g_ota).ok();
+
+    g_io.write("ota: ponto de acesso ");
+    g_io.write(g_otaNoAr ? "NO AR " : "FALHOU ");
+    g_io.write(g_otaSsid);
+    g_io.write(" senha ");
+    g_io.write(g_otaSenha);
+    g_io.writeLine(g_otaSenhaDerivada ? "  (DERIVADA DO MAC - ver docs/ota.md)"
+                                      : "  (gravada na producao)");
+}
+
+void serviceOta(uint32_t nowMs) {
+    if (!g_otaNoAr) {
+        return;
+    }
+    // Nao ha rele nesta placa: "saidas em alarme" e sempre verdade aqui, porque a supervisora ja
+    // declara falha assim que o enlace para de responder. Por isso o segundo argumento e o
+    // proprio estado da sessao - nao ha nada a aplicar antes.
+    g_ota.service(nowMs, g_ota.saidasEmAlarme());
+
+    PortalStatus st;
+    g_ota.preencherStatusDoPortal(st);
+    g_portal.publish(st);
+    g_portal.service();
+
+    if (g_ota.reinicioPendente()) {
+        g_io.writeLine("ota: particao trocada - reiniciando");
+        g_wdt.heartbeat();
+        delay(300);
+        ESP.restart();
+    }
+}
+
 void serviceBootProof(const Tilt& tilt, uint32_t nowMs) {
     if (g_bootProofDone || !g_bootProofPending) {
         return;
@@ -212,7 +301,8 @@ void setup() {
     pinMode(static_cast<uint8_t>(board::kStatusLed), OUTPUT);
     digitalWrite(static_cast<uint8_t>(board::kStatusLed), LOW);
 
-    WiFi.mode(WIFI_OFF);
+    // A radio nao fica mais desligada: ver a PENDENCIA acima, junto dos globais de atualizacao.
+    // O Bluetooth continua desligado - nunca foi usado e ocupa o mesmo radio.
     btStop();
 
     g_io.begin();
@@ -250,6 +340,11 @@ void setup() {
     }
 
     g_console.begin();
+
+    // ULTIMO PASSO, como na supervisora: se o radio nao subir, a sensora continua medindo
+    // inclinacao e respondendo ao mestre. Um inclinometro que nao arranca porque o WiFi falhou
+    // trocou a funcao dele pela conveniencia de atualizar.
+    startUpdatePortal();
 }
 
 void loop() {
@@ -295,6 +390,11 @@ void loop() {
 
     serviceLink();
     g_console.poll();
+    // DEPOIS de serviceLink(): durante um envio esta chamada nao devolve o controle por segundos,
+    // e o enquadramento do escravo Modbus nao sobrevive a isso de qualquer jeito. Deixar o enlace
+    // ser atendido primeiro faz a supervisora receber o ultimo quadro bom antes do silencio, em
+    // vez de um quadro cortado no meio.
+    serviceOta(nowMs);
 
     if ((nowMs - g_lastLedMs) >= kLedPeriodMs) {
         g_lastLedMs = nowMs;

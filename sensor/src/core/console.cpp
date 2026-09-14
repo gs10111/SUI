@@ -1,6 +1,10 @@
 // Console de bancada da PUSI-DI261930: eco de linha em UART0 e diagnostico do Murata SCL3300.
 // Registradores publicados conforme sensor_map.h; RS e ERR_FLAG do SCL3300 (Murata 1862 rev 4).
+// WiFi.h arrasta o word() do Arduino para este arquivo; por isso os quadros de 32 bits do
+// SCL3300 aqui se chamam "quadro" e nao "word".
 #include "core/console.h"
+
+#include <WiFi.h>
 
 #include "core/spi_probe.h"
 #include "drivers/scl3300_math.h"
@@ -197,6 +201,7 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  link       estatisticas do RS-485 e o baud");
     ctx_.io.writeLine("  proto      mostra ou troca o escravo: proto [jig|modbus]");
     ctx_.io.writeLine("  wdt        watchdog externo STWD100");
+    ctx_.io.writeLine("  wifi       estado do ponto de acesso; 'wifi off' derruba a radio");
     ctx_.io.writeLine("  ver        firmware, BOARD_REV e pinout");
     ctx_.io.writeLine("  spiprobe   bring-up do SPI: spiprobe miso | all | pin <n>");
     ctx_.io.writeLine("  spiraw     envia um quadro de 32 bits: spiraw <hex>");
@@ -315,6 +320,11 @@ void SensorConsole::handleLine(char* line) {
         cmdProto(arg);
         return;
     }
+    if (strcmp(head, "wifi") == 0) {
+        cmdWifi(arg);
+        prompt();
+        return;
+    }
     if (strcmp(head, "wdt") == 0) {
         cmdWdt();
         return;
@@ -396,11 +406,11 @@ void SensorConsole::cmdSpiRaw(const char* arg) {
         ctx_.io.writeLine("uso: spiraw <hex de 32 bits>   ex: spiraw 40000091 (le WHOAMI)");
         return;
     }
-    const uint32_t word = static_cast<uint32_t>(strtoul(arg, nullptr, 16));
+    const uint32_t quadro = static_cast<uint32_t>(strtoul(arg, nullptr, 16));
     const spiprobe::Pins pins = {board::kSclCs, board::kSclSclk, board::kSclMiso, board::kSclMosi};
-    const uint32_t first = spiprobe::transfer(pins, word);
-    const uint32_t second = spiprobe::transfer(pins, word);
-    ctx_.io.printf("enviado 0x%08lX\r\n", static_cast<unsigned long>(word));
+    const uint32_t first = spiprobe::transfer(pins, quadro);
+    const uint32_t second = spiprobe::transfer(pins, quadro);
+    ctx_.io.printf("enviado 0x%08lX\r\n", static_cast<unsigned long>(quadro));
     ctx_.io.printf("resposta 1: 0x%08lX  (do comando anterior)\r\n", static_cast<unsigned long>(first));
     ctx_.io.printf("resposta 2: 0x%08lX  RS=%s dado=0x%04X crc=%s\r\n", static_cast<unsigned long>(second),
                    scl::rsName(scl::rsOf(second)), scl::frameData(second),
@@ -618,13 +628,13 @@ void SensorConsole::cmdSelfTest() {
 }
 
 void SensorConsole::cmdSpiLoop(const char* arg) {
-    uint32_t word = scl::kCmdReadWhoAmI;
+    uint32_t quadro = scl::kCmdReadWhoAmI;
     uint32_t seconds = 10;
     if (arg != nullptr && *arg != '\0') {
         char* end = nullptr;
         const unsigned long parsed = strtoul(arg, &end, 16);
         if (end != arg) {
-            word = static_cast<uint32_t>(parsed);
+            quadro = static_cast<uint32_t>(parsed);
         }
         while (end != nullptr && *end == ' ') {
             ++end;
@@ -637,7 +647,7 @@ void SensorConsole::cmdSpiLoop(const char* arg) {
         }
     }
     ctx_.io.printf("repetindo 0x%08lX por %lu s no caminho real do driver (2 MHz, modo 0)\r\n",
-                   static_cast<unsigned long>(word), static_cast<unsigned long>(seconds));
+                   static_cast<unsigned long>(quadro), static_cast<unsigned long>(seconds));
     ctx_.io.writeLine("ponta no SCLK para medir a frequencia, no CS para ver o enquadramento,");
     ctx_.io.writeLine("e no MISO para ver se o SCL3300 esta dirigindo alguma coisa");
 
@@ -648,7 +658,7 @@ void SensorConsole::cmdSpiLoop(const char* arg) {
     uint32_t last = 0;
     while ((ctx_.io.nowMs() - startMs) < (seconds * 1000u)) {
         uint32_t response = 0;
-        if (ctx_.tilt.exchangeRaw(word, response).failed()) {
+        if (ctx_.tilt.exchangeRaw(quadro, response).failed()) {
             break;
         }
         ++frames;
@@ -794,6 +804,31 @@ void SensorConsole::cmdProto(const char* arg) {
     ctx_.io.printf("Protocolo ativo agora: %s (recepcao zerada)\r\n", protoName(chosen));
     ctx_.io.printf("A supervisora precisa falar o mesmo protocolo a %lu bps.\r\n",
                    static_cast<unsigned long>(ctx_.link.baud()));
+}
+
+// O CAMINHO DE VOLTA DA DECISAO 17, e a razao de ele existir esta em docs/ota.md: a radio ficou
+// ligada 100% do tempo nesta placa sem que a MEDICAO 12 - ruido de RF no SCL3300 - tivesse sido
+// feita. Se a bancada mostrar que o inclinometro sofre com a radio no ar, "wifi off" derruba o
+// ponto de acesso na hora, sem regravar nada e sem tirar a placa do painel.
+//
+// Desligar NAO e persistente: o proximo boot sobe o ponto de acesso de novo. Isto e ferramenta de
+// medicao, nao configuracao - uma placa que se lembrasse de estar com a radio desligada seria uma
+// placa que ninguem consegue mais atualizar sem cabo.
+void SensorConsole::cmdWifi(const char* arg) {
+    if (arg != nullptr && strcmp(arg, "off") == 0) {
+        WiFi.softAPdisconnect(true);
+        WiFi.mode(WIFI_OFF);
+        ctx_.io.writeLine("wifi  : DESLIGADO ate o proximo boot");
+        return;
+    }
+    if (arg != nullptr && strcmp(arg, "on") == 0) {
+        ctx_.io.writeLine("wifi  : religar exige reiniciar (a senha e lida da NVS no boot)");
+        return;
+    }
+    ctx_.io.printf("wifi  : modo %d, clientes %d\r\n", static_cast<int>(WiFi.getMode()),
+                   static_cast<int>(WiFi.softAPgetStationNum()));
+    ctx_.io.printf("ssid  : %s\r\n", WiFi.softAPSSID().c_str());
+    ctx_.io.writeLine("uso   : wifi off  (derruba a radio para medir ruido no SCL3300)");
 }
 
 void SensorConsole::cmdWdt() {
