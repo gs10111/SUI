@@ -245,7 +245,9 @@ Vale mais a pena rodar com o alvo **errado** de proposito: tem de dar veredito 5
 
 1. No celular, ligue na rede `SUI-UR-XXXXXX` (supervisora) ou `SUI-SEN-XXXXXX` (sensora), onde
    `XXXXXX` sao os tres ultimos bytes do MAC. A senha esta na etiqueta da placa.
-2. Abra qualquer endereco no navegador - a pagina aparece sozinha.
+2. O celular abre a tela de atualizacao sozinho, como faz em rede de hotel (ha um servidor DNS na
+   placa que manda toda consulta para ela mesma). Se o seu celular nao abrir, digite
+   **`192.168.4.1`** no navegador.
 3. Escolha o `.ota` e toque em **Enviar**.
 4. **Supervisora:** o painel mostra `ATUALIZAR FIRMWARE?` com o aviso `SAIDAS VAO PARA ALARME` e a
    versao. Confirme **segurando MENU por 3 s**; **DOWN** cancela. (Mesmo gesto do commit de
@@ -253,6 +255,25 @@ Vale mais a pena rodar com o alvo **errado** de proposito: tem de dar veredito 5
    **Sensora:** comeca direto.
 5. A barra anda; ao fim a placa reinicia sozinha.
 6. A imagem nova entra **em prova**: 5 ciclos bons em ate 30 s ou a placa volta para a anterior.
+
+### 8.3.1 A sensora nao tem "entrar em modo OTA"
+
+Nao existe gesto, comando nem jumper para por a sensora em atualizacao: **o ponto de acesso dela
+fica no ar desde o boot, sempre**. Foi assim que a decisao foi tomada - a placa nao tem painel nem
+teclado, entao qualquer "modo" exigiria um caminho por RS-485 que so funcionaria com a supervisora
+viva, que e justamente o caso em que nao se precisa dele.
+
+O que existe e o contrario: **`wifi off`** no console derruba a radio ate o proximo boot.
+
+Como a sensora nao tem tela, o console de 115200 e onde tudo aparece:
+
+```
+wifi                # SSID, modo e quantos clientes estao ligados
+```
+
+Durante a atualizacao a sensora **para de responder ao RS-485** por alguns segundos. Isso e
+esperado: a supervisora declara falha de enlace e leva os quatro reles a alarme por conta propria
+(decisao A5). Nao ha nada a fazer no painel da supervisora.
 
 ### 8.4 Conferir o que ficou gravado
 

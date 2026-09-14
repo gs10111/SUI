@@ -23,6 +23,11 @@
 //                       conexao HTTP aberta por um minuto esperando alguem apertar um botao.
 //    POST /imagem     - a imagem. So e aceita quando a maquina de fases ja esta em Gravando.
 //    GET  /estado     - JSON curto, para a pagina acompanhar sem recarregar.
+//
+// PORTAL CATIVO. Um DNSServer responde TODA consulta com o IP da propria placa. Sem ele, o
+// onNotFound() do WebServer so pega qualquer CAMINHO, nao qualquer ENDERECO: o celular nao
+// resolveria nome nenhum, o aviso de "entrar na rede" nunca apareceria, e quem esta no patio
+// teria de saber e digitar 192.168.4.1 de cabeca. Com ele, ligar na rede ja abre a tela.
 #pragma once
 
 #if defined(HOST_BUILD)
@@ -31,6 +36,7 @@
 
 #include <stdint.h>
 
+#include <DNSServer.h>
 #include <WebServer.h>
 
 #include "ota_portal.h"
@@ -61,11 +67,13 @@ private:
     static WifiUpdatePortal* instancia_;  // o WebServer so aceita callback sem contexto
 
     WebServer servidor_;
+    DNSServer dns_;
     IUpdatePortalSink* sink_;
     PortalStatus estado_;
     void (*keepAlive_)(void*);
     void* keepAliveCtx_;
     char ssid_[33];
     bool noAr_;
+    bool dnsNoAr_;
     bool envioAbortado_;
 };

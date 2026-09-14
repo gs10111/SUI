@@ -92,6 +92,7 @@ WifiUpdatePortal::WifiUpdatePortal()
       keepAlive_(nullptr),
       keepAliveCtx_(nullptr),
       noAr_(false),
+      dnsNoAr_(false),
       envioAbortado_(false) {
     ssid_[0] = '\0';
 }
@@ -139,6 +140,13 @@ Status WifiUpdatePortal::begin(const char* ssid, const char* senha, IUpdatePorta
     instancia_ = this;
     registrarRotas();
     servidor_.begin();
+
+    // Toda consulta de nome responde com o IP da propria placa: e isto que faz o celular abrir a
+    // tela sozinho ao entrar na rede. Se o DNS nao subir, o portal CONTINUA funcionando - so
+    // exige que alguem digite o endereco - entao a falha aqui nao derruba a atualizacao.
+    dns_.setErrorReplyCode(DNSReplyCode::NoError);
+    dnsNoAr_ = dns_.start(53, "*", WiFi.softAPIP());
+
     noAr_ = true;
     return kOk;
 }
@@ -151,8 +159,10 @@ void WifiUpdatePortal::registrarRotas() {
         "/imagem", HTTP_POST, []() { instancia_->tratarImagemFim(); },
         []() { instancia_->tratarImagemPedaco(); });
     servidor_.onNotFound([]() {
-        // Todo celular sonda um endereco proprio para saber se ha internet. Devolver a pagina em
-        // qualquer caminho faz o aviso de "entrar na rede" abrir direto na tela de atualizacao.
+        // Todo celular sonda um endereco proprio para saber se ha internet, e cada fabricante usa
+        // o seu. Com o DNS mandando tudo para ca, essas sondas caem AQUI - e devolver a pagina em
+        // qualquer caminho e o que faz o aviso de "entrar na rede" abrir direto na tela de
+        // atualizacao, em vez de o celular concluir que a rede esta quebrada e sair dela sozinho.
         instancia_->tratarRaiz();
     });
 }
@@ -160,6 +170,9 @@ void WifiUpdatePortal::registrarRotas() {
 void WifiUpdatePortal::service() {
     if (!noAr_) {
         return;
+    }
+    if (dnsNoAr_) {
+        dns_.processNextRequest();
     }
     servidor_.handleClient();
 }
