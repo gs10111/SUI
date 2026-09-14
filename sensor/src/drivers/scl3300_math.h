@@ -46,6 +46,27 @@ constexpr uint16_t kStatusSat = 0x0040;
 constexpr uint16_t kStatusStartupBenign = static_cast<uint16_t>(kStatusPwr | kStatusModeChange);
 constexpr uint16_t kStatusFault = static_cast<uint16_t>(0xFFFFu & ~static_cast<uint32_t>(kStatusStartupBenign));
 
+// FAIXA ANGULAR MAXIMA POR MODO, datasheet 2.11.1 (pagina 16), em decimos de grau.
+//
+// "Inclination ranges are limited in Mode 3 and Mode 4 to maximum +-10 degrees inclination. ...
+//  If the whole 360 degrees operation is needed, then one should select either Mode 1 or Mode 2
+//  where the limitations regarding the maximum inclination angle don't exist."
+//
+// Esta e a linha que derrubou a escolha do modo 3 em bancada, em 2026-09-14: um supervisor de
+// inclinacao que atua em +-90,0 graus NAO CABE nos modos de inclinacao. Alem de 10 graus o bit
+// SAT sobe, e por 6.3 "all acceleration, inclination, and STO output data is invalid" - o
+// produto inteiro para, exatamente como o operador viu com o eixo Y em 56 graus.
+//
+// O argumento que me levou ao erro era verdadeiro e insuficiente: a sensibilidade de inclinacao
+// e mesmo 182 LSB/grau nos QUATRO modos (Tabela 12). O que muda nao e a resolucao, e a FAIXA -
+// e a Tabela 12 nao menciona isso, so a secao 2.11.1 menciona.
+constexpr int16_t kInclinationModeMaxDeci = 100;   // modos 3 e 4
+constexpr int16_t kAccelModeMaxDeci = 1800;        // modos 1 e 2: sem limite de angulo
+
+constexpr int16_t modeMaxInclinationDeci(uint8_t mode) {
+    return (mode == 3u || mode == 4u) ? kInclinationModeMaxDeci : kAccelModeMaxDeci;
+}
+
 constexpr uint8_t kModeMin = 1;
 constexpr uint8_t kModeMax = 4;
 constexpr uint16_t kSettleMsMode1 = 25;

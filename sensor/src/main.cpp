@@ -34,28 +34,46 @@ SPIClass g_sclSpi(VSPI);
 SpiBus g_sclBus(g_sclSpi, board::kSclSclk, board::kSclMiso, board::kSclMosi, "VSPI/SCL3300");
 
 ExtWatchdog g_wdt;
-// MODO DE OPERACAO DO SCL3300. Decisao do bigboss, 2026-09-01: MODO 3.
+// MODO DE OPERACAO DO SCL3300: MODO 1.
 //
-// O modo 1 (padrao do chip, e o que este firmware usava) tem fundo de escala de +-1,2 g e
-// filtro de 40 Hz. Num portico, choque e impacto de carga passam de 1,2 g com facilidade, e ali
-// o front-end satura: o bit SAT sobe, a leitura e recusada e os quatro reles vao a alarme por
-// A5 - alarme falso disparado pelo proprio movimento que o equipamento existe para supervisionar.
+// REVERTIDO DO MODO 3 EM 2026-09-14, EM BANCADA, e o motivo tem de ficar escrito porque o erro
+// foi meu e o argumento que o produziu parecia bom.
 //
-// O modo 3 e "inclination mode": nao tem fundo de escala fixo em g (a faixa dinamica depende da
-// orientacao na gravidade) e o filtro passa-baixa cai para 10 Hz, que e a banda de interesse de
-// uma estrutura portuaria. NAO se perde resolucao angular: a Tabela 12 do datasheet da 182 LSB
-// por grau na saida de INCLINACAO nos QUATRO modos - o que muda entre eles e a saida de
-// aceleracao e o filtro, nao o angulo.
+// O modo 3 foi escolhido em 2026-09-01 para fugir do fundo de escala de +-1,2 g do modo 1, que
+// um impacto de carga de portico ultrapassa. O argumento usado foi verdadeiro: a Tabela 12 do
+// datasheet da 182 LSB por grau na saida de INCLINACAO nos QUATRO modos, entao trocar de modo
+// nao custa resolucao angular.
 //
-// O que a troca traz junto, e ja esta tratado:
-//   - acomodacao de 100 ms no start-up em vez de 25 (scl::modeSettleMs);
-//   - o bit MODE_CHANGE passa a subir no ERR_FLAG2, porque agora o modo pedido difere do de
-//     reset - tolerado desde o fix do criterio de autoteste (scl3300_math.h);
-//   - o limiar do STO passa de +-1800 para +-3600 LSB (Tabela 23), pela propria stoThreshold().
+// O que esse argumento NAO cobria esta na secao 2.11.1, pagina 16, que a Tabela 12 nao
+// referencia:
 //
-// SUJEITO A MEDICAO M8, que e quem mede o espectro real da estrutura e diz se 10 Hz e a banda
-// certa e se o modo 4 (mesmo modo com low noise) se paga.
-constexpr uint8_t kSclOperationMode = 3;
+//   "Inclination ranges are limited in Mode 3 and Mode 4 to maximum +-10 degrees inclination.
+//    ... If the whole 360 degrees operation is needed, then one should select either Mode 1 or
+//    Mode 2 where the limitations regarding the maximum inclination angle don't exist."
+//
+// Este produto atua em +-90,0 graus (Tabela 2). Nos modos de inclinacao, passar de 10 graus
+// levanta o bit SAT, e por 6.3 "all acceleration, inclination, and STO output data is invalid":
+// a leitura inteira e recusada, os quatro reles vao a alarme por A5 e o equipamento para. Foi
+// exatamente o que a bancada mostrou, com o eixo Y em 56 graus.
+//
+// O static_assert abaixo impede que isto se repita: ele amarra o modo escolhido a faixa de
+// atuacao do produto, e qualquer volta aos modos 3 ou 4 QUEBRA A COMPILACAO em vez de reprovar
+// no cais.
+//
+// A PREOCUPACAO ORIGINAL CONTINUA DE PE e agora tem duas saidas legitimas, as duas sem custo de
+// resolucao angular:
+//   modo 1 - fundo de escala +-1,2 g, filtro de 40 Hz  (em vigor)
+//   modo 2 - fundo de escala +-2,4 g, filtro de 70 Hz  (o dobro de folga de choque, mais ruido)
+// Qual dos dois e MEDICAO M8: e ela que diz se o espectro real da estrutura passa de 1,2 g e se
+// o ruido do filtro de 70 Hz cabe na histerese.
+constexpr uint8_t kSclOperationMode = 1;
+
+// Faixa de atuacao do produto, em decimos de grau (Tabela 2: limites de -90,0 a +90,0).
+constexpr int16_t kProductMaxAngleDeci = 900;
+
+static_assert(scl::modeMaxInclinationDeci(kSclOperationMode) >= kProductMaxAngleDeci,
+              "datasheet 2.11.1: modos 3 e 4 limitam a inclinacao a +-10 graus; este produto "
+              "atua em +-90,0 graus e por isso so cabe nos modos 1 ou 2");
 
 Scl3300 g_tilt(g_sclBus, board::kSclCs, Scl3300::kSpiDefaultHz, kSclOperationMode);
 Rs485Transport g_link;

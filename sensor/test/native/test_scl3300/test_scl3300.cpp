@@ -485,6 +485,28 @@ static void test_o_ramo_negativo_conta_igual(void) {
     TEST_ASSERT_TRUE(monitor.faulted());
 }
 
+// --- FAIXA ANGULAR POR MODO (datasheet 2.11.1) ------------------------------------------------
+//
+// Escrito em 2026-09-14, depois de o modo 3 ter ido para a bancada e reprovar com o eixo Y em
+// 56 graus. A secao 2.11.1 limita os modos de INCLINACAO a +-10 graus; a Tabela 12, que e onde
+// eu tinha olhado, nao menciona isso - ela so mostra que a sensibilidade de inclinacao e igual
+// nos quatro modos. Este teste existe para que a faixa fique tao visivel quanto a sensibilidade.
+static void test_modos_de_inclinacao_limitam_a_faixa_em_10_graus(void) {
+    TEST_ASSERT_EQUAL_INT16(100, scl::modeMaxInclinationDeci(3));
+    TEST_ASSERT_EQUAL_INT16(100, scl::modeMaxInclinationDeci(4));
+    TEST_ASSERT_EQUAL_INT16(100, scl::kInclinationModeMaxDeci);
+}
+
+static void test_modos_de_aceleracao_nao_limitam_o_angulo(void) {
+    TEST_ASSERT_EQUAL_INT16(1800, scl::modeMaxInclinationDeci(1));
+    TEST_ASSERT_EQUAL_INT16(1800, scl::modeMaxInclinationDeci(2));
+    // e sao os unicos que comportam os +-90,0 graus de atuacao deste produto
+    TEST_ASSERT_TRUE(scl::modeMaxInclinationDeci(1) >= 900);
+    TEST_ASSERT_TRUE(scl::modeMaxInclinationDeci(2) >= 900);
+    TEST_ASSERT_TRUE(scl::modeMaxInclinationDeci(3) < 900);
+    TEST_ASSERT_TRUE(scl::modeMaxInclinationDeci(4) < 900);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -522,5 +544,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_falha_so_com_a_rajada_inteira);
     RUN_TEST(test_o_limiar_segue_o_modo_de_operacao);
     RUN_TEST(test_o_ramo_negativo_conta_igual);
+    RUN_TEST(test_modos_de_inclinacao_limitam_a_faixa_em_10_graus);
+    RUN_TEST(test_modos_de_aceleracao_nao_limitam_o_angulo);
     return UNITY_END();
 }
