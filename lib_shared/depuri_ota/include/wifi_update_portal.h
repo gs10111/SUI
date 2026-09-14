@@ -76,5 +76,6 @@ private:
     char ssid_[33];
     bool noAr_;
     bool dnsNoAr_;
+    bool rotasRegistradas_;
     bool envioAbortado_;
 };

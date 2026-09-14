@@ -93,6 +93,7 @@ WifiUpdatePortal::WifiUpdatePortal()
       keepAliveCtx_(nullptr),
       noAr_(false),
       dnsNoAr_(false),
+      rotasRegistradas_(false),
       envioAbortado_(false) {
     ssid_[0] = '\0';
 }
@@ -138,7 +139,15 @@ Status WifiUpdatePortal::begin(const char* ssid, const char* senha, IUpdatePorta
 
     sink_ = &sink;
     instancia_ = this;
-    registrarRotas();
+    // UMA VEZ SO NA VIDA DO OBJETO. WebServer::on() ALOCA um RequestHandler e o encadeia numa
+    // lista; ele nao substitui rota existente. Desde que o radio passou a subir e descer sob
+    // comando (decisao 17), chamar isto a cada begin() vazaria cinco handlers por ativacao - num
+    // equipamento que fica energizado meses e e atualizado de tempos em tempos, isso e heap que
+    // nao volta e uma lista de despacho que so cresce.
+    if (!rotasRegistradas_) {
+        registrarRotas();
+        rotasRegistradas_ = true;
+    }
     servidor_.begin();
 
     // Toda consulta de nome responde com o IP da propria placa: e isto que faz o celular abrir a
