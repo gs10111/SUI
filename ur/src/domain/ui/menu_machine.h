@@ -149,7 +149,12 @@ enum class MenuItem : uint8_t {
     Limite4 = 6,
     SentidoSensor = 7,
     Senha = 8,
-    Sair = 9,
+    // DECIMO PRIMEIRO ITEM, acrescentado em 2026-09-14. Ate aqui o texto de A7 prometia
+    // "FALHA TRAVADA - REARMAR NO MENU" e o menu nao tinha rearme nenhum: ele acontecia em
+    // silencio, ao atravessar o portao de senha. Promessa na tela sem gesto correspondente
+    // treina o operador a nao acreditar na tela.
+    Rearmar = 9,
+    Sair = 10,
 };
 
 enum class MenuState : uint8_t {
@@ -186,11 +191,15 @@ enum class MenuAction : uint8_t {
     // Devolve a leitura ao angulo cru nos dois eixos. Nao abre assistente: o menu continua dono
     // do display e mostra o aviso obrigatorio enquanto o composition root grava.
     ZerarPreset,
+    // A7: limpa o latch de flapping do enlace. Gesto DELIBERADO, e nao mais efeito colateral de
+    // entrar no Modo Programacao - limpar um latch de seguranca sem que ninguem tenha pedido e
+    // o oposto do que o latch existe para fazer.
+    RearmarEnlace,
 };
 
 class MenuMachine {
 public:
-    static constexpr uint8_t kItemCount = 10;
+    static constexpr uint8_t kItemCount = 11;
     static constexpr uint8_t kSubItemCount = 3;
     // O submenu de Preset tem um item a mais - "Zerar Preset" - desde 2026-09-01. Os de Auto
     // Calibracao e Sentido continuam com tres. E errata do manual 5.6, que lista tres.
@@ -234,6 +243,7 @@ public:
     // A9: aviso obrigatorio da troca de sentido, com o eixo e os dois limites a conferir.
     static constexpr const char* kMsgSentidoX = "Sentido X alterado!";
     static constexpr const char* kMsgSentidoY = "Sentido Y alterado!";
+    static constexpr const char* kMsgRearmado = "ENLACE REARMADO";
     static constexpr const char* kMsgPresetZerado1 = "PRESET ZERADO";
     static constexpr const char* kMsgPresetZerado2 = "confira X1 X2 Y1 Y2";
     static constexpr const char* kMsgPresetZeradoX = "Preset zerado - confira X1 X2";
@@ -379,6 +389,8 @@ private:
     const char* recusaMsg_;
 
     bool requirePassword_;
+    // Qual texto a tela GravOk esta mostrando: gravacao ou rearme de enlace.
+    bool rearmMsg_;
     bool pending_;
     bool dirty_;
 };

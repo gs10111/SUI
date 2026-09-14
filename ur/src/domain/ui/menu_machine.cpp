@@ -52,7 +52,7 @@ const DigitFieldSpec kCampoAngular = {4, 1, true, Angle::kMinDeciDeg, Angle::kMa
 
 const char* const kNomeItem[MenuMachine::kItemCount] = {
     "Voltar", "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2",
-    "Limite 3", "Limite 4", "Sentido Sensor", "Senha", "Sair",
+    "Limite 3", "Limite 4", "Sentido Sensor", "Senha", "Rearmar", "Sair",
 };
 
 // docs/ihm-estados.md 3.4: "Limite 1>Voltar   Valor Limite X1   Operacao Limite X1".
@@ -120,6 +120,7 @@ MenuMachine::MenuMachine(IDisplay& display, const IClock& clock, Password& passw
       line_(),
       recusaMsg_(""),
       requirePassword_(requirePassword),
+      rearmMsg_(false),
       pending_(false),
       dirty_(false) {
     line_[0] = '\0';
@@ -559,6 +560,14 @@ void MenuMachine::openItem() {
         case MenuItem::Limite4: openSubLimite(); break;
         case MenuItem::SentidoSensor: openSubEixo(SubKind::Sentido); break;
         case MenuItem::Senha: openSenha(); break;
+        // A7: o rearme e um pedido ao composition root, que e quem tem o supervisor de enlace.
+        // Mensagem curta de confirmacao, e volta ao menu - nao ha o que revisar nem o que
+        // gravar em NVS: o latch e volatil.
+        case MenuItem::Rearmar:
+            action_ = MenuAction::RearmarEnlace;
+            showMessage(MenuState::GravOk, MenuState::Menu, kGravOkMs);
+            rearmMsg_ = true;
+            break;
     }
 }
 
@@ -629,7 +638,10 @@ void MenuMachine::showMessage(MenuState msgState, MenuState backTo, uint32_t spa
     dirty_ = true;
 }
 
-void MenuMachine::gravado() { showMessage(MenuState::GravOk, editReturn_, kGravOkMs); }
+void MenuMachine::gravado() {
+    rearmMsg_ = false;
+    showMessage(MenuState::GravOk, editReturn_, kGravOkMs);
+}
 
 bool MenuMachine::gravacaoAceita(Status status) {
     if (status.ok()) {
@@ -830,7 +842,14 @@ void MenuMachine::render() {
         }
 
         case MenuState::Recusa: drawLine(kConteudoY, recusaMsg_, contentFont(recusaMsg_)); break;
-        case MenuState::GravOk: drawLine(kConteudoY, kMsgGravOk, contentFont(kMsgGravOk)); break;
+        // A mesma tela temporizada serve as duas confirmacoes, com textos diferentes: "Alteracao
+        // bem sucedida!" para gravacao e "ENLACE REARMADO" para o rearme de A7. Reusar o texto de
+        // gravacao no rearme mentiria - nada foi gravado, o latch e volatil.
+        case MenuState::GravOk: {
+            const char* texto = rearmMsg_ ? kMsgRearmado : kMsgGravOk;
+            drawLine(kConteudoY, texto, contentFont(texto));
+            break;
+        }
         case MenuState::FalhaGrav:
             drawLine(kConteudoY, kMsgFalhaGrav, contentFont(kMsgFalhaGrav));
             break;

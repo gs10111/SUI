@@ -241,7 +241,6 @@ bool g_presetEditing = false;
 bool g_wasProgramming = false;
 // Borda de "o operador ja passou pelo gate de senha nesta visita ao Modo Programacao": e nela
 // que o latch de A7 e rearmado, uma unica vez por visita e nao a cada volta do submenu.
-bool g_menuAuthed = false;
 domain::Axis g_calAxis = domain::Axis::X;
 domain::Axis g_presetAxis = domain::Axis::X;
 uint32_t g_hmiMs = 0;
@@ -531,6 +530,12 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
         // obrigatorio de 3 s enquanto a gravacao acontece aqui. Se a gravacao reprovar, a
         // mensagem de falha entra por cima do aviso - anunciar "zerado" sobre um offset que
         // continua no lugar seria a mentira na direcao perigosa.
+        // A7: rearme DELIBERADO do latch de flapping. Nada e gravado - o latch e volatil e
+        // morre no ciclo de energia -, entao nao ha publishAndPersist aqui. A tela de
+        // confirmacao e do proprio menu.
+        case domain::MenuAction::RearmarEnlace:
+            publishLinkLatchClear();
+            break;
         case domain::MenuAction::ZerarPreset: {
             const Status st = g_preset.clearOffsets(g_params);
             if (st.ok()) {
@@ -735,22 +740,12 @@ void serviceHmi() {
         if (g_menu.takeAction(action)) {
             startAssistant(action, snap);
         }
-        // REARME DE A7, na borda de ATRAVESSAR O GATE DE SENHA. MenuState::Menu so e alcancavel
-        // depois de Login aprovado (com kRequirePassword true; na Emenda 1 deste build de
-        // bancada o Modo Programacao inteiro abre sem senha, e o rearme herda essa condicao,
-        // como todo o resto do modo). A7 pede "rearme pela IHM atras da senha do equipamento,
-        // sem cortar energia", e docs/ihm-estados.md B7 registra a tela de login como "unica
-        // rota ate o rearme com o latch armado" - e esta a borda.
-        // PENDENCIA DECLARADA PARA O BIGBOSS: a string aprovada diz "REARMAR NO MENU", o que
-        // sugere um ITEM de menu proprio. O menu impresso tem dez itens e nenhum deles e o
-        // rearme; acrescentar um decimo primeiro e tela nova e errata de manual, e nenhuma tela
-        // pode ser inventada em silencio. Ate essa assinatura, o rearme acontece na entrada
-        // autenticada do Modo Programacao, que satisfaz a letra de A7 (painel, atras da senha,
-        // sem cortar energia) sem inventar item de menu.
-        if (g_menu.state() == domain::MenuState::Menu && !g_menuAuthed) {
-            g_menuAuthed = true;
-            publishLinkLatchClear();
-        }
+        // O REARME DE A7 DEIXOU DE ACONTECER AQUI em 2026-09-14. Ele era efeito colateral de
+        // atravessar o portao de senha: entrar no Modo Programacao por qualquer motivo limpava,
+        // em silencio, o latch que segurava os quatro reles em alarme. Limpar um latch de
+        // seguranca sem que ninguem tenha pedido e o oposto do que o latch existe para fazer, e
+        // o texto na tela ja prometia um gesto - "FALHA TRAVADA - REARMAR NO MENU" - que nao
+        // existia. Agora existe: MenuItem::Rearmar, tratado em startAssistant().
         g_wasProgramming = programming;
         return;
     }
@@ -760,7 +755,6 @@ void serviceHmi() {
         publishAndPersist(kDirtyParams);
     }
     g_wasProgramming = false;
-    g_menuAuthed = false;
 
     if (g_messageText != nullptr) {
         if (static_cast<int32_t>(g_clock.nowMs() - g_messageUntilMs) < 0) {

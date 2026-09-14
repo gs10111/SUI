@@ -70,9 +70,13 @@ using test::FakeKeypad;
 namespace {
 
 // Ordem LITERAL de L112. Um item a mais, um a menos ou fora de ordem reprova aqui.
+// L112 imprime DEZ itens. O decimo primeiro, "Rearmar", entrou em 2026-09-14 e e desvio
+// DECLARADO: o texto de A7 ja prometia "REARMAR NO MENU" e o menu nao tinha o gesto. Entra
+// antes de "Sair", sem reordenar nenhum dos nove primeiros, para que a errata do manual seja de
+// UM item acrescentado e nao de uma lista reescrita.
 const char* const kOrdemDoManual[MenuMachine::kItemCount] = {
     "Voltar", "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2",
-    "Limite 3", "Limite 4", "Sentido Sensor", "Senha", "Sair",
+    "Limite 3", "Limite 4", "Sentido Sensor", "Senha", "Rearmar", "Sair",
 };
 
 // Os quatro limites: item de menu, etiqueta de eixo (L202), tela de submenu, tela do editor
@@ -253,9 +257,9 @@ static void test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato(void)
     TEST_ASSERT_EQUAL_UINT16(1234u, Password::kFactory);               // Tabela 1, L131
 }
 
-// --- REQ-PRG-01: os dez itens, um a um ---
+// --- REQ-PRG-01: os itens do menu, um a um ---
 
-static void test_REQ_PRG_01_os_dez_itens_na_ordem_literal_do_manual(void) {
+static void test_REQ_PRG_01_os_itens_na_ordem_do_manual_mais_o_rearme(void) {
     Bancada b;
     entrarNoMenu(b);
     TEST_ASSERT_EQUAL_INT(code(MenuState::Menu), code(b.menu.state()));
@@ -1548,10 +1552,83 @@ static void test_os_outros_submenus_continuam_com_tres_itens(void) {
     TEST_ASSERT_EQUAL_STRING("Voltar", selecionado(b));
 }
 
+// --- REARMAR (A7): o item que o texto ja prometia -------------------------------------------
+//
+// "FALHA TRAVADA - REARMAR NO MENU" esta na tela desde A7, e ate 2026-09-14 o menu NAO tinha
+// rearme nenhum: ele acontecia em silencio, como efeito colateral de atravessar o portao de
+// senha. Promessa na tela sem gesto correspondente treina o operador a nao acreditar na tela -
+// e limpar um latch de seguranca sem que ninguem tenha pedido e o oposto do que o latch existe
+// para fazer.
+static void test_menu_tem_o_item_rearmar_antes_do_sair(void) {
+    Bancada b;
+    entrarNoMenu(b);
+
+    TEST_ASSERT_EQUAL_UINT8(11u, MenuMachine::kItemCount);
+    descerAte(b, MenuItem::Rearmar);
+    TEST_ASSERT_EQUAL_STRING("Rearmar", selecionado(b));
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Rearmar"));
+
+    // e "Sair" continua sendo o ultimo
+    toque(b, Key::Down);
+    TEST_ASSERT_EQUAL_STRING("Sair", selecionado(b));
+}
+
+static void test_rearmar_pede_a_acao_e_confirma_com_texto_proprio(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Rearmar);
+    toque(b, Key::Menu);
+
+    MenuAction acao = MenuAction::None;
+    TEST_ASSERT_TRUE(b.menu.takeAction(acao));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MenuAction::RearmarEnlace), static_cast<int>(acao));
+
+    // Texto PROPRIO: reusar "Alteracao bem sucedida!" mentiria - nada foi gravado, o latch e
+    // volatil.
+    TEST_ASSERT_TRUE(b.tela.showsExactly("ENLACE REARMADO"));
+    TEST_ASSERT_FALSE(b.tela.shows("Alteracao bem sucedida!"));
+
+    esperar(b, 2100);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::Menu), code(b.menu.state()));
+}
+
+// O rearme NAO marca configuracao pendente: nada foi editado, e sair nao pode pedir revisao.
+static void test_rearmar_nao_cria_pendencia_de_configuracao(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Rearmar);
+    toque(b, Key::Menu);
+    esperar(b, 2100);
+
+    TEST_ASSERT_FALSE(b.menu.pendingConfig());
+    descerAte(b, MenuItem::Sair);
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::Normal), code(b.menu.state()));
+}
+
+// E uma gravacao de verdade, depois do rearme, volta a usar o texto de gravacao.
+static void test_depois_do_rearme_a_gravacao_volta_ao_texto_de_gravacao(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Rearmar);
+    toque(b, Key::Menu);
+    esperar(b, 2100);
+
+    descerAte(b, MenuItem::Limite4);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+    toque(b, Key::Up);
+    hold(b);
+
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Alteracao bem sucedida!"));
+    TEST_ASSERT_FALSE(b.tela.shows("ENLACE REARMADO"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
-    RUN_TEST(test_REQ_PRG_01_os_dez_itens_na_ordem_literal_do_manual);
+    RUN_TEST(test_REQ_PRG_01_os_itens_na_ordem_do_manual_mais_o_rearme);
     RUN_TEST(test_REQ_PRG_01_lista_deslizante_mostra_os_vizinhos_do_item_selecionado);
     RUN_TEST(test_REQ_PRG_01_navegacao_circular_com_up_e_down);
     RUN_TEST(test_REQ_PWD_02_hold_de_menu_de_3_s_abre_a_tela_de_senha);
@@ -1592,5 +1669,9 @@ int main(int, char**) {
     RUN_TEST(test_submenu_de_preset_tem_o_quarto_item_zerar);
     RUN_TEST(test_zerar_preset_pede_a_acao_e_avisa_por_3_s);
     RUN_TEST(test_os_outros_submenus_continuam_com_tres_itens);
+    RUN_TEST(test_menu_tem_o_item_rearmar_antes_do_sair);
+    RUN_TEST(test_rearmar_pede_a_acao_e_confirma_com_texto_proprio);
+    RUN_TEST(test_rearmar_nao_cria_pendencia_de_configuracao);
+    RUN_TEST(test_depois_do_rearme_a_gravacao_volta_ao_texto_de_gravacao);
     return UNITY_END();
 }
