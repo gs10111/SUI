@@ -196,6 +196,17 @@ void setup() {
 void loop() {
     const uint32_t nowMs = millis();
 
+    // TOKEN DE LIVENESS DO WATCHDOG (2026-09-14). Desde que o chute passou a sair de ISR em IRAM,
+    // a ISR so pulsa o WDI enquanto este token estiver fresco. Chega a PRIMEIRA coisa do laco, e
+    // de proposito: bater o token no fim significaria "o laco inteiro terminou", e um travamento
+    // dentro de serviceLink() ou do console nunca renovaria - que e o comportamento desejado -,
+    // mas bater no inicio prova o que este token tem de provar, que e o LACO estar rodando.
+    // Vencido o prazo de 800 ms, a ISR para de pulsar e o STWD100 reseta a placa em 1,12 a 2,24 s.
+    //
+    // Sem esta linha a placa entra em BOOT LOOP: a carencia de boot da ISR vence em 3000 ms e o
+    // cachorro morde, para sempre.
+    g_wdt.heartbeat();
+
     if ((nowMs - g_lastTiltMs) >= kTiltPeriodMs) {
         g_lastTiltMs = nowMs;
         // PUBLICA SEMPRE, e nao so na leitura boa.

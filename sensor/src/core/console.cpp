@@ -806,6 +806,18 @@ void SensorConsole::cmdWdt() {
                    static_cast<unsigned long>(ctx_.wdt.minTimeoutMs()),
                    static_cast<unsigned long>(ctx_.wdt.typTimeoutMs()));
     ctx_.io.printf("Chutando     : %s\r\n", yesNo(ctx_.wdt.kicking()));
+    // O QUE MUDOU EM 2026-09-14, e por que aparece aqui. O chute saia de esp_timer, cuja tarefa
+    // executa DE FLASH e PARA em todo apagamento de setor - o watchdog ficava cego exatamente na
+    // janela em que mais importa. Agora sai de ISR de timer de hardware em IRAM, e o preco disso
+    // e o token: uma ISR que pulsasse incondicionalmente alimentaria o cachorro para sempre, e um
+    // firmware travado nunca resetaria. Estas tres linhas sao como se ve o token de bancada.
+    ctx_.io.writeLine("-- token de liveness (o laco tem de bater a cada volta) --");
+    ctx_.io.printf("Token armado : %s   (antes da 1a batida vale a carencia de boot)\r\n",
+                   yesNo(ctx_.wdt.livenessArmed()));
+    ctx_.io.printf("Batidas      : %lu\r\n",
+                   static_cast<unsigned long>(ctx_.wdt.heartbeatCount()));
+    ctx_.io.printf("Prazo        : %lu ms sem batida e a ISR PARA de pulsar\r\n",
+                   static_cast<unsigned long>(ctx_.wdt.heartbeatTimeoutMs()));
     ctx_.io.writeLine("NAO existe desligar o watchdog por software: o pino EN do STWD100 tem");
     ctx_.io.writeLine("pull-down interno e habilita o chip quando flutuante ou em nivel baixo.");
     ctx_.io.writeLine("Parar o kick reseta a placa; para isolar o reset, so no hardware.");
