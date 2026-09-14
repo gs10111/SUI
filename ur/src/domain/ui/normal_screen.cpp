@@ -38,6 +38,8 @@ namespace {
 // 144 px) termina antes daqui.
 // Folga entre o fim da area de medicao e o comeco da coluna de estado.
 constexpr int16_t kStatusGapPx = 6;
+// Folga extra maxima entre linhas da coluna de estado.
+constexpr int16_t kMaxExtraGapPx = 6;
 
 // Coluna do valor no detalhe: "+045,0" em fonte grande ocupa 108 px e fecha em 248.
 
@@ -80,6 +82,25 @@ public:
             return;
         }
         add(Angle::invalid());
+    }
+
+    // Porcentagem da saida analogica: sinal SEMPRE presente e tres digitos fixos, para que a
+    // coluna nao mude de largura entre 5 % e 100 % e o operador nao leia "+50" como cinquenta
+    // quando e cinco. Fora de +-100 nao existe valor legitimo (percentFor ja grampeia), e por
+    // isso o traco cobre o caso impossivel em vez de imprimir numero inventado.
+    void addPercent(int16_t percent) {
+        if (percent < -100 || percent > 100) {
+            add(Angle::invalid());
+            return;
+        }
+        char texto[6];
+        const int16_t modulo = (percent < 0) ? static_cast<int16_t>(-percent) : percent;
+        texto[0] = (percent < 0) ? '-' : '+';
+        texto[1] = static_cast<char>('0' + (modulo / 100));
+        texto[2] = static_cast<char>('0' + ((modulo / 10) % 10));
+        texto[3] = static_cast<char>('0' + (modulo % 10));
+        texto[4] = '\0';
+        add(texto);
     }
 
     const char* text() const { return buffer_; }
@@ -186,7 +207,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // fonte escolhida, senao a coluna cresce e vaza pelo pe da tela.
     const TextFont fonteEstado = statusFont(in);
     const int16_t colunaX = statusColumnX();
-    const int16_t passo = rowHeight(fonteEstado);
+    const int16_t passo = spacedRowHeight(fonteEstado, statusRows(in));
 
     // DSP-01 e NRM-01: os DOIS eixos ao mesmo tempo, cada um com a sua identificacao. Leitura
     // ausente sai como o traco de Angle, nunca como zero - um zero seria uma medicao.
@@ -238,23 +259,33 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // falha so cobre falha de ENLACE. Removida por inteiro, um DAC morto ficaria invisivel no
     // painel. Entao ela some quando a saida esta RASTREANDO, que e o caso que enche a tela, e
     // aparece quando ha o que dizer.
-    if (!allTracking(in)) {
-        if (mesmoModo) {
+    if (allTracking(in)) {
+        // PORCENTAGEM, e nao a palavra: "MEDICAO" nao diz ao operador o que o CLP esta
+        // recebendo. O numero vem do CODIGO escrito no DAC (AnalogScaler::percentFor), entao
+        // reflete o grampeamento no teto da faixa util - mostrar a porcentagem do angulo
+        // desejado seria dizer algo que a saida nao esta fazendo.
+        Line saida;
+        saida.add("SAI:");
+        saida.addPercent(in.analogPercent[kNormalAxisX]);
+        saida.add(" ");
+        saida.addPercent(in.analogPercent[kNormalAxisY]);
+        drawAt(colunaX, linha, saida.text(), fonteEstado);
+        linha = static_cast<int16_t>(linha + passo);
+    } else if (mesmoModo) {
+        Line saida;
+        saida.add("SAIDA:");
+        saida.add(analogText(in.analog[kNormalAxisX]));
+        drawAt(colunaX, linha, saida.text(), fonteEstado);
+        linha = static_cast<int16_t>(linha + passo);
+    } else {
+        for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
             Line saida;
-            saida.add("SAIDA:");
-            saida.add(analogText(in.analog[kNormalAxisX]));
+            saida.add("SAIDA ");
+            saida.add((eixo == kNormalAxisY) ? "Y" : "X");
+            saida.add(":");
+            saida.add(analogText(in.analog[eixo]));
             drawAt(colunaX, linha, saida.text(), fonteEstado);
             linha = static_cast<int16_t>(linha + passo);
-        } else {
-            for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
-                Line saida;
-                saida.add("SAIDA ");
-                saida.add((eixo == kNormalAxisY) ? "Y" : "X");
-                saida.add(":");
-                saida.add(analogText(in.analog[eixo]));
-                drawAt(colunaX, linha, saida.text(), fonteEstado);
-                linha = static_cast<int16_t>(linha + passo);
-            }
         }
     }
 
@@ -524,6 +555,34 @@ int16_t NormalScreen::smallRowHeight() const {
 
 int16_t NormalScreen::rowHeight(TextFont font) const {
     return static_cast<int16_t>(display_.lineHeightPx(font) + 1);
+}
+
+// ESPACAMENTO PEDIDO EM 2026-09-14. Com poucas linhas a coluna se espalha pela altura livre em
+// vez de ficar amontoada no topo; com muitas, ela se aperta sozinha ate o passo minimo. O teto
+// de kMaxExtraGapPx existe para que duas linhas nao fiquem nas bordas opostas do painel, o que
+// deixa de parecer uma coluna.
+int16_t NormalScreen::spacedRowHeight(TextFont font, uint8_t rows) const {
+    const int16_t minimo = rowHeight(font);
+    if (rows < 2u) {
+        return minimo;
+    }
+    const int16_t altura = static_cast<int16_t>(display_.heightPx());
+    const int16_t linha = static_cast<int16_t>(display_.lineHeightPx(font));
+    const int16_t disponivel = static_cast<int16_t>((altura - linha) / (rows - 1));
+    const int16_t teto = static_cast<int16_t>(linha + kMaxExtraGapPx);
+    int16_t passo = disponivel;
+    if (passo > teto) {
+        passo = teto;
+    }
+    return (passo < minimo) ? minimo : passo;
+}
+
+// Quantas linhas a coluna de estado desenha neste quadro.
+uint8_t NormalScreen::statusRows(const NormalInput& in) {
+    const uint8_t saida = allTracking(in) ? 1u : (sameAnalogMode(in) ? 1u : 2u);
+    const uint8_t preset =
+        (in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u;
+    return static_cast<uint8_t>(2u + saida + preset);
 }
 
 // A coluna de estado comeca onde a area de medicao termina. O X sai da largura REAL da maior

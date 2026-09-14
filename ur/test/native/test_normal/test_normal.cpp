@@ -302,8 +302,14 @@ static void test_DSP_01_leitura_invalida_mostra_o_traco_do_Angle_e_nunca_um_zero
 
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:---,-"));
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y:---,-"));
+    // O que esta regra protege e o ANGULO: leitura ausente nao pode virar zero medido. A busca
+    // por "+0" era ampla demais e passou a pegar a porcentagem da saida, que e outro campo e
+    // legitimamente vale +000. Afirmar o formato do angulo mantem a intencao sem o falso
+    // positivo.
     TEST_ASSERT_FALSE(bancada.painel.shows("000,0"));
-    TEST_ASSERT_FALSE(bancada.painel.shows("+0"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+000,0"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("X:+"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("Y:+"));
     verificarQuadro(bancada.painel);
 }
 
@@ -1196,6 +1202,76 @@ static void test_coluna_encolhe_no_pior_caso_de_cinco_linhas(void) {
     verificarQuadro(bancada.painel);
 }
 
+// --- PORCENTAGEM DA SAIDA E ESPACAMENTO (2026-09-14) ------------------------------------------
+//
+// Pedido do bigboss: a tela primaria mostra a saida analogica em PORCENTAGEM, e as linhas ficam
+// mais espacadas. A palavra "MEDICAO" nao dizia nada ao operador sobre o que o CLP esta
+// recebendo; o numero diz.
+//
+// A porcentagem so aparece quando a saida esta RASTREANDO. Em falha ou em calibracao o campo
+// volta a ser a palavra, porque ali o numero seria mentira: a saida nao representa o angulo.
+
+static void test_saida_rastreando_mostra_porcentagem(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(450, -225);
+    entrada.analogPercent[kNormalAxisX] = 100;
+    entrada.analogPercent[kNormalAxisY] = -50;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("SAI:"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("+100"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("-050"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_saida_em_falha_continua_dizendo_a_palavra(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(450, -225);
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Fault;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Fault;
+    entrada.analogPercent[kNormalAxisX] = -100;
+    entrada.analogPercent[kNormalAxisY] = -100;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    // numero nenhum: a saida nao representa o angulo, e o codigo de falha daria -100 %
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAIDA:FALHA"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("SAI:"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_porcentagem_extrema_cabe_na_coluna(void) {
+    // +-100 nos dois eixos e o texto mais largo que este campo produz.
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(900, -900);
+    entrada.analogPercent[kNormalAxisX] = 100;
+    entrada.analogPercent[kNormalAxisY] = -100;
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+100"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("-100"));
+    verificarQuadro(bancada.painel);
+}
+
+// Espacamento: com poucas linhas a coluna se espalha pelo painel em vez de ficar amontoada no
+// topo. Com muitas, ela se aperta sozinha - o limite continua sendo caber.
+static void test_coluna_se_espalha_quando_ha_poucas_linhas(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(450, -225);
+
+    TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
+
+    const int16_t yPrimeira = bancada.painel.yOf("X1:");
+    const int16_t ySegunda = bancada.painel.yOf("Y1:");
+    const int16_t passo = static_cast<int16_t>(ySegunda - yPrimeira);
+    const int16_t alturaLinha =
+        static_cast<int16_t>(bancada.painel.lineHeightPx(bancada.painel.fontOf("X1:")));
+    TEST_ASSERT_TRUE(passo > alturaLinha + 1);
+    verificarQuadro(bancada.painel);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
@@ -1227,6 +1303,10 @@ int main(int, char**) {
     RUN_TEST(test_limpeza_deixa_a_coluna_grande_mesmo_com_preset);
     RUN_TEST(test_saida_em_falha_so_no_eixo_y_ainda_aparece);
     RUN_TEST(test_coluna_encolhe_no_pior_caso_de_cinco_linhas);
+    RUN_TEST(test_saida_rastreando_mostra_porcentagem);
+    RUN_TEST(test_saida_em_falha_continua_dizendo_a_palavra);
+    RUN_TEST(test_porcentagem_extrema_cabe_na_coluna);
+    RUN_TEST(test_coluna_se_espalha_quando_ha_poucas_linhas);
     RUN_TEST(test_D3_NRM_02_down_percorre_as_telas_de_detalhe_e_volta);
     RUN_TEST(test_NRM_04_toque_simples_em_cima_nao_faz_nada_no_modo_normal);
     RUN_TEST(test_MAN_5_6_L152_duplo_toque_em_cima_chega_como_pset_e_nao_como_dois_toques);

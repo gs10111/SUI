@@ -552,6 +552,57 @@ static void test_REQ_CAL_04_restore_recusa_par_que_o_campo_de_trim_nao_represent
     TEST_ASSERT_EQUAL_INT16(450, cal.scaler().fullScaleAngleDeci());
 }
 
+// --- PORCENTAGEM DA SAIDA (2026-09-14) --------------------------------------------------------
+//
+// O painel mostrava o MODO da saida ("MEDICAO"), que nao diz nada ao operador sobre o que o CLP
+// esta recebendo. A porcentagem sai do CODIGO REALMENTE ESCRITO no DAC, e nao do angulo que o
+// dominio queria emitir: com o valor grampeado no teto da faixa util, os dois divergem, e o que
+// o CLP le e o codigo.
+static void test_percentFor_ancora_no_zero_e_no_fundo_de_escala(void) {
+    AnalogScaler escala;
+    TEST_ASSERT_TRUE(AnalogScaler::make(AnalogScaler::kZeroCode, AnalogScaler::kPlus10VCode, 450,
+                                        escala));
+
+    TEST_ASSERT_EQUAL_INT16(0, escala.percentFor(AnalogScaler::kZeroCode));
+    TEST_ASSERT_EQUAL_INT16(100, escala.percentFor(AnalogScaler::kPlus10VCode));
+    TEST_ASSERT_EQUAL_INT16(-100, escala.percentFor(AnalogScaler::kMinus10VCode));
+}
+
+static void test_percentFor_e_linear_no_meio_da_faixa(void) {
+    AnalogScaler escala;
+    TEST_ASSERT_TRUE(AnalogScaler::make(AnalogScaler::kZeroCode, AnalogScaler::kPlus10VCode, 450,
+                                        escala));
+
+    const uint16_t metade = static_cast<uint16_t>(
+        AnalogScaler::kZeroCode + (AnalogScaler::kPlus10VCode - AnalogScaler::kZeroCode) / 2);
+    TEST_ASSERT_EQUAL_INT16(50, escala.percentFor(metade));
+}
+
+// O codigo de falha (-11,00 V) fica FORA da faixa util de proposito (A2). A porcentagem nao
+// mente sobre ele: devolve o valor grampeado, e quem decide mostrar "FALHA" em vez do numero e
+// a tela, que sabe o MODO da saida.
+static void test_percentFor_grampeia_em_mais_menos_100(void) {
+    AnalogScaler escala;
+    TEST_ASSERT_TRUE(AnalogScaler::make(AnalogScaler::kZeroCode, AnalogScaler::kPlus10VCode, 450,
+                                        escala));
+
+    TEST_ASSERT_EQUAL_INT16(-100, escala.percentFor(AnalogScaler::kFaultCode));
+    TEST_ASSERT_EQUAL_INT16(-100, escala.percentFor(0));
+    TEST_ASSERT_EQUAL_INT16(100, escala.percentFor(65535u));
+}
+
+// Com calibracao de campo o zero e o fundo mudam, e a porcentagem tem de seguir a calibracao
+// GRAVADA, nunca os codigos nominais.
+static void test_percentFor_segue_a_calibracao_de_campo(void) {
+    AnalogScaler escala;
+    TEST_ASSERT_TRUE(AnalogScaler::make(33500u, 60000u, 300, escala));
+
+    TEST_ASSERT_EQUAL_INT16(0, escala.percentFor(33500u));
+    TEST_ASSERT_EQUAL_INT16(100, escala.percentFor(60000u));
+    // espelho do zero: -100 %
+    TEST_ASSERT_EQUAL_INT16(-100, escala.percentFor(escala.mirrorCode()));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_CAL_06_par_de_fabrica_e_o_da_tabela_2);
@@ -587,5 +638,9 @@ int main(int, char**) {
     RUN_TEST(test_REQ_CAL_04_serializacao_recusa_buffer_curto);
     RUN_TEST(test_A14_registro_reprovado_mantem_o_par_de_fabrica);
     RUN_TEST(test_REQ_CAL_04_restore_recusa_par_que_o_campo_de_trim_nao_representa);
+    RUN_TEST(test_percentFor_ancora_no_zero_e_no_fundo_de_escala);
+    RUN_TEST(test_percentFor_e_linear_no_meio_da_faixa);
+    RUN_TEST(test_percentFor_grampeia_em_mais_menos_100);
+    RUN_TEST(test_percentFor_segue_a_calibracao_de_campo);
     return UNITY_END();
 }

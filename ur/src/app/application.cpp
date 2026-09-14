@@ -37,6 +37,14 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
         in.reading[i] = snap.reading[i];
         in.unqualified[i] = snap.unqualified[i];
         in.presetOffsetDeci[i] = params.presetOffsetDeci(axis);
+        // Porcentagem do CODIGO escrito no DAC, pela calibracao GRAVADA deste eixo. Se o trio
+        // gravado for implausivel, make() recusa e o campo fica em zero - a tela so desenha a
+        // porcentagem quando a saida esta rastreando, e ali o trio ja passou pelo gate de A14.
+        domain::AnalogScaler escala;
+        if (domain::AnalogScaler::make(params.calZeroCode(axis), params.calFullScaleCode(axis),
+                                       params.calFullScale(axis).deciDegrees(), escala)) {
+            in.analogPercent[i] = escala.percentFor(snap.analogCode[i]);
+        }
         in.presetActive[i] = in.presetOffsetDeci[i] != 0;
         if (snap.overriding[i]) {
             in.analog[i] = domain::NormalAnalogMode::Calibrating;

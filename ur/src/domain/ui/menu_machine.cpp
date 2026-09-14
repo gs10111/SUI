@@ -802,7 +802,7 @@ void MenuMachine::render() {
             uint8_t n = appendTo(line_, kLineCap, 0, "Operacao Limite ");
             n = appendTo(line_, kLineCap, n, kEtiquetaLimite[static_cast<uint8_t>(currentLimit())]);
             n = appendTo(line_, kLineCap, n, ":");
-            drawLine(kRotuloY, line_, TextFont::Small);
+            drawLine(kRotuloY, line_, contentFont(line_));
             drawLine(kConteudoY, kNomeOperacao[opSel_], contentFont(kNomeOperacao[opSel_]));
             break;
         }
@@ -812,7 +812,7 @@ void MenuMachine::render() {
             uint8_t n = appendTo(line_, kLineCap, 0, "Sentido Sensor ");
             n = appendTo(line_, kLineCap, n, (axis_ == Axis::X) ? "X" : "Y");
             n = appendTo(line_, kLineCap, n, ":");
-            drawLine(kRotuloY, line_, TextFont::Small);
+            drawLine(kRotuloY, line_, contentFont(line_));
             drawLine(kConteudoY, kNomeSentido[dirSel_ & 1u],
                      contentFont(kNomeSentido[dirSel_ & 1u]));
             break;

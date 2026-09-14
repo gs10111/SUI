@@ -30,6 +30,26 @@ bool AnalogScaler::make(uint16_t zeroCode, uint16_t fullScaleCode, int16_t fullS
     return true;
 }
 
+int16_t AnalogScaler::percentFor(uint16_t code) const {
+    const int32_t span = static_cast<int32_t>(full_) - static_cast<int32_t>(zero_);
+    if (span == 0) {
+        return 0;
+    }
+    const int32_t delta = static_cast<int32_t>(code) - static_cast<int32_t>(zero_);
+    // Arredondamento ao mais proximo, no ramo com sinal: truncar deixaria +99 % onde o
+    // voltimetro le 10,00 V.
+    const int32_t metade = (span > 0) ? (span / 2) : (-span / 2);
+    const int32_t escalado = (delta >= 0) ? ((delta * 100 + metade) / span)
+                                          : -(((-delta) * 100 + metade) / span);
+    if (escalado > 100) {
+        return 100;
+    }
+    if (escalado < -100) {
+        return -100;
+    }
+    return static_cast<int16_t>(escalado);
+}
+
 uint16_t AnalogScaler::mirrorCode() const {
     return static_cast<uint16_t>(2 * static_cast<int32_t>(zero_) - static_cast<int32_t>(full_));
 }

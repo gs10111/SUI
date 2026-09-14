@@ -187,6 +187,11 @@ struct NormalInput {
     // de "CALIB" mentiria sobre o unico eixo cuja saida ainda vale.
     NormalAnalogMode analog[kNormalAxisCount];
 
+    // Porcentagem do fundo de escala que o codigo ESCRITO no DAC representa, de -100 a +100.
+    // So e desenhada quando analog[] diz Tracking: em falha ou calibracao a saida nao representa
+    // o angulo, e um numero ali seria mentira. Vem pronta de AnalogScaler::percentFor().
+    int16_t analogPercent[kNormalAxisCount];
+
     bool presetActive[kNormalAxisCount];         // offset do eixo diferente de zero
     int16_t presetOffsetDeci[kNormalAxisCount];  // A9: faixa +/-1800, o DOBRO da de medicao
 
@@ -259,6 +264,9 @@ private:
     void drawAt(int16_t x, int16_t y, const char* text, TextFont font);
     int16_t smallRowHeight() const;
     int16_t rowHeight(TextFont font) const;
+    // Passo entre linhas da coluna de estado, espalhado pela altura livre quando ha poucas
+    // linhas e apertado de volta quando ha muitas. O limite continua sendo caber.
+    int16_t spacedRowHeight(TextFont font, uint8_t rows) const;
     uint8_t statusRowCapacity() const;
     uint8_t rowCapacity(TextFont font) const;
     // Onde a coluna de estado comeca: logo depois da area de medicao, MEDIDA na fonte grande.
@@ -277,6 +285,7 @@ private:
     static bool allTracking(const NormalInput& in);
     static const char* limitLabel(uint8_t index);
     static const char* analogText(NormalAnalogMode mode);
+    static uint8_t statusRows(const NormalInput& in);
 
     IDisplay& display_;
     KeyGesture& gesture_;

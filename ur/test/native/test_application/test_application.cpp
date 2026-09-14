@@ -32,6 +32,7 @@
 #include <unity.h>
 
 #include "app/application.h"
+#include "domain/analog_scaler.h"
 #include "fakes/fake_analog_output.h"
 #include "fakes/fake_clock.h"
 #include "fakes/fake_relay_bank.h"
@@ -1163,6 +1164,40 @@ static void test_o_batimento_do_watchdog_e_a_ULTIMA_acao_do_ciclo(void) {
     TEST_ASSERT_TRUE(spy.analogWritesAtBeat() > 0u);
 }
 
+// buildNormalInput tem de ATRAVESSAR a porcentagem da saida, e nao so o modo. Foi assim que a
+// Emenda 2 se perdeu uma vez: campo novo no Snapshot, testes de tela verdes porque montam o
+// NormalInput a mao, e a ligacao entre os dois faltando.
+static void test_buildNormalInput_leva_a_porcentagem_da_saida(void) {
+    app::Application::Snapshot snap{};
+    domain::Parameters params = domain::Parameters::factoryDefaults();
+
+    // Calibracao nominal: zero em 32768, fundo em 58982.
+    snap.analogCode[0] = domain::AnalogScaler::kPlus10VCode;
+    snap.analogCode[1] = domain::AnalogScaler::kZeroCode;
+    snap.link = app::LinkHealth::Ok;
+
+    const domain::NormalInput in = app::buildNormalInput(snap, params);
+
+    TEST_ASSERT_EQUAL_INT16(100, in.analogPercent[0]);
+    TEST_ASSERT_EQUAL_INT16(0, in.analogPercent[1]);
+}
+
+static void test_buildNormalInput_usa_a_calibracao_gravada_e_nao_a_nominal(void) {
+    app::Application::Snapshot snap{};
+    domain::Parameters params = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(
+        params.setCalTriple(domain::Axis::X, 33500u, 60000u, domain::Angle::fromDeciDegrees(300))
+            .ok());
+
+    snap.analogCode[0] = 60000u;
+    snap.link = app::LinkHealth::Ok;
+
+    const domain::NormalInput in = app::buildNormalInput(snap, params);
+
+    // 60000 e o fundo GRAVADO: 100 %. Contra a calibracao nominal daria 104 %.
+    TEST_ASSERT_EQUAL_INT16(100, in.analogPercent[0]);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1203,5 +1238,7 @@ int main(int, char**) {
     RUN_TEST(test_o_conjunto_publicado_so_entra_em_applyPublished_e_entra_inteiro);
     RUN_TEST(test_o_quadro_da_IHM_so_muda_em_latchSnapshot);
     RUN_TEST(test_o_batimento_do_watchdog_e_a_ULTIMA_acao_do_ciclo);
+    RUN_TEST(test_buildNormalInput_leva_a_porcentagem_da_saida);
+    RUN_TEST(test_buildNormalInput_usa_a_calibracao_gravada_e_nao_a_nominal);
     return UNITY_END();
 }

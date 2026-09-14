@@ -79,6 +79,17 @@ public:
     uint16_t zeroCode() const { return zero_; }
     uint16_t fullScaleCode() const { return full_; }
     uint16_t mirrorCode() const;
+
+    // Porcentagem do fundo de escala que o codigo ESCRITO no DAC representa, de -100 a +100.
+    //
+    // Entra o codigo, e nao o angulo, de proposito: quando o valor e grampeado no teto da faixa
+    // util os dois divergem, e o que o CLP le e o codigo. Mostrar a porcentagem do angulo
+    // desejado seria dizer ao operador algo que a saida nao esta fazendo.
+    //
+    // Grampeia em +-100 em vez de extrapolar: o codigo de falha de A2 (-11,00 V) fica FORA da
+    // faixa util e daria -111 %, numero que nao significa nada para quem le. Quem decide trocar
+    // o numero por "FALHA" e a tela, que conhece o MODO da saida.
+    int16_t percentFor(uint16_t code) const;
     int16_t fullScaleAngleDeci() const { return fullScaleDeci_; }
 
 private:
