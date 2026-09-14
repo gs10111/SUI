@@ -606,6 +606,53 @@ Nenhuma delas e opcional: sem elas o enlace descrito aqui nao funciona.
 
 ---
 
+## 11.9 Funcao 0x06 - escrita unica, e a UNICA escrita deste enlace (2026-09-14, Decisao 17)
+
+Ate esta data o escravo aceitava **somente leitura** (0x03 e 0x04). A Decisao 17 abriu uma
+escrita, e a abriu do jeito mais estreito possivel porque **este e o enlace que decide se quatro
+reles de seguranca atuam**.
+
+| item | valor |
+|---|---|
+| funcao | `0x06` |
+| endereco aceito | **8** (`kRegCmdOta`), e **nenhum outro** |
+| valores aceitos | `1976` (liga o ponto de acesso) e `0` (desliga), e **nenhum outro** |
+| endereco do escravo | o proprio (responde com eco) ou **0 = broadcast** (nao responde) |
+| efeito | liga ou desliga o WiFi da sensora. **Nada mais.** |
+
+Qualquer outro endereco devolve excecao `0x02` (endereco ilegal); qualquer outro valor devolve
+`0x03` (valor ilegal). Em broadcast nao ha resposta nem excecao, por definicao do Modbus.
+
+**Nenhuma escrita neste enlace altera medicao, limite, calibracao ou saida.** Se um dia alguem
+precisar disso, e decisao nova - nao e "so mais um registrador".
+
+### O registrador 8 fica FORA da faixa de leitura, e isso nao e descuido
+
+A faixa lida pela supervisora continua sendo **0..7**, exatamente como sempre foi. Se o
+registrador de comando entrasse nela, a supervisora atualizada passaria a pedir 9 registradores e
+**toda sensora ainda nao atualizada responderia "endereco ilegal"** - transacao invalida, e em
+150 ms os quatro reles em alarme. Uma frota inteira em alarme por causa da **ordem** em que as
+placas foram atualizadas e defeito de projeto, nao de campo.
+
+Ler o registrador 8 devolve excecao `0x02`, como qualquer endereco fora da tabela.
+
+### Por que broadcast
+
+A supervisora transmite o comando e **segue**, sem esperar resposta. Esperar resposta dentro do
+tick de 50 ms do ciclo de seguranca custaria o dobro do orcamento por um comando administrativo.
+
+O preco esta declarado: **nao ha confirmacao no fio**. A supervisora transmite **tres vezes**, em
+ciclos diferentes, para cobrir uma perda isolada num cabo de 500 m; a confirmacao de verdade e a
+rede `SUI-SEN-XXXXXX` aparecer na lista do celular de quem esta no patio.
+
+### Os numeros estao prendidos por teste literal nos dois lados
+
+`1976` tem os mesmos digitos do codigo que o tecnico digita no painel porque e mais facil de
+lembrar, mas **e constante de protocolo, nao codigo de interface**: o codigo do painel pode mudar;
+isto e contrato de fio entre duas placas que podem estar em versoes diferentes de firmware durante
+um rollout. Se o painel mudar, isto nao muda.
+
+
 ## 12. Divergencias conhecidas e pendencias
 
 | # | Pendencia | Situacao real hoje | Consequencia se nao for fechada |

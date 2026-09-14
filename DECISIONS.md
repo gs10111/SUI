@@ -3000,7 +3000,36 @@ do sentido).
 
 ### O que foi decidido
 
-Cada placa sobe um ponto de acesso WPA2 **proprio e permanente**. Quem precisa atualizar liga o
+**EMENDA 2 DE 2026-09-14 - O RADIO PASSOU A SER SOB COMANDO.** O desenho original (ponto de acesso
+permanente nas duas placas) durou o mesmo dia. Com a senha WPA2 fixa e publicada (Emenda 1), um
+radio permanente e um equipamento gravavel por quem passar perto do patio, o ano inteiro. Agora:
+
+- o radio nasce **desligado** nas duas placas;
+- o item **`Atualizar`** do menu da supervisora, atras do codigo fixo **1976**, liga o ponto de
+  acesso **das duas** - o da sensora por RS-485, em broadcast;
+- o radio **cai sozinho**: 10 min sem ninguem conectado, ou 60 min no ar, e nunca no meio de uma
+  gravacao.
+
+Isto encolhe a janela de exposicao de "sempre" para "os minutos em que um tecnico esta na frente
+do painel", e e **o unico ganho de seguranca real que o produto teve depois que a senha virou
+fixa**. Nao substitui a senha sorteada na producao, que continua pendente.
+
+**SAO TRES SEGREDOS, com tres propositos, e confundi-los custa caro:** `1234` (Modo Programacao,
+o cliente troca) diz "posso mexer na configuracao"; `1976` (fixo) diz "posso ligar o radio";
+`dieletrons-2025` (fixo, na etiqueta) diz "posso falar com o radio". O `1976` e fixo de proposito:
+um cliente que troque a senha do Modo Programacao e a esqueca nao pode, com isso, ficar sem
+caminho de atualizacao - e saber `1234` nao basta para ligar o radio.
+
+**O ENLACE RS-485 DEIXOU DE SER SOMENTE LEITURA, e isso esta contido:** funcao 0x06 aceita, so no
+registrador 8, so com dois valores, com um unico efeito - ligar ou desligar o WiFi da sensora.
+Nenhuma escrita neste enlace altera medicao, limite, calibracao ou saida. O registrador fica FORA
+da faixa de leitura porque, se entrasse, a supervisora atualizada pediria 9 registradores e toda
+sensora ainda nao atualizada responderia "endereco ilegal" - frota inteira em alarme por causa da
+ORDEM em que as placas foram atualizadas. Contrato em docs/protocolo-rs485.md secao 11.9.
+
+--- desenho original, mantido para registro ---
+
+Cada placa sobe um ponto de acesso WPA2 proprio e permanente. Quem precisa atualizar liga o
 celular naquela rede, abre a pagina e envia um arquivo `.ota`. A supervisora exige confirmacao no
 painel; a sensora, que nao tem painel, aceita direto.
 
@@ -3099,7 +3128,10 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
    depende de producao e nao de bancada.
 3. **Secao de manual.** O item 8 da Decisao 15 exigia "secao nova de manual, superficie de ataque
    declarada". `docs/ota.md` cobre a parte de engenharia; **a secao de manual do cliente ainda nao
-   existe**.
+   existe**. Errata pendente tambem em L112: o menu passou de dez itens para **doze**.
+4. **O codigo 1976 entra no manual do cliente ou fica so na documentacao de manutencao?** Publicar
+   no manual o aproxima de `1234` - um segredo impresso e conhecido por quem tem o manual.
+   **RECOMENDACAO: fora do manual do cliente**, so na documentacao de assistencia tecnica.
 
 ### O que a revisao adversarial derrubou durante a implementacao
 

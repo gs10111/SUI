@@ -75,9 +75,12 @@ namespace {
 // DECLARADO: o texto de A7 ja prometia "REARMAR NO MENU" e o menu nao tinha o gesto. Entra
 // antes de "Sair", sem reordenar nenhum dos nove primeiros, para que a errata do manual seja de
 // UM item acrescentado e nao de uma lista reescrita.
+// E o DECIMO SEGUNDO, "Atualizar", entrou depois, tambem antes de "Sair" e pelo mesmo criterio:
+// acrescentar no fim nao reordena nenhum dos que o operador ja decorou, entao a errata do manual
+// continua sendo "mais um item" e nao "lista reescrita".
 const char* const kOrdemDoManual[MenuMachine::kItemCount] = {
-    "Voltar", "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2",
-    "Limite 3", "Limite 4", "Sentido Sensor", "Senha", "Rearmar", "Sair",
+    "Voltar",   "Ajusta Preset",  "Auto Calibracao", "Limite 1",  "Limite 2",   "Limite 3",
+    "Limite 4", "Sentido Sensor", "Senha",           "Rearmar",   "Atualizar",  "Sair",
 };
 
 // Os quatro limites: item de menu, etiqueta de eixo (L202), tela de submenu, tela do editor
@@ -1623,12 +1626,14 @@ static void test_menu_tem_o_item_rearmar_antes_do_sair(void) {
     Bancada b;
     entrarNoMenu(b);
 
-    TEST_ASSERT_EQUAL_UINT8(11u, MenuMachine::kItemCount);
+    TEST_ASSERT_EQUAL_UINT8(12u, MenuMachine::kItemCount);
     descerAte(b, MenuItem::Rearmar);
     TEST_ASSERT_EQUAL_STRING("Rearmar", selecionado(b));
     TEST_ASSERT_TRUE(b.tela.showsExactly("Rearmar"));
 
-    // e "Sair" continua sendo o ultimo
+    // "Atualizar" entrou depois, entre os dois, e "Sair" continua sendo o ultimo
+    toque(b, Key::Down);
+    TEST_ASSERT_EQUAL_STRING("Atualizar", selecionado(b));
     toque(b, Key::Down);
     TEST_ASSERT_EQUAL_STRING("Sair", selecionado(b));
 }
@@ -1685,6 +1690,120 @@ static void test_depois_do_rearme_a_gravacao_volta_ao_texto_de_gravacao(void) {
     TEST_ASSERT_FALSE(b.tela.shows("ENLACE REARMADO"));
 }
 
+// --- ATUALIZAR (decisao 17): o segundo portao ------------------------------------------------
+//
+// O ponto de acesso de atualizacao deixou de ficar no ar o tempo todo em 2026-09-14. Ele sobe por
+// este item, atras de um codigo de quatro digitos que NAO e a senha do Modo Programacao. Sao duas
+// autoridades diferentes: mexer na configuracao e ligar o radio de um equipamento de seguranca
+// nao sao a mesma permissao - e a senha do Modo Programacao o cliente troca, o codigo nao.
+
+static void test_atualizar_abre_o_campo_do_codigo_em_zero(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Atualizar);
+    TEST_ASSERT_EQUAL_STRING("Atualizar", selecionado(b));
+
+    toque(b, Key::Menu);  // entra no item
+    TEST_ASSERT_EQUAL_INT(code(MenuState::CodigoOta), code(b.menu.state()));
+    // ABRE EM 0000, e nao no codigo certo: abrir ja preenchido transformaria o portao em
+    // "segure MENU para confirmar", que e o contrario de um portao.
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Codigo OTA:0000"));
+
+    MenuAction pedido = MenuAction::None;
+    TEST_ASSERT_FALSE_MESSAGE(b.menu.takeAction(pedido),
+                              "abrir a tela nao pode ligar radio nenhum");
+}
+
+static void test_codigo_certo_pede_a_ativacao(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Atualizar);
+    toque(b, Key::Menu);
+    digitarDoZero(b, 1976);
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Codigo OTA:1976"));
+
+    hold(b);
+    MenuAction pedido = MenuAction::None;
+    TEST_ASSERT_TRUE(b.menu.takeAction(pedido));
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(MenuAction::AtivarOta), static_cast<int>(pedido));
+    TEST_ASSERT_EQUAL_INT(code(MenuState::OtaLigado), code(b.menu.state()));
+    TEST_ASSERT_TRUE(b.tela.showsExactly("WIFI LIGADO - VER CONSOLE"));
+
+    // Temporizada: volta ao menu sozinha, sem gesto.
+    esperar(b, MenuMachine::kOtaMsgMs);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::Menu), code(b.menu.state()));
+    TEST_ASSERT_FALSE_MESSAGE(b.menu.takeAction(pedido), "o pedido sai UMA vez so");
+}
+
+// O CASO QUE MAIS IMPORTA: a senha do Modo Programacao nao serve para ligar o radio. Se servisse,
+// o segundo portao seria enfeite - qualquer um que ja esta no menu passaria por ele.
+static void test_a_senha_do_modo_programacao_nao_liga_o_radio(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Atualizar);
+    toque(b, Key::Menu);
+    digitarDoZero(b, Password::kFactory);  // 1234
+    hold(b);
+
+    MenuAction pedido = MenuAction::None;
+    TEST_ASSERT_FALSE_MESSAGE(b.menu.takeAction(pedido), "1234 nao pode ligar radio");
+    TEST_ASSERT_EQUAL_INT(code(MenuState::OtaRecusado), code(b.menu.state()));
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Codigo incorreto!"));
+}
+
+static void test_codigo_errado_nao_pede_nada_e_volta_ao_menu(void) {
+    const uint16_t kErrados[] = {0, 1975, 1977, 9999};
+    for (size_t i = 0; i < sizeof(kErrados) / sizeof(kErrados[0]); ++i) {
+        Bancada b;
+        entrarNoMenu(b);
+        descerAte(b, MenuItem::Atualizar);
+        toque(b, Key::Menu);
+        digitarDoZero(b, kErrados[i]);
+        hold(b);
+
+        MenuAction pedido = MenuAction::None;
+        TEST_ASSERT_FALSE(b.menu.takeAction(pedido));
+        TEST_ASSERT_EQUAL_INT(code(MenuState::OtaRecusado), code(b.menu.state()));
+        esperar(b, MenuMachine::kOtaMsgMs);
+        TEST_ASSERT_EQUAL_INT(code(MenuState::Menu), code(b.menu.state()));
+    }
+}
+
+// LIGAR O RADIO NAO E CONFIGURACAO: nao suja o rascunho, nao arma a tela de revisao e nao grava
+// nada em NVS. Se sujasse, sair do menu depois de atualizar pediria "NOVA CONFIG - CONFIRMA?"
+// para uma configuracao que ninguem mexeu.
+static void test_ativar_ota_nao_suja_a_configuracao(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Atualizar);
+    toque(b, Key::Menu);
+    digitarDoZero(b, 1976);
+    hold(b);
+    esperar(b, MenuMachine::kOtaMsgMs);
+
+    descerAte(b, MenuItem::Sair);
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(code(MenuState::Normal), code(b.menu.state()),
+                                  "ligar radio nao e edicao: nao pode pedir revisao ao sair");
+}
+
+// E o gesto de confirmacao e o MESMO do resto do painel - MENU segurado. Um toque solto no meio
+// de uma digitacao nao pode ligar radio.
+static void test_toque_solto_nao_confirma_o_codigo(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Atualizar);
+    toque(b, Key::Menu);
+    digitarDoZero(b, 1976);
+
+    toque(b, Key::Up);    // mexe no digito
+    toque(b, Key::Down);  // e volta
+    MenuAction pedido = MenuAction::None;
+    TEST_ASSERT_FALSE(b.menu.takeAction(pedido));
+    TEST_ASSERT_EQUAL_INT(code(MenuState::CodigoOta), code(b.menu.state()));
+}
+
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -1731,6 +1850,12 @@ int main(int, char**) {
     RUN_TEST(test_zerar_preset_pede_a_acao_e_avisa_por_3_s);
     RUN_TEST(test_os_outros_submenus_continuam_com_tres_itens);
     RUN_TEST(test_menu_tem_o_item_rearmar_antes_do_sair);
+    RUN_TEST(test_atualizar_abre_o_campo_do_codigo_em_zero);
+    RUN_TEST(test_codigo_certo_pede_a_ativacao);
+    RUN_TEST(test_a_senha_do_modo_programacao_nao_liga_o_radio);
+    RUN_TEST(test_codigo_errado_nao_pede_nada_e_volta_ao_menu);
+    RUN_TEST(test_ativar_ota_nao_suja_a_configuracao);
+    RUN_TEST(test_toque_solto_nao_confirma_o_codigo);
     RUN_TEST(test_rearmar_pede_a_acao_e_confirma_com_texto_proprio);
     RUN_TEST(test_rearmar_nao_cria_pendencia_de_configuracao);
     RUN_TEST(test_depois_do_rearme_a_gravacao_volta_ao_texto_de_gravacao);

@@ -22,6 +22,10 @@ constexpr uint8_t kBroadcastId = 0;
 constexpr uint8_t kFuncReadHolding = 0x03;
 constexpr uint8_t kFuncReadInput = 0x04;
 constexpr uint8_t kFuncWriteSingle = 0x06;
+// Escrita MULTIPLA: a funcao que um mestre generico tenta e que este escravo tem de
+// continuar recusando. Ate 2026-09-14 este papel era da 0x06, que passou a ser aceita
+// para o registrador de comando de OTA - e so para ele.
+constexpr uint8_t kFuncWriteMultiple = 0x10;
 constexpr uint8_t kExceptionMask = 0x80;
 constexpr uint8_t kExcIllegalFunction = 0x01;
 constexpr uint8_t kExcIllegalAddress = 0x02;
@@ -245,17 +249,20 @@ static void test_crcRuimContaQuadroRuim(void) {
 }
 
 static void test_funcaoNaoSuportadaGeraExcecao01(void) {
+    // 0x10 (escrita multipla) e o que um mestre generico tenta quando quer mexer em varios
+    // registradores de uma vez. Este escravo nao tem escrita generica e nao pode ganhar uma por
+    // descuido: e o enlace que decide se quatro reles de seguranca atuam.
     uint16_t regs[sensormap::kRegCount];
     fillRegisters(regs);
     ModbusRtuSlave slave(kSlaveId);
     uint8_t req[kRequestLen];
-    const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteSingle, 0, 1, req);
+    const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteMultiple, 0, 1, req);
     uint8_t resp[kRespCap];
     memset(resp, kCanary, sizeof(resp));
 
     const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp, sizeof(resp));
 
-    assertException(resp, n, kFuncWriteSingle, kExcIllegalFunction);
+    assertException(resp, n, kFuncWriteMultiple, kExcIllegalFunction);
     TEST_ASSERT_EQUAL_HEX8(kCanary, resp[kExceptionLen]);
 }
 
@@ -550,6 +557,244 @@ static void test_ambosImplementamAInterface(void) {
     TEST_ASSERT_TRUE(strcmp(slaves[0]->name(), slaves[1]->name()) != 0);
 }
 
+// ======================= A UNICA ESCRITA DESTE ESCRAVO (2026-09-14) =======================
+// Ela existe para que a supervisora possa ligar o radio desta placa a partir do painel, e o que
+// estes testes protegem e o "unica": um enlace que decide se quatro reles de seguranca atuam nao
+// pode ganhar escrita generica por descuido.
+
+static void test_escrita_no_registrador_de_comando_e_aceita_e_ecoada(void) {
+    uint16_t regs[sensormap::kRegCount];
+    fillRegisters(regs);
+    ModbusRtuSlave slave(kSlaveId);
+    uint8_t req[kRequestLen];
+    const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteSingle, sensormap::kRegCmdOta,
+                                         sensormap::kCmdOtaLigar, req);
+    uint8_t resp[kRespCap];
+    memset(resp, kCanary, sizeof(resp));
+
+    const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp, sizeof(resp));
+
+    // A resposta de 0x06 e o eco do proprio pedido.
+    TEST_ASSERT_EQUAL_UINT16(reqLen, n);
+    for (uint16_t i = 0; i < reqLen; ++i) {
+        TEST_ASSERT_EQUAL_HEX8(req[i], resp[i]);
+    }
+    TEST_ASSERT_TRUE(responseCrcOk(resp, n));
+    TEST_ASSERT_EQUAL_HEX8(kCanary, resp[reqLen]);
+
+    uint16_t valor = 0;
+    TEST_ASSERT_TRUE(slave.takeOtaCommand(valor));
+    TEST_ASSERT_EQUAL_UINT16(sensormap::kCmdOtaLigar, valor);
+    // Colhido uma vez so: releitura nao pode religar o radio de graca.
+    TEST_ASSERT_FALSE(slave.takeOtaCommand(valor));
+}
+
+// QUALQUER OUTRO ENDERECO E RECUSADO. Sem isto, 0x06 viraria escrita generica e um mestre
+// desatento (ou um teste de fabrica de outra linha) reescreveria angulo, status ou WHOAMI.
+static void test_escrita_em_qualquer_outro_endereco_e_recusada(void) {
+    uint16_t regs[sensormap::kRegCount];
+    ModbusRtuSlave slave(kSlaveId);
+    const uint16_t kEnderecos[] = {sensormap::kRegAngleX, sensormap::kRegStatus,
+                                   sensormap::kRegWhoAmI, sensormap::kRegUptimeS,
+                                   sensormap::kRegCmdOta + 1u, 0x00FFu};
+    for (size_t i = 0; i < sizeof(kEnderecos) / sizeof(kEnderecos[0]); ++i) {
+        fillRegisters(regs);
+        uint8_t req[kRequestLen];
+        const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteSingle, kEnderecos[i],
+                                             sensormap::kCmdOtaLigar, req);
+        uint8_t resp[kRespCap];
+        memset(resp, kCanary, sizeof(resp));
+
+        const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp,
+                                        sizeof(resp));
+        assertException(resp, n, kFuncWriteSingle, kExcIllegalAddress);
+
+        uint16_t valor = 0;
+        TEST_ASSERT_FALSE_MESSAGE(slave.takeOtaCommand(valor), "endereco errado nao pode comandar");
+        // E nenhum registrador pode ter sido tocado.
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(kAngleXDeci), regs[sensormap::kRegAngleX]);
+        TEST_ASSERT_EQUAL_UINT16(kWhoAmI, regs[sensormap::kRegWhoAmI]);
+    }
+}
+
+// E QUALQUER OUTRO VALOR TAMBEM. O comando tem dois valores previstos; o resto e ruido de linha
+// ou mestre errado, e ligar radio por ruido de linha e exatamente o que nao pode acontecer.
+static void test_valor_fora_dos_dois_previstos_e_recusado(void) {
+    uint16_t regs[sensormap::kRegCount];
+    ModbusRtuSlave slave(kSlaveId);
+    const uint16_t kValores[] = {1u, 1975u, 1977u, 0x07FFu, 0xFFFFu};
+    for (size_t i = 0; i < sizeof(kValores) / sizeof(kValores[0]); ++i) {
+        fillRegisters(regs);
+        uint8_t req[kRequestLen];
+        const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteSingle, sensormap::kRegCmdOta,
+                                             kValores[i], req);
+        uint8_t resp[kRespCap];
+        memset(resp, kCanary, sizeof(resp));
+
+        const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp,
+                                        sizeof(resp));
+        assertException(resp, n, kFuncWriteSingle, kExcIllegalValue);
+        uint16_t valor = 0;
+        TEST_ASSERT_FALSE(slave.takeOtaCommand(valor));
+    }
+    // Desligar CONTINUA valendo - recusar tudo passaria nos testes acima.
+    fillRegisters(regs);
+    uint8_t req[kRequestLen];
+    const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteSingle, sensormap::kRegCmdOta,
+                                         sensormap::kCmdOtaDesligar, req);
+    uint8_t resp[kRespCap];
+    const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(reqLen, n);
+    uint16_t valor = 0xFFFFu;
+    TEST_ASSERT_TRUE(slave.takeOtaCommand(valor));
+    TEST_ASSERT_EQUAL_UINT16(sensormap::kCmdOtaDesligar, valor);
+}
+
+// EM BROADCAST O COMANDO VALE E NAO HA RESPOSTA. E o modo que a supervisora usa: transmite e
+// segue, sem esperar, porque esperar resposta dentro do tick de 50 ms do ciclo de seguranca
+// custaria o dobro do orcamento por um comando administrativo.
+static void test_broadcast_comanda_sem_responder(void) {
+    uint16_t regs[sensormap::kRegCount];
+    fillRegisters(regs);
+    ModbusRtuSlave slave(kSlaveId);
+    uint8_t req[kRequestLen];
+    const uint16_t reqLen = buildRequest(0 /*broadcast*/, kFuncWriteSingle, sensormap::kRegCmdOta,
+                                         sensormap::kCmdOtaLigar, req);
+    uint8_t resp[kRespCap];
+    memset(resp, kCanary, sizeof(resp));
+
+    const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp, sizeof(resp));
+
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(0, n, "broadcast nao responde, nem com excecao");
+    TEST_ASSERT_EQUAL_HEX8(kCanary, resp[0]);
+    uint16_t valor = 0;
+    TEST_ASSERT_TRUE_MESSAGE(slave.takeOtaCommand(valor), "mas o comando tem de valer");
+    TEST_ASSERT_EQUAL_UINT16(sensormap::kCmdOtaLigar, valor);
+}
+
+// Broadcast com endereco ou valor errado: sem resposta E sem comando. O silencio nao pode ser
+// confundido com aceitacao.
+static void test_broadcast_invalido_nao_comanda_e_continua_mudo(void) {
+    uint16_t regs[sensormap::kRegCount];
+    fillRegisters(regs);
+    ModbusRtuSlave slave(kSlaveId);
+    uint8_t resp[kRespCap];
+    uint16_t valor = 0;
+
+    uint8_t req1[kRequestLen];
+    const uint16_t n1 = slave.handle(req1,
+                                     buildRequest(0, kFuncWriteSingle, sensormap::kRegAngleX,
+                                                  sensormap::kCmdOtaLigar, req1),
+                                     regs, sensormap::kRegCount, resp, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(0, n1);
+    TEST_ASSERT_FALSE(slave.takeOtaCommand(valor));
+
+    uint8_t req2[kRequestLen];
+    const uint16_t n2 = slave.handle(req2,
+                                     buildRequest(0, kFuncWriteSingle, sensormap::kRegCmdOta,
+                                                  4242u, req2),
+                                     regs, sensormap::kRegCount, resp, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(0, n2);
+    TEST_ASSERT_FALSE(slave.takeOtaCommand(valor));
+}
+
+// CRC ERRADO NAO COMANDA. Um quadro corrompido num cabo de 500 m nao pode ligar radio nenhum.
+static void test_crc_errado_nao_comanda(void) {
+    uint16_t regs[sensormap::kRegCount];
+    fillRegisters(regs);
+    ModbusRtuSlave slave(kSlaveId);
+    uint8_t req[kRequestLen];
+    const uint16_t reqLen = buildRequest(kSlaveId, kFuncWriteSingle, sensormap::kRegCmdOta,
+                                         sensormap::kCmdOtaLigar, req);
+    req[reqLen - 1] ^= 0x01u;
+    uint8_t resp[kRespCap];
+    const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(0, n);
+    uint16_t valor = 0;
+    TEST_ASSERT_FALSE(slave.takeOtaCommand(valor));
+}
+
+// A LEITURA NAO PODE TER MUDADO. Este e o teste que protege a frota durante o rollout: se o
+// registrador de comando entrasse na faixa de leitura, a supervisora atualizada pediria 9
+// registradores e toda sensora ainda nao atualizada responderia "endereco ilegal" - transacao
+// invalida, e em 150 ms os quatro reles em alarme, por causa da ORDEM em que as placas foram
+// atualizadas.
+static void test_a_faixa_de_leitura_nao_mudou(void) {
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(8, sensormap::kRegCount,
+                                     "mexer nisto poe a frota em alarme durante o rollout");
+    TEST_ASSERT_TRUE_MESSAGE(sensormap::kRegCmdOta >= sensormap::kRegCount,
+                             "o registrador de comando tem de ficar FORA da faixa de leitura");
+
+    uint16_t regs[sensormap::kRegCount];
+    fillRegisters(regs);
+    ModbusRtuSlave slave(kSlaveId);
+    uint8_t req[kRequestLen];
+    const uint16_t reqLen = buildRequest(kSlaveId, kFuncReadHolding, 0, sensormap::kRegCount, req);
+    uint8_t resp[kRespCap];
+    const uint16_t n = slave.handle(req, reqLen, regs, sensormap::kRegCount, resp, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(5u + 2u * sensormap::kRegCount, n);
+    TEST_ASSERT_TRUE(responseCrcOk(resp, n));
+
+    // E ler o registrador de comando tem de dar excecao, nao valor.
+    uint8_t req2[kRequestLen];
+    const uint16_t reqLen2 = buildRequest(kSlaveId, kFuncReadHolding, sensormap::kRegCmdOta, 1,
+                                          req2);
+    const uint16_t n2 = slave.handle(req2, reqLen2, regs, sensormap::kRegCount, resp, sizeof(resp));
+    assertException(resp, n2, kFuncReadHolding, kExcIllegalAddress);
+}
+
+
+// QUADRO 0x06 DE TAMANHO ERRADO. Sem a conferencia de comprimento, o decodificador leria os
+// bytes 2..5 de um quadro que so tem 4 ou 6 - leitura fora dos limites do buffer de recepcao,
+// dentro do caminho que liga radio. Um mestre de outra linha, ou lixo de linha num cabo de 500 m,
+// produz exatamente isso.
+static void test_quadro_de_escrita_com_tamanho_errado_e_descartado(void) {
+    uint16_t regs[sensormap::kRegCount];
+    fillRegisters(regs);
+    ModbusRtuSlave slave(kSlaveId);
+    uint8_t resp[kRespCap];
+
+    // Curto: [addr][func][regHi][regLo][crcLo][crcHi] - falta o valor.
+    uint8_t curto[6] = {kSlaveId, kFuncWriteSingle, 0x00, sensormap::kRegCmdOta, 0, 0};
+    const uint16_t crcCurto = crc16Modbus(curto, 4);
+    curto[4] = static_cast<uint8_t>(crcCurto & 0xFFu);
+    curto[5] = static_cast<uint8_t>((crcCurto >> 8) & 0xFFu);
+    memset(resp, kCanary, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(0, slave.handle(curto, sizeof(curto), regs, sensormap::kRegCount,
+                                             resp, sizeof(resp)));
+    TEST_ASSERT_EQUAL_HEX8(kCanary, resp[0]);
+
+    // Longo: um byte a mais antes do CRC.
+    uint8_t longo[9] = {kSlaveId, kFuncWriteSingle, 0x00, sensormap::kRegCmdOta,
+                        0x07,     0xB8,             0x00, 0,    0};
+    const uint16_t crcLongo = crc16Modbus(longo, 7);
+    longo[7] = static_cast<uint8_t>(crcLongo & 0xFFu);
+    longo[8] = static_cast<uint8_t>((crcLongo >> 8) & 0xFFu);
+    memset(resp, kCanary, sizeof(resp));
+    TEST_ASSERT_EQUAL_UINT16(0, slave.handle(longo, sizeof(longo), regs, sensormap::kRegCount,
+                                             resp, sizeof(resp)));
+    TEST_ASSERT_EQUAL_HEX8(kCanary, resp[0]);
+
+    uint16_t valor = 0;
+    TEST_ASSERT_FALSE_MESSAGE(slave.takeOtaCommand(valor),
+                              "quadro malformado nao pode ligar radio nenhum");
+}
+
+// O VALOR NO FIO E CONSTANTE DE PROTOCOLO, e esta prendido aqui pelo numero literal de proposito.
+//
+// Ele tem os mesmos digitos do codigo que o tecnico digita no painel porque e mais facil de
+// lembrar, mas NAO e a mesma coisa e nao pode passar a ser: o codigo do painel e assunto da
+// interface da supervisora e pode mudar; este numero e contrato de fio entre duas placas que
+// podem estar em versoes diferentes de firmware durante um rollout. Se um dia o painel mudar,
+// ISTO NAO MUDA - e este teste e o que garante que a mudanca nao escorregue de um lado para o
+// outro sem ninguem ver.
+static void test_o_comando_de_fio_esta_prendido_por_numero_literal(void) {
+    TEST_ASSERT_EQUAL_UINT16(1976, sensormap::kCmdOtaLigar);
+    TEST_ASSERT_EQUAL_UINT16(0, sensormap::kCmdOtaDesligar);
+    TEST_ASSERT_EQUAL_UINT16(8, sensormap::kRegCmdOta);
+    TEST_ASSERT_EQUAL_UINT8(0x06, kFuncWriteSingle);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -562,6 +807,15 @@ int main(int argc, char** argv) {
     RUN_TEST(test_broadcastNaoResponde);
     RUN_TEST(test_crcRuimContaQuadroRuim);
     RUN_TEST(test_funcaoNaoSuportadaGeraExcecao01);
+    RUN_TEST(test_escrita_no_registrador_de_comando_e_aceita_e_ecoada);
+    RUN_TEST(test_escrita_em_qualquer_outro_endereco_e_recusada);
+    RUN_TEST(test_valor_fora_dos_dois_previstos_e_recusado);
+    RUN_TEST(test_broadcast_comanda_sem_responder);
+    RUN_TEST(test_broadcast_invalido_nao_comanda_e_continua_mudo);
+    RUN_TEST(test_crc_errado_nao_comanda);
+    RUN_TEST(test_a_faixa_de_leitura_nao_mudou);
+    RUN_TEST(test_quadro_de_escrita_com_tamanho_errado_e_descartado);
+    RUN_TEST(test_o_comando_de_fio_esta_prendido_por_numero_literal);
     RUN_TEST(test_leituraForaDaTabelaGeraExcecao02);
     RUN_TEST(test_contagemZeroGeraExcecao);
     RUN_TEST(test_contagemAcimaDoLimiteGeraExcecao03);

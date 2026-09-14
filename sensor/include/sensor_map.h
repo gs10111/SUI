@@ -93,4 +93,29 @@ static_assert(kFwVersionReg != 0,
 constexpr uint16_t kRegUptimeS = 7;
 constexpr uint16_t kRegCount = 8;
 
+// ============================ REGISTRADOR DE COMANDO (2026-09-14) ============================
+// O UNICO endereco gravavel deste escravo, e o unico motivo pelo qual a funcao 0x06 existe aqui.
+//
+// POR QUE ELE FICA FORA DE kRegCount. A faixa de LEITURA continua sendo 0..7, exatamente como
+// sempre foi. Se este registrador entrasse na faixa, a supervisora atualizada passaria a pedir 9
+// registradores e TODA sensora ainda nao atualizada responderia "endereco ilegal" - o mestre
+// contaria transacao invalida, e em 150 ms os quatro reles iriam a alarme. Uma frota inteira em
+// alarme por causa da ordem em que as placas foram atualizadas e defeito de projeto, nao de
+// campo. Por isso: escrita aqui, leitura intacta.
+//
+// A CONSEQUENCIA DE ABRIR ESCRITA NUM ENLACE DE SEGURANCA esta contida de proposito: este e o
+// unico endereco aceito, os unicos valores aceitos sao dois, e o unico efeito e ligar ou desligar
+// o radio. Nenhuma escrita neste enlace altera medicao, limite, calibracao ou saida.
+constexpr uint16_t kRegCmdOta = 8;
+// CONSTANTE DE PROTOCOLO. Tem os mesmos digitos do codigo que o tecnico digita no painel da
+// supervisora porque e mais facil de lembrar, mas NAO e a mesma coisa: o codigo do painel e
+// assunto da interface e pode mudar; isto e contrato de fio entre duas placas que podem estar em
+// versoes diferentes de firmware durante um rollout. Se o painel mudar, ISTO NAO MUDA.
+constexpr uint16_t kCmdOtaLigar = 1976;
+constexpr uint16_t kCmdOtaDesligar = 0;
+
+constexpr bool comandoOtaValido(uint16_t valor) {
+    return valor == kCmdOtaLigar || valor == kCmdOtaDesligar;
+}
+
 }  // namespace sensormap

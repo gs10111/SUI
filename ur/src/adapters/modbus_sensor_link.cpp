@@ -390,4 +390,36 @@ void ModbusSensorLink::resetStats() {
     lastException_ = 0;
 }
 
+// Ver o cabecalho para o porque de broadcast e de isto NAO estar na porta.
+//
+// RECUSA COM TRANSACAO EM CURSO: waiting_ significa que ha um pedido no fio esperando resposta, e
+// transmitir por cima disso corrompe o quadro que a sensora esta montando - o mestre perderia a
+// leitura e o LinkSupervisor contaria transacao invalida. O chamador tenta de novo no ciclo
+// seguinte, 50 ms depois.
+Status ModbusSensorLink::sendOtaBroadcast(uint16_t valor) {
+    if (valor != kCmdOtaLigar && valor != kCmdOtaDesligar) {
+        return Status(Err::Param);
+    }
+    if (waiting_) {
+        return Status(Err::Busy);
+    }
+
+    uint8_t pdu[kRequestLen];
+    pdu[0] = kBroadcastAddr;
+    pdu[1] = kFuncWriteSingle;
+    pdu[2] = hiByte(kRegCmdOta);
+    pdu[3] = loByte(kRegCmdOta);
+    pdu[4] = hiByte(valor);
+    pdu[5] = loByte(valor);
+    const uint16_t crc = crc16Modbus(pdu, kRequestLen - 2u);
+    pdu[6] = loByte(crc);
+    pdu[7] = hiByte(crc);
+
+    const int sent = uart_write_bytes(kPort, pdu, kRequestLen);
+    if (sent > 0) {
+        stats_.bytesTx += static_cast<uint32_t>(sent);
+    }
+    return (sent == static_cast<int>(kRequestLen)) ? kOk : Status(Err::Io);
+}
+
 }  // namespace adapters

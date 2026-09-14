@@ -77,6 +77,11 @@ public:
     // docs/ota.md.
     virtual void setKeepAlive(void (*fn)(void*), void* ctx) = 0;
 
+    // Derruba o ponto de acesso e o servidor. Existe porque o radio deixou de ficar no ar o
+    // tempo todo em 2026-09-14: ele sobe sob comando e cai sozinho quando ninguem mais esta
+    // usando, e "cai" tem de ser uma operacao de verdade e nao um sinalizador que finge.
+    virtual void end() = 0;
+
     virtual void publish(const PortalStatus& st) = 0;
 
     virtual uint8_t clientesConectados() const = 0;

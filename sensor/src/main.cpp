@@ -10,6 +10,7 @@
 #include "board_pins.h"
 #include "esp_firmware_store.h"
 #include "ota_credentials.h"
+#include "ota_gate.h"
 #include "ota_partition.h"
 #include "ota_proof.h"
 #include "ota_service.h"
@@ -144,6 +145,9 @@ bool g_bootProofDone = false;
 // ==========================================================================================
 EspFirmwareStore g_fwStore;
 WifiUpdatePortal g_portal;
+// O portao: o radio desta placa so sobe quando a supervisora manda, e cai sozinho quando ninguem
+// mais esta usando. Ver lib_shared/depuri_ota/include/ota_gate.h.
+ota::ApGate g_apGate;
 app::OtaService g_ota(g_fwStore, ota::kAlvoSensora, /*exigeConfirmacao=*/false);
 
 char g_otaSsid[33] = {0};
@@ -161,7 +165,8 @@ void otaKeepAlive(void*) {
     g_wdt.heartbeat();
 }
 
-void startUpdatePortal() {
+// Le MAC e senha. NAO liga radio: o radio so sobe por comando da supervisora.
+void prepararCredenciaisOta() {
     uint8_t mac[ota::kMacBytes] = {0};
     WiFi.macAddress(mac);
     ota::apSsid(ota::kAlvoSensora, mac, g_otaSsid, sizeof(g_otaSsid));
@@ -186,10 +191,8 @@ void startUpdatePortal() {
     }
 
     g_portal.setKeepAlive(&otaKeepAlive, nullptr);
-    g_otaNoAr = g_portal.begin(g_otaSsid, g_otaSenha, g_ota).ok();
 
-    g_io.write("ota: ponto de acesso ");
-    g_io.write(g_otaNoAr ? "NO AR " : "FALHOU ");
+    g_io.write("ota: radio DESLIGADO ate a supervisora mandar. Rede seria ");
     g_io.write(g_otaSsid);
     g_io.write(" senha ");
     g_io.write(g_otaSenha);
@@ -197,8 +200,60 @@ void startUpdatePortal() {
                                       : "  (gravada na producao)");
 }
 
+void ligarRadioOta(uint32_t nowMs) {
+    g_apGate.ativar(nowMs);
+    if (g_otaNoAr) {
+        return;  // ja estava no ar; ativar() so renovou o prazo
+    }
+    g_otaNoAr = g_portal.begin(g_otaSsid, g_otaSenha, g_ota).ok();
+    if (!g_otaNoAr) {
+        g_apGate.desativar();
+        g_io.writeLine("ota: FALHA ao subir o ponto de acesso");
+        return;
+    }
+    g_io.write("ota: ponto de acesso NO AR ");
+    g_io.writeLine(g_otaSsid);
+}
+
+void desligarRadioOta() {
+    g_apGate.desativar();
+    if (!g_otaNoAr) {
+        return;
+    }
+    g_portal.end();
+    g_otaNoAr = false;
+    g_io.writeLine("ota: ponto de acesso DESLIGADO");
+}
+
+// O comando chega pelo RS-485, em broadcast, e o protocolo so o DEIXA aqui - quem liga radio e
+// este arquivo, que e quem tem WiFi. Um escravo Modbus que ligasse radio de dentro do
+// decodificador de quadro seria um caminho de atuacao escondido.
+// Adaptadores sem argumento para o console de bancada. Ele nao conhece o relogio; quem conhece
+// e este arquivo.
+void otaLigarPeloConsole() { ligarRadioOta(millis()); }
+void otaDesligarPeloConsole() { desligarRadioOta(); }
+
+void serviceComandoOta(uint32_t nowMs) {
+    uint16_t comando = 0;
+    if (!g_modbusSlave.takeOtaCommand(comando)) {
+        return;
+    }
+    if (comando == sensormap::kCmdOtaLigar) {
+        ligarRadioOta(nowMs);
+    } else {
+        desligarRadioOta();
+    }
+}
+
 void serviceOta(uint32_t nowMs) {
     if (!g_otaNoAr) {
+        return;
+    }
+    // O portao derruba o radio sozinho quando ninguem mais esta usando - mas nunca no meio de uma
+    // gravacao, que tem os prazos dela.
+    g_apGate.tick(nowMs, g_portal.clientesConectados() > 0u, g_ota.emCurso());
+    if (!g_apGate.ativo()) {
+        desligarRadioOta();
         return;
     }
     // Nao ha rele nesta placa: "saidas em alarme" e sempre verdade aqui, porque a supervisora ja
@@ -365,7 +420,10 @@ void setup() {
     // ULTIMO PASSO, como na supervisora: se o radio nao subir, a sensora continua medindo
     // inclinacao e respondendo ao mestre. Um inclinometro que nao arranca porque o WiFi falhou
     // trocou a funcao dele pela conveniencia de atualizar.
-    startUpdatePortal();
+    // Atribuidos e nao inicializados na lista: ver o comentario no fim de SensorCtx.
+    g_ctx.otaLigar = &otaLigarPeloConsole;
+    g_ctx.otaDesligar = &otaDesligarPeloConsole;
+    prepararCredenciaisOta();
 }
 
 void loop() {
@@ -415,6 +473,7 @@ void loop() {
     // e o enquadramento do escravo Modbus nao sobrevive a isso de qualquer jeito. Deixar o enlace
     // ser atendido primeiro faz a supervisora receber o ultimo quadro bom antes do silencio, em
     // vez de um quadro cortado no meio.
+    serviceComandoOta(nowMs);
     serviceOta(nowMs);
 
     if ((nowMs - g_lastLedMs) >= kLedPeriodMs) {

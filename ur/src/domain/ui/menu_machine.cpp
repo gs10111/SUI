@@ -21,6 +21,10 @@
 #include <string.h>
 
 #include "domain/ui/text_fit.h"
+// Puro, sem Arduino: so a constante do codigo e o predicado. O portao de prazos e o radio ficam
+// no composition root - aqui entra apenas quem decide se o numero digitado esta certo, e ele tem
+// de ser O MESMO que a sensora recebe pelo RS-485.
+#include "ota_gate.h"
 
 namespace domain {
 namespace {
@@ -53,8 +57,8 @@ const DigitFieldSpec kCampoAngular = {4, 1, true, Angle::kMinDeciDeg, Angle::kMa
                                       MenuMachine::kMsgForaDaFaixa};
 
 const char* const kNomeItem[MenuMachine::kItemCount] = {
-    "Voltar", "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2",
-    "Limite 3", "Limite 4", "Sentido Sensor", "Senha", "Rearmar", "Sair",
+    "Voltar",   "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2", "Limite 3",
+    "Limite 4", "Sentido Sensor", "Senha",          "Rearmar",  "Atualizar", "Sair",
 };
 
 // docs/ihm-estados.md 3.4: "Limite 1>Voltar   Valor Limite X1   Operacao Limite X1".
@@ -225,6 +229,7 @@ void MenuMachine::onGesture(const Gesture& gesture) {
         case MenuState::EditOperacao: onEditOperacao(gesture); break;
         case MenuState::EditSentido: onEditSentido(gesture); break;
         case MenuState::EditSenha: onEditSenha(gesture); break;
+        case MenuState::CodigoOta: onCodigoOta(gesture); break;
         case MenuState::Revisao: onRevisao(gesture); break;
         // Telas temporizadas, bloqueio e assistente: gesto IGNORADO, nunca reinterpretado
         // (invariante 6 de docs/ihm-estados.md secao 6; o aviso de A9 e obrigatorio e nao
@@ -236,6 +241,11 @@ void MenuMachine::onGesture(const Gesture& gesture) {
         case MenuState::FalhaGrav:
         case MenuState::AvisoSentido:
         case MenuState::AvisoPresetZerado:
+        // As duas de OTA sao temporizadas pelo mesmo motivo das outras: quem acabou de ligar o
+        // radio precisa LER onde esta o nome da rede, e quem errou o codigo precisa ver que
+        // errou. Encurtar por toque devolveria o operador ao menu sem ele ter lido nada.
+        case MenuState::OtaLigado:
+        case MenuState::OtaRecusado:
         case MenuState::Assistente: break;
     }
     if (dirty_) {
@@ -506,6 +516,36 @@ void MenuMachine::onEditSenha(const Gesture& gesture) {
     dirty_ = true;
 }
 
+// O PEDIDO SAI DAQUI E O RADIO SOBE LA. Este modulo nao tem WiFi nem RS-485 e nao deve ter: quem
+// liga radio e o composition root, que tambem e quem tem o portao de prazos. Um menu que ligasse
+// radio direto seria um segundo dono do ponto de acesso.
+//
+// NAO HA BLOQUEIO POR TENTATIVAS aqui, ao contrario do login de A13, e e deliberado: para chegar
+// nesta tela ja foi preciso atravessar a senha do Modo Programacao, que TEM bloqueio de 60 s
+// depois de cinco erros. Somar um segundo bloqueio so criaria um jeito de um tecnico legitimo
+// ficar trancado do lado de fora de um equipamento que ele precisa atualizar.
+void MenuMachine::onCodigoOta(const Gesture& gesture) {
+    if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
+        const uint16_t digitado = static_cast<uint16_t>(editor_.value());
+        if (ota::codigoCorreto(digitado)) {
+            action_ = MenuAction::AtivarOta;
+            showMessage(MenuState::OtaLigado, MenuState::Menu, kOtaMsgMs);
+        } else {
+            showMessage(MenuState::OtaRecusado, MenuState::Menu, kOtaMsgMs);
+        }
+        return;
+    }
+    if (gesture.kind != GestureKind::ShortTap) {
+        return;
+    }
+    switch (gesture.key) {
+        case Key::Menu: editor_.menu(); break;
+        case Key::Up: editor_.up(); break;
+        case Key::Down: editor_.down(); break;
+    }
+    dirty_ = true;
+}
+
 void MenuMachine::onRevisao(const Gesture& gesture) {
     if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
         commitOnExit();
@@ -570,6 +610,10 @@ void MenuMachine::openItem() {
             showMessage(MenuState::GravOk, MenuState::Menu, kGravOkMs);
             rearmMsg_ = true;
             break;
+        // Decisao 17: SEGUNDO portao, e nao uma confirmacao. Quem chegou aqui ja atravessou a
+        // senha do Modo Programacao; ligar o radio de um equipamento de seguranca e outra
+        // autoridade, e a senha do Modo Programacao o cliente troca.
+        case MenuItem::Atualizar: openCodigoOta(); break;
     }
 }
 
@@ -612,6 +656,16 @@ void MenuMachine::openSenha() {
     editReturn_ = MenuState::Menu;
     editor_.open(kCampoSenha, static_cast<int16_t>(draft_.password()));
     state_ = MenuState::EditSenha;
+    dirty_ = true;
+}
+
+// ABRE EM 0000, e nao no codigo corrente como faz "Edita senha". A diferenca nao e estetica:
+// abrir ja preenchido com o valor certo transformaria o portao em "segure MENU para confirmar",
+// que e o contrario de um portao.
+void MenuMachine::openCodigoOta() {
+    editReturn_ = MenuState::Menu;
+    editor_.open(kCampoSenha, 0);
+    state_ = MenuState::CodigoOta;
     dirty_ = true;
 }
 
@@ -852,6 +906,24 @@ void MenuMachine::render() {
                          contentFont(line_));
             break;
         }
+
+        case MenuState::CodigoOta: {
+            const uint8_t prefixo = buildFieldLine(kPrefixoCodigoOta);
+            drawEditLine(kConteudoY, line_,
+                         static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
+                         contentFont(line_));
+            break;
+        }
+
+        // O NOME DA REDE NAO CABE AQUI e nao adianta fingir: "SUI-UR-XXXXXX" mais a senha nao
+        // entram num painel de 256x64 junto do aviso. O console imprime os dois, e a tela diz
+        // onde olhar em vez de mostrar um pedaco.
+        case MenuState::OtaLigado:
+            drawLine(kConteudoY, kMsgOtaLigado, contentFont(kMsgOtaLigado));
+            break;
+        case MenuState::OtaRecusado:
+            drawLine(kConteudoY, kMsgOtaRecusado, contentFont(kMsgOtaRecusado));
+            break;
 
         case MenuState::Recusa: drawLine(kConteudoY, recusaMsg_, contentFont(recusaMsg_)); break;
         // A mesma tela temporizada serve as duas confirmacoes, com textos diferentes: "Alteracao

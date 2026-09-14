@@ -201,7 +201,7 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  link       estatisticas do RS-485 e o baud");
     ctx_.io.writeLine("  proto      mostra ou troca o escravo: proto [jig|modbus]");
     ctx_.io.writeLine("  wdt        watchdog externo STWD100");
-    ctx_.io.writeLine("  wifi       estado do ponto de acesso; 'wifi off' derruba a radio");
+    ctx_.io.writeLine("  wifi       ponto de acesso de atualizacao; wifi on | wifi off");
     ctx_.io.writeLine("  ver        firmware, BOARD_REV e pinout");
     ctx_.io.writeLine("  spiprobe   bring-up do SPI: spiprobe miso | all | pin <n>");
     ctx_.io.writeLine("  spiraw     envia um quadro de 32 bits: spiraw <hex>");
@@ -816,19 +816,27 @@ void SensorConsole::cmdProto(const char* arg) {
 // placa que ninguem consegue mais atualizar sem cabo.
 void SensorConsole::cmdWifi(const char* arg) {
     if (arg != nullptr && strcmp(arg, "off") == 0) {
-        WiFi.softAPdisconnect(true);
-        WiFi.mode(WIFI_OFF);
-        ctx_.io.writeLine("wifi  : DESLIGADO ate o proximo boot");
+        if (ctx_.otaDesligar != nullptr) {
+            ctx_.otaDesligar();
+        }
+        ctx_.io.writeLine("wifi  : DESLIGADO");
         return;
     }
     if (arg != nullptr && strcmp(arg, "on") == 0) {
-        ctx_.io.writeLine("wifi  : religar exige reiniciar (a senha e lida da NVS no boot)");
+        // Atalho de BANCADA. Em campo quem liga isto e a supervisora, pelo RS-485, depois do
+        // codigo digitado no painel. Aqui existe porque uma sensora na bancada, sem supervisora
+        // nenhuma ligada, precisa poder ser atualizada.
+        if (ctx_.otaLigar != nullptr) {
+            ctx_.otaLigar();
+        }
+        ctx_.io.writeLine("wifi  : LIGADO (cai sozinho depois de 10 min sem ninguem conectado)");
         return;
     }
     ctx_.io.printf("wifi  : modo %d, clientes %d\r\n", static_cast<int>(WiFi.getMode()),
                    static_cast<int>(WiFi.softAPgetStationNum()));
     ctx_.io.printf("ssid  : %s\r\n", WiFi.softAPSSID().c_str());
-    ctx_.io.writeLine("uso   : wifi off  (derruba a radio para medir ruido no SCL3300)");
+    ctx_.io.writeLine("uso   : wifi on | wifi off");
+    ctx_.io.writeLine("        em campo quem liga e a supervisora, pelo menu, com o codigo 1976");
 }
 
 void SensorConsole::cmdWdt() {

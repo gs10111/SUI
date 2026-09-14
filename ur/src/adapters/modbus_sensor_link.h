@@ -90,6 +90,17 @@ public:
     static constexpr uint16_t kStartReg = 0;          // sensormap::kRegAngleX
     static constexpr uint16_t kRegCount = 8;          // sensormap::kRegCount
     static constexpr uint8_t kRequestLen = 8;         // addr fn startHi startLo cntHi cntLo crcLo crcHi
+    // A UNICA escrita que este mestre emite, e so em BROADCAST: liga ou desliga o ponto de acesso
+    // de atualizacao da sensora (decisao 17). Ver sensor/include/sensor_map.h kRegCmdOta.
+    static constexpr uint8_t kFuncWriteSingle = 0x06;
+    static constexpr uint8_t kBroadcastAddr = 0;
+    // Espelham sensormap::kRegCmdOta e kCmdOtaLigar/kCmdOtaDesligar. Estao repetidos aqui pelo
+    // mesmo motivo de kRegCount logo acima: as duas placas sao projetos separados e o contrato e
+    // docs/protocolo-rs485.md, nao um cabecalho compartilhado. Divergir aqui e silencioso, e por
+    // isso os dois lados tem teste que prende os numeros literais.
+    static constexpr uint16_t kRegCmdOta = 8;
+    static constexpr uint16_t kCmdOtaLigar = 1976;
+    static constexpr uint16_t kCmdOtaDesligar = 0;
     static constexpr uint8_t kByteCount = 2 * kRegCount;                  // 16
     static constexpr uint8_t kResponseLen = 3 + kByteCount + 2;           // 21
     static constexpr uint8_t kExceptionLen = 5;
@@ -133,6 +144,22 @@ public:
     // sai do osciloscopio no DE das duas placas.
     const LinkStats& stats() const override;
     void resetStats() override;
+
+    // Transmite o comando de ponto de acesso da sensora, em BROADCAST, e devolve na hora.
+    //
+    // NAO ESTA NA PORTA ISensorLink, de proposito. A porta descreve o que a camada de aplicacao
+    // precisa do enlace para decidir sobre inclinacao; ligar o radio da outra placa e assunto do
+    // composition root, que e quem tem o menu e o codigo. Por na porta obrigaria o fake e a
+    // Application a conhecerem um comando que nao tem nada a ver com medir angulo.
+    //
+    // BROADCAST NAO TEM RESPOSTA, por definicao do Modbus, e e justamente por isso que ele serve
+    // aqui: esperar resposta dentro do tick de 50 ms custaria o dobro do orcamento do ciclo de
+    // seguranca por um comando administrativo. O preco e que nao ha confirmacao no fio - quem
+    // confirma e a rede da sensora aparecendo na lista do celular.
+    //
+    // TEM DE SER CHAMADA PELA TAREFA ctrl, entre transacoes. Chamar do loop() corre com a
+    // transacao em curso no meio de um quadro.
+    Status sendOtaBroadcast(uint16_t valor);
 
     // Diagnostico de bancada (comando de console): codigo da ultima excecao Modbus recebida,
     // 0 quando nenhuma. Uma excecao em regime e erro de programacao do mestre, nao defeito de

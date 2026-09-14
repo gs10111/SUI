@@ -95,6 +95,7 @@
 #include "app/application.h"
 #include "esp_firmware_store.h"
 #include "ota_credentials.h"
+#include "ota_gate.h"
 #include "ota_partition.h"
 #include "ota_proof.h"
 #include "ota_service.h"
@@ -227,6 +228,16 @@ app::BootSequence g_boot(g_display, g_keypad, g_clock, FW_VERSION);
 EspFirmwareStore g_fwStore;
 WifiUpdatePortal g_portal;
 app::OtaService g_ota(g_fwStore, ota::kAlvoSupervisora, /*exigeConfirmacao=*/true);
+
+// O portao: o radio desta placa so sobe pelo item "Atualizar" do menu, com o codigo 1976, e cai
+// sozinho quando ninguem mais esta usando. Ver lib_shared/depuri_ota/include/ota_gate.h.
+ota::ApGate g_apGate;
+
+// Comando para a sensora, publicado aqui e TRANSMITIDO PELA TAREFA ctrl. Quem e dono do enlace e
+// ela; transmitir do loop() correria com a transacao em curso no meio de um quadro.
+volatile uint16_t g_otaCmdSensora = 0;
+volatile bool g_otaCmdSensoraPendente = false;
+volatile uint8_t g_otaCmdRepeticoes = 0;
 
 char g_otaSsid[33] = {0};
 char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
@@ -539,6 +550,9 @@ domain::NormalInput buildNormalInput(const app::Application::Snapshot& snap) {
     return app::buildNormalInput(snap, g_params);
 }
 
+// Definida mais abaixo, junto do resto da atualizacao: o tratador de acao do menu vem antes.
+void ativarOta();
+
 void startAssistant(domain::MenuAction action, const app::Application::Snapshot& snap) {
     switch (action) {
         case domain::MenuAction::AjustaPresetX:
@@ -578,6 +592,11 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
         // confirmacao e do proprio menu.
         case domain::MenuAction::RearmarEnlace:
             publishLinkLatchClear();
+            break;
+        // Decisao 17. O menu ja conferiu o codigo; aqui so se executa - e "executar" e subir o
+        // radio desta placa e mandar a sensora subir o dela.
+        case domain::MenuAction::AtivarOta:
+            ativarOta();
             break;
         case domain::MenuAction::ZerarPreset: {
             const Status st = g_preset.clearOffsets(g_params);
@@ -808,7 +827,8 @@ void otaKeepAlive(void*) {
 
 // Sobe o ponto de acesso. E o ULTIMO passo do setup(), de proposito: uma falha de radio nao pode
 // impedir um supervisor de inclinacao de supervisionar inclinacao.
-void startUpdatePortal() {
+// Le MAC e senha. NAO liga radio: ele sobe pelo menu, com codigo.
+void prepararCredenciaisOta() {
     uint8_t mac[ota::kMacBytes] = {0};
     WiFi.macAddress(mac);
     ota::apSsid(ota::kAlvoSupervisora, mac, g_otaSsid, sizeof(g_otaSsid));
@@ -836,16 +856,59 @@ void startUpdatePortal() {
     }
 
     g_portal.setKeepAlive(&otaKeepAlive, nullptr);
-    const Status st = g_portal.begin(g_otaSsid, g_otaSenha, g_ota);
-    g_otaNoAr = st.ok();
+
+    Serial.print(F("ota: radio DESLIGADO ate o menu mandar (item Atualizar, codigo "));
+    Serial.print(ota::kCodigoAtivacao);
+    Serial.println(F("). Rede seria:"));
+    Serial.print(F("ota:   "));
+    Serial.print(g_otaSsid);
+    Serial.print(F(" senha "));
+    Serial.print(g_otaSenha);
+    Serial.println(g_otaSenhaPadrao ? F("  (PADRAO DE FABRICA - ver docs/ota.md)")
+                                    : F("  (gravada na producao)"));
+}
+
+// Sobe o radio desta placa e MANDA a sensora subir o dela. As duas coisas juntas porque foi isso
+// que o operador pediu ao digitar o codigo: ele nao sabe, e nao tem por que saber, qual das duas
+// placas vai precisar de firmware novo.
+void ativarOta() {
+    const uint32_t agora = g_clock.nowMs();
+    g_apGate.ativar(agora);
+
+    if (!g_otaNoAr) {
+        g_otaNoAr = g_portal.begin(g_otaSsid, g_otaSenha, g_ota).ok();
+        if (!g_otaNoAr) {
+            g_apGate.desativar();
+            Serial.println(F("ota: FALHA ao subir o ponto de acesso desta placa"));
+        }
+    }
+
+    // TRES REPETICOES porque broadcast nao tem confirmacao: um quadro perdido num cabo de 500 m
+    // deixaria a sensora sem radio e o operador sem saber por que. Tres quadros em ciclos
+    // diferentes custam 12 ms de barramento e cobrem uma perda isolada.
+    g_otaCmdSensora = adapters::ModbusSensorLink::kCmdOtaLigar;
+    g_otaCmdRepeticoes = 3;
+    g_otaCmdSensoraPendente = true;
 
     Serial.print(F("ota: ponto de acesso "));
     Serial.print(g_otaNoAr ? F("NO AR ") : F("FALHOU "));
     Serial.print(g_otaSsid);
     Serial.print(F(" senha "));
-    Serial.print(g_otaSenha);
-    Serial.println(g_otaSenhaPadrao ? F("  (PADRAO DE FABRICA - ver docs/ota.md)")
-                                      : F("  (gravada na producao)"));
+    Serial.println(g_otaSenha);
+    Serial.println(F("ota: sensora avisada por broadcast (sem confirmacao no fio - a rede dela"));
+    Serial.println(F("ota: tem de aparecer na lista do celular como SUI-SEN-...)"));
+}
+
+void desativarOta() {
+    g_apGate.desativar();
+    if (g_otaNoAr) {
+        g_portal.end();
+        g_otaNoAr = false;
+        Serial.println(F("ota: ponto de acesso DESLIGADO"));
+    }
+    g_otaCmdSensora = adapters::ModbusSensorLink::kCmdOtaDesligar;
+    g_otaCmdRepeticoes = 3;
+    g_otaCmdSensoraPendente = true;
 }
 
 // Devolve true quando a atualizacao tomou conta do painel e o resto da IHM nao deve desenhar.
@@ -854,6 +917,14 @@ bool serviceOta() {
         return false;
     }
     const uint32_t agora = g_clock.nowMs();
+
+    // O portao derruba o radio sozinho quando ninguem mais esta usando - mas nunca no meio de uma
+    // gravacao, que tem os prazos dela.
+    g_apGate.tick(agora, g_portal.clientesConectados() > 0u, g_ota.emCurso());
+    if (!g_apGate.ativo()) {
+        desativarOta();
+        return false;
+    }
 
     // As saidas TEM de estar aplicadas antes de a flash abrir. Publicar e barato e idempotente;
     // o que nao pode e a flash abrir sem isto ter atravessado o nucleo.
@@ -1041,6 +1112,19 @@ void ctrlTask(void* argument) {
         }
         g_app.finishCycle();
 
+        // COMANDO DE OTA PARA A SENSORA, transmitido AQUI e nao no loop(): esta tarefa e a dona
+        // do enlace, e o instante logo apos finishCycle() e o unico em que o barramento esta
+        // comprovadamente livre - a resposta ja chegou e o proximo pedido ainda nao saiu. Sao 8
+        // bytes, 4,2 ms a 19200, dentro da folga do tick de 50 ms.
+        if (g_otaCmdSensoraPendente) {
+            if (g_link.sendOtaBroadcast(g_otaCmdSensora).ok() && g_otaCmdRepeticoes > 0u) {
+                --g_otaCmdRepeticoes;
+            }
+            if (g_otaCmdRepeticoes == 0u) {
+                g_otaCmdSensoraPendente = false;
+            }
+        }
+
         // Metade de saida: o quadro que a IHM le e latchado aqui, inteiro, sob o mesmo mux.
         taskENTER_CRITICAL(&g_pubMux);
         g_app.latchSnapshot();
@@ -1180,7 +1264,7 @@ void setup() {
     // do core 0 nunca foi medido nesta placa. A DECISIONS.md espera que a medicao REPROVE. Ate
     // ela existir, o ponto de acesso no ar o tempo todo e uma escolha assumida, nao uma
     // propriedade verificada.
-    startUpdatePortal();
+    prepararCredenciaisOta();
 
     g_boot.begin(bootAtMs, g_bootKeyMask);
     g_hmiMs = g_clock.nowMs();

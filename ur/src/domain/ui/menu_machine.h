@@ -154,7 +154,15 @@ enum class MenuItem : uint8_t {
     // silencio, ao atravessar o portao de senha. Promessa na tela sem gesto correspondente
     // treina o operador a nao acreditar na tela.
     Rearmar = 9,
-    Sair = 10,
+    // DECIMO SEGUNDO ITEM, acrescentado em 2026-09-14. Liga o ponto de acesso de atualizacao
+    // desta placa E o da sensora, atras de um codigo fixo de quatro digitos.
+    //
+    // POR QUE ELE EXISTE, JA QUE O RADIO PODIA FICAR SEMPRE LIGADO: ficava, ate esta data, e a
+    // senha do WiFi e fixa e publicada. Um radio permanente com senha publicada e um equipamento
+    // gravavel por quem passar perto do patio, o ano inteiro. Com o radio sob comando, a janela
+    // encolhe para os minutos em que um tecnico esta na frente do painel.
+    Atualizar = 10,
+    Sair = 11,
 };
 
 enum class MenuState : uint8_t {
@@ -172,6 +180,13 @@ enum class MenuState : uint8_t {
     AvisoPresetZerado,  // aviso obrigatorio de 3 s do "Zerar Preset": mover o zero desloca os
                         // quatro pontos de atuacao, exatamente como a troca de sentido
     EditSenha,       // E5
+    // Codigo de quatro digitos que libera o ponto de acesso de atualizacao. NAO e a senha do Modo
+    // Programacao: quem chegou aqui ja atravessou aquela. Sao dois portoes porque sao duas
+    // autoridades - mexer na configuracao do equipamento e ligar o radio dele nao sao a mesma
+    // permissao, e a senha do Modo Programacao o cliente troca.
+    CodigoOta,
+    OtaLigado,       // confirma que o radio subiu, e diz onde ler o nome da rede
+    OtaRecusado,     // codigo errado
     Recusa,          // A13: valor fora de faixa, sem clamp silencioso
     GravOk,          // E7: "Alteracao bem sucedida!"
     FalhaGrav,       // E8: "Falha de gravacao!"
@@ -195,11 +210,15 @@ enum class MenuAction : uint8_t {
     // entrar no Modo Programacao - limpar um latch de seguranca sem que ninguem tenha pedido e
     // o oposto do que o latch existe para fazer.
     RearmarEnlace,
+    // Liga o ponto de acesso desta placa e manda ligar o da sensora. Como o rearme, e um PEDIDO
+    // ao composition root: o menu nao tem radio nem RS-485, e nao deve ter - um menu que ligasse
+    // radio direto seria um segundo dono do ponto de acesso, ao lado do portao de prazos.
+    AtivarOta,
 };
 
 class MenuMachine {
 public:
-    static constexpr uint8_t kItemCount = 11;
+    static constexpr uint8_t kItemCount = 12;
     static constexpr uint8_t kSubItemCount = 3;
     // O submenu de Preset tem um item a mais - "Zerar Preset" - desde 2026-09-01. Os de Auto
     // Calibracao e Sentido continuam com tres. E errata do manual 5.6, que lista tres.
@@ -240,6 +259,11 @@ public:
     static constexpr const char* kMsgForaDaFaixa = "FORA DA FAIXA +/-090,0";
     // E8 de docs/ihm-estados.md 3.5: gravacao recusada pelo agregado.
     static constexpr const char* kMsgFalhaGrav = "Falha de gravacao!";
+    // Decisao 17: o portao do ponto de acesso de atualizacao.
+    static constexpr const char* kPrefixoCodigoOta = "Codigo OTA:";
+    static constexpr const char* kMsgOtaLigado = "WIFI LIGADO - VER CONSOLE";
+    static constexpr const char* kMsgOtaRecusado = "Codigo incorreto!";
+    static constexpr uint32_t kOtaMsgMs = 3000;
     // A9: aviso obrigatorio da troca de sentido, com o eixo e os dois limites a conferir.
     static constexpr const char* kMsgSentidoX = "Sentido X alterado!";
     static constexpr const char* kMsgSentidoY = "Sentido Y alterado!";
@@ -326,6 +350,7 @@ private:
     void onEditOperacao(const Gesture& gesture);
     void onEditSentido(const Gesture& gesture);
     void onEditSenha(const Gesture& gesture);
+    void onCodigoOta(const Gesture& gesture);
     void onRevisao(const Gesture& gesture);
 
     // --- transicoes ---
@@ -338,6 +363,7 @@ private:
     void openOperacao();
     void openSentido(Axis axis);
     void openSenha();
+    void openCodigoOta();
     void requestExit();
     void commitOnExit();
     void showMessage(MenuState msgState, MenuState backTo, uint32_t spanMs);

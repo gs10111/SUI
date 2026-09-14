@@ -3,6 +3,7 @@
 #include "proto/modbus_slave.h"
 
 #include "proto/crc16.h"
+#include "sensor_map.h"
 
 namespace {
 
@@ -23,7 +24,14 @@ void appendCrc(uint8_t* buf, uint16_t len) {
 }  // namespace
 
 ModbusRtuSlave::ModbusRtuSlave(uint8_t id)
-    : requests_(0), responses_(0), badFrames_(0), exceptions_(0), slaveId_(id) {}
+    : requests_(0),
+      responses_(0),
+      badFrames_(0),
+      exceptions_(0),
+      otaCommands_(0),
+      otaPendente_(0),
+      otaPendenteValido_(false),
+      slaveId_(id) {}
 
 const char* ModbusRtuSlave::name() const {
     return "modbus-rtu";
@@ -34,6 +42,9 @@ void ModbusRtuSlave::reset() {
     responses_ = 0;
     badFrames_ = 0;
     exceptions_ = 0;
+    otaCommands_ = 0;
+    otaPendente_ = 0;
+    otaPendenteValido_ = false;
 }
 
 uint32_t ModbusRtuSlave::requests() const {
@@ -50,6 +61,59 @@ uint32_t ModbusRtuSlave::badFrames() const {
 
 void ModbusRtuSlave::setSlaveId(uint8_t id) {
     slaveId_ = id;
+}
+
+// A UNICA escrita aceita por este escravo. Tudo o que nao for exatamente o registrador de comando
+// com um dos dois valores previstos e RECUSADO - nao ha escrita generica aqui, e nao deve haver:
+// este e o enlace que decide se quatro reles de seguranca atuam.
+//
+// EM BROADCAST NAO HA RESPOSTA, por definicao do Modbus, nem sequer excecao. E o modo que a
+// supervisora usa: ela transmite e segue, sem esperar, porque esperar resposta dentro do tick de
+// 50 ms do ciclo de seguranca custaria o dobro do orcamento por um comando administrativo.
+uint16_t ModbusRtuSlave::writeSingle(const uint8_t* request, bool broadcast, uint8_t* response,
+                                     uint16_t cap) {
+    const uint16_t reg = be16(&request[2]);
+    const uint16_t valor = be16(&request[4]);
+
+    if (reg != sensormap::kRegCmdOta) {
+        if (broadcast) {
+            return 0;
+        }
+        return buildException(kFuncWriteSingle, kExIllegalDataAddress, response, cap);
+    }
+    if (!sensormap::comandoOtaValido(valor)) {
+        if (broadcast) {
+            return 0;
+        }
+        return buildException(kFuncWriteSingle, kExIllegalDataValue, response, cap);
+    }
+
+    otaPendente_ = valor;
+    otaPendenteValido_ = true;
+    ++otaCommands_;
+
+    if (broadcast) {
+        return 0;
+    }
+    // Resposta de 0x06 e o eco do proprio pedido.
+    if (cap < kReadRequestLen) {
+        return 0;
+    }
+    for (uint16_t i = 0; i < kReadRequestLen - 2u; ++i) {
+        response[i] = request[i];
+    }
+    appendCrc(response, kReadRequestLen - 2u);
+    ++responses_;
+    return kReadRequestLen;
+}
+
+bool ModbusRtuSlave::takeOtaCommand(uint16_t& valor) {
+    if (!otaPendenteValido_) {
+        return false;
+    }
+    valor = otaPendente_;
+    otaPendenteValido_ = false;
+    return true;
 }
 
 uint16_t ModbusRtuSlave::buildException(uint8_t func, uint8_t code, uint8_t* response,
@@ -125,6 +189,12 @@ uint16_t ModbusRtuSlave::handle(const uint8_t* request, uint16_t len, const uint
     ++requests_;
 
     const uint8_t func = request[1];
+    if (func == kFuncWriteSingle) {
+        if (len != kReadRequestLen) {  // 0x06 tem o mesmo comprimento de quadro que 0x03
+            return 0;
+        }
+        return writeSingle(request, broadcast, response, cap);
+    }
     if (func != kFuncReadHolding && func != kFuncReadInput) {
         if (broadcast) {
             return 0;

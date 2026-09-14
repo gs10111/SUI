@@ -12,10 +12,13 @@ importante do documento.
 
 ## 1. Em uma frase
 
-Cada placa sobe um ponto de acesso WPA2 proprio, permanentemente. Quem precisa atualizar liga o
-celular naquela rede, abre a pagina, escolhe o arquivo `.ota` e envia. A supervisora exige
-confirmacao no painel, com aviso do que vai acontecer com as saidas; a sensora, que nao tem
-painel, aceita direto.
+O radio das duas placas fica **desligado**. No menu da supervisora, o item **Atualizar** pede um
+codigo de quatro digitos - **1976** - e liga o ponto de acesso WPA2 **das duas**: o dela e o da
+sensora, este por RS-485. Quem precisa atualizar liga o celular naquela rede, abre a pagina,
+escolhe o arquivo `.ota` e envia. A supervisora exige ainda uma confirmacao no painel, com aviso
+do que vai acontecer com as saidas; a sensora, que nao tem painel, aceita direto.
+
+O radio **cai sozinho** depois de 10 minutos sem ninguem conectado, ou de 60 minutos no ar.
 
 ---
 
@@ -80,6 +83,23 @@ ordem de precedencia:
 > antigas seguem com a padrao ate serem regravadas.
 
 O que continua distinguindo um equipamento do outro e o **SSID**, e so ele.
+
+### Sao TRES segredos, com tres propositos
+
+| segredo | responde | quem troca |
+|---|---|---|
+| `1234` (Modo Programacao) | posso mexer na configuracao? | o cliente, pelo menu |
+| **`1976`** (codigo OTA) | posso **ligar o radio**? | ninguem: e fixo |
+| `dieletrons-2025` (WPA2) | posso falar com o radio? | ninguem: e fixo, vai na etiqueta |
+
+O codigo `1976` ser fixo e deliberado: um cliente que troque a senha do Modo Programacao e a
+esqueca nao pode, com isso, ficar sem caminho de atualizacao. E saber `1234` nao basta para ligar
+o radio de um equipamento de seguranca.
+
+**E por isso que o radio deixou de ficar permanentemente no ar.** Com a senha WPA2 fixa e
+publicada, um ponto de acesso permanente e um equipamento gravavel por quem passar perto do patio,
+o ano inteiro. Sob comando, a janela encolhe para os minutos em que um tecnico esta na frente do
+painel. Este e o unico ganho de seguranca real que o produto teve depois que a senha virou fixa.
 
 Detalhes em `lib_shared/depuri_ota/include/ota_credentials.h`.
 
@@ -243,6 +263,9 @@ Vale mais a pena rodar com o alvo **errado** de proposito: tem de dar veredito 5
 
 ### 8.3 Atualizar
 
+0. **Ligue o radio**, no painel da supervisora: `Menu` > `Atualizar` > digite **1976** > segure
+   MENU 3 s. A tela confirma `WIFI LIGADO - VER CONSOLE`. Isso liga o ponto de acesso **das
+   duas** placas - o da sensora vai por RS-485, em broadcast.
 1. No celular, ligue na rede `SUI-UR-XXXXXX` (supervisora) ou `SUI-SEN-XXXXXX` (sensora), onde
    `XXXXXX` sao os tres ultimos bytes do MAC. A senha esta na etiqueta da placa.
 2. O celular abre a tela de atualizacao sozinho, como faz em rede de hotel (ha um servidor DNS na
@@ -256,19 +279,23 @@ Vale mais a pena rodar com o alvo **errado** de proposito: tem de dar veredito 5
 5. A barra anda; ao fim a placa reinicia sozinha.
 6. A imagem nova entra **em prova**: 5 ciclos bons em ate 30 s ou a placa volta para a anterior.
 
-### 8.3.1 A sensora nao tem "entrar em modo OTA"
+### 8.3.1 Como a sensora entra em OTA
 
-Nao existe gesto, comando nem jumper para por a sensora em atualizacao: **o ponto de acesso dela
-fica no ar desde o boot, sempre**. Foi assim que a decisao foi tomada - a placa nao tem painel nem
-teclado, entao qualquer "modo" exigiria um caminho por RS-485 que so funcionaria com a supervisora
-viva, que e justamente o caso em que nao se precisa dele.
+Ela nao tem painel nem teclado: quem liga o radio dela e **a supervisora**, pelo item `Atualizar`
+do menu. O comando vai pelo RS-485 em **broadcast** (funcao 0x06, registrador 8, valor 1976), tres
+vezes em ciclos diferentes.
 
-O que existe e o contrario: **`wifi off`** no console derruba a radio ate o proximo boot.
+**Broadcast nao tem resposta** - e de proposito: esperar confirmacao dentro do tick de 50 ms do
+ciclo de seguranca custaria o dobro do orcamento por um comando administrativo. O preco e que
+**nao ha confirmacao no fio**. A confirmacao e a rede `SUI-SEN-XXXXXX` aparecer na lista do
+celular. Se nao aparecer, repita o passo 0.
 
-Como a sensora nao tem tela, o console de 115200 e onde tudo aparece:
+Na bancada, sem supervisora nenhuma ligada, o console da sensora (115200) resolve:
 
 ```
+wifi on             # liga o ponto de acesso agora
 wifi                # SSID, modo e quantos clientes estao ligados
+wifi off            # derruba
 ```
 
 Durante a atualizacao a sensora **para de responder ao RS-485** por alguns segundos. Isso e

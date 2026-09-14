@@ -47,6 +47,7 @@ public:
 
     Status begin(const char* ssid, const char* senha, IUpdatePortalSink& sink) override;
     void service() override;
+    void end() override;
     void publish(const PortalStatus& st) override;
     void setKeepAlive(void (*fn)(void*), void* ctx) override;
     uint8_t clientesConectados() const override;

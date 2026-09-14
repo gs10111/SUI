@@ -177,6 +177,23 @@ void WifiUpdatePortal::service() {
     servidor_.handleClient();
 }
 
+// A ORDEM IMPORTA: servidor, DNS, ponto de acesso, radio. Derrubar o radio antes de fechar o
+// servidor deixaria sockets pendurados num stack que ja nao existe.
+void WifiUpdatePortal::end() {
+    if (!noAr_) {
+        return;
+    }
+    servidor_.stop();
+    if (dnsNoAr_) {
+        dns_.stop();
+        dnsNoAr_ = false;
+    }
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_OFF);
+    noAr_ = false;
+    envioAbortado_ = false;
+}
+
 void WifiUpdatePortal::publish(const PortalStatus& st) { estado_ = st; }
 
 uint8_t WifiUpdatePortal::clientesConectados() const {
