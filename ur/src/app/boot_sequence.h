@@ -34,7 +34,7 @@
 //     prazo do gesto e 3000 ms contados da ENTRADA do setup(): se a maquina fosse a Done ao
 //     fim da logomarca, tick() passaria a retornar na primeira linha, watchReset() nunca mais
 //     rodaria e o Reset de Fabrica seria INALCANCAVEL - o candidato morreria por volta de
-//     t = 1430 ms com a tecla ainda prensada. Por isso a logomarca so termina quando o
+//     t = 2431 ms com a tecla ainda prensada. Por isso a logomarca so termina quando o
 //     candidato tiver sido resolvido: soltar a tecla limpa o candidato e o proximo tick fecha
 //     a logomarca; segurar ate 3000 ms abre a tela do item 24;
 //   - tela (item 24): `RESET DE FABRICA`, byte a byte da L246, por no minimo 2000 ms;
@@ -65,7 +65,12 @@ public:
     };
 
     static constexpr uint32_t kSelfTestMs = 600;
-    static constexpr uint32_t kLogoMs = 600;
+    // 1600 ms desde 2026-09-14 (era 600). Pedido do bigboss: a logomarca ficava rapida demais
+    // para ser lida na energizacao. O splash inteiro passa de 1200 para 2200 ms; somados os
+    // ~231 ms tipicos de setup(), a maquina chega a Done por volta de t = 2431 ms, ainda ANTES
+    // dos kResetHoldMs = 3000 ms contados da entrada do setup() - a guarda que segura a
+    // logomarca enquanto o gesto de Reset de Fabrica esta armado continua sendo necessaria.
+    static constexpr uint32_t kLogoMs = 1600;
     static constexpr uint32_t kPatternMs = 150;
     // Decisao 1 item 23: "▲ prensada CONTINUAMENTE ... desde o passo 4 ate t = 3000 ms contados
     // da entrada no setup()". O valor 2000 que estava aqui divergia da decisao E do comentario

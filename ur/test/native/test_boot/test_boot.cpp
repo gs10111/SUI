@@ -108,7 +108,11 @@ static void test_os_prazos_publicados_sao_os_numeros_da_decisao(void) {
     TEST_ASSERT_EQUAL_UINT32(3000u, BootSequence::kStuckKeyMessageMs);
     TEST_ASSERT_EQUAL_UINT32(30000u, BootSequence::kOnDemandCeilingMs);
     TEST_ASSERT_EQUAL_UINT32(600u, BootSequence::kSelfTestMs);
-    TEST_ASSERT_EQUAL_UINT32(600u, BootSequence::kLogoMs);
+    TEST_ASSERT_EQUAL_UINT32(1600u, BootSequence::kLogoMs);
+    // O splash inteiro tem de terminar ANTES do prazo do gesto de Reset de Fabrica, senao a
+    // logomarca so sairia da tela depois de 3000 ms em toda energizacao.
+    TEST_ASSERT_TRUE(BootSequence::kSelfTestMs + BootSequence::kLogoMs <
+                     BootSequence::kResetHoldMs);
     TEST_ASSERT_EQUAL_UINT32(150u, BootSequence::kPatternMs);
 
     // Item 26 nao da os 13000 ms soltos: da "10000 ms APOS o surgimento da mensagem". A relacao
@@ -363,7 +367,10 @@ static void test_D12_item8_o_autoteste_sob_demanda_so_sai_depois_que_a_tecla_e_s
     // ainda no botao.
     Rig rig;
     rig.power(0);
-    rig.stepUntilMs(rig.bootAtMs + 2000u);
+    // Pelos SIMBOLOS do splash, e nao por um numero: com kLogoMs em 1600 ms o antigo "2000 ms"
+    // caia DENTRO da logomarca e o teste passava a medir outra coisa.
+    rig.stepUntilMs(rig.bootAtMs + kSetupMs + BootSequence::kSelfTestMs + BootSequence::kLogoMs +
+                    60u);
     TEST_ASSERT_TRUE(rig.boot.finished());
 
     rig.keypad.press(Key::Down);  // a tecla do proprio gesto, ainda prensada

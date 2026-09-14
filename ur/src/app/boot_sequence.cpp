@@ -176,9 +176,9 @@ void BootSequence::tick() {
         case Stage::Logo:
             watchReset(nowMs);
             // A LOGOMARCA SEGURA A MAQUINA ENQUANTO O GESTO ESTIVER ARMADO. Sem esta guarda o
-            // Reset de Fabrica era INALCANCAVEL: o splash soma kSelfTestMs + kLogoMs = 1200 ms
+            // Reset de Fabrica era INALCANCAVEL: o splash soma kSelfTestMs + kLogoMs = 2200 ms
             // e, com os ~231 ms tipicos de setup(), a maquina chegava a Done por volta de
-            // t = 1430 ms - bem antes dos kResetHoldMs = 3000 ms contados da entrada do
+            // t = 2431 ms - ainda antes dos kResetHoldMs = 3000 ms contados da entrada do
             // setup() (decisao 1 item 23). Em Done o tick() retorna na primeira linha, entao
             // watchReset() nunca mais rodava e o candidato morria com a tecla ainda prensada.
             // Enquanto resetCandidate_ vive, o operador esta com ▲ prensada: qualquer tick que
