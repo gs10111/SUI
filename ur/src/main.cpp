@@ -235,9 +235,19 @@ ota::ApGate g_apGate;
 
 // Comando para a sensora, publicado aqui e TRANSMITIDO PELA TAREFA ctrl. Quem e dono do enlace e
 // ela; transmitir do loop() correria com a transacao em curso no meio de um quadro.
-volatile uint16_t g_otaCmdSensora = 0;
-volatile bool g_otaCmdSensoraPendente = false;
-volatile uint8_t g_otaCmdRepeticoes = 0;
+//
+// SOB O MESMO portMUX de toda travessia de nucleo deste arquivo. Sem ele, a ctrl (core 0) fazendo
+// read-modify-write no contador enquanto o loop() (core 1) publica um comando novo pode ENGOLIR o
+// comando - e o engolido mais caro e o "desliga", que deixaria o radio da sensora no ar pelos
+// 20 min inteiros do portao.
+uint16_t g_otaCmdSensora = 0;
+uint8_t g_otaCmdRestantes = 0;
+// Tentativas TOTAIS, incluindo as que falham. Sem teto, um enlace que nunca aceita transmitir
+// fazia este bloco disparar a cada 50 ms para sempre.
+uint8_t g_otaCmdTentativas = 0;
+constexpr uint8_t kOtaCmdEnvios = 3;
+constexpr uint8_t kOtaCmdTentativasMax = 12;
+
 
 char g_otaSsid[33] = {0};
 char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
@@ -252,6 +262,16 @@ bool g_otaDesenhandoConfirm = false;
 
 portMUX_TYPE g_pubMux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t g_ctrlTask = nullptr;
+
+// Declarada aqui, e nao junto dos globais de OTA la em cima, porque usa o portMUX declarado na
+// linha acima.
+void publicarComandoOta(uint16_t valor) {
+    taskENTER_CRITICAL(&g_pubMux);
+    g_otaCmdSensora = valor;
+    g_otaCmdRestantes = kOtaCmdEnvios;
+    g_otaCmdTentativas = kOtaCmdTentativasMax;
+    taskEXIT_CRITICAL(&g_pubMux);
+}
 
 // Deslocamento anti-queima do painel (decisao 12 item 17): quatro fases de 1 px a cada 900000
 // ms. O equipamento roda 24/7 com contraste 255 e a tela principal e praticamente estatica.
@@ -822,6 +842,10 @@ void otaLog(void*, const char* linha) {
 
 void otaKeepAlive(void*) {
     const uint32_t agora = g_clock.nowMs();
+    // O RELOGIO SO ENTRA AQUI. service() nao roda enquanto handleClient() esta bloqueado, e ele
+    // fica bloqueado o envio inteiro: sem isto todo carimbo de onChunk/onEnd seria o instante
+    // anterior ao envio, e uma falha no fim de um envio longo nasceria ja expirada.
+    g_ota.noteAgora(agora);
     if (static_cast<uint32_t>(agora - g_otaUltimoDesenhoMs) < 200u) {
         return;  // 5 quadros por segundo bastam e nao disputam o SPI com o envio
     }
@@ -890,9 +914,7 @@ void ativarOta() {
     // TRES REPETICOES porque broadcast nao tem confirmacao: um quadro perdido num cabo de 500 m
     // deixaria a sensora sem radio e o operador sem saber por que. Tres quadros em ciclos
     // diferentes custam 12 ms de barramento e cobrem uma perda isolada.
-    g_otaCmdSensora = adapters::ModbusSensorLink::kCmdOtaLigar;
-    g_otaCmdRepeticoes = 3;
-    g_otaCmdSensoraPendente = true;
+    publicarComandoOta(adapters::ModbusSensorLink::kCmdOtaLigar);
 
     Serial.print(F("ota: ponto de acesso "));
     Serial.print(g_otaNoAr ? F("NO AR ") : F("FALHOU "));
@@ -914,9 +936,7 @@ void desativarOta() {
         g_otaNoAr = false;
         Serial.println(F("ota: ponto de acesso DESLIGADO"));
     }
-    g_otaCmdSensora = adapters::ModbusSensorLink::kCmdOtaDesligar;
-    g_otaCmdRepeticoes = 3;
-    g_otaCmdSensoraPendente = true;
+    publicarComandoOta(adapters::ModbusSensorLink::kCmdOtaDesligar);
 }
 
 // Devolve true quando a atualizacao tomou conta do painel e o resto da IHM nao deve desenhar.
@@ -1129,13 +1149,22 @@ void ctrlTask(void* argument) {
         // do enlace, e o instante logo apos finishCycle() e o unico em que o barramento esta
         // comprovadamente livre - a resposta ja chegou e o proximo pedido ainda nao saiu. Sao 8
         // bytes, 4,2 ms a 19200, dentro da folga do tick de 50 ms.
-        if (g_otaCmdSensoraPendente) {
-            if (g_link.sendOtaBroadcast(g_otaCmdSensora).ok() && g_otaCmdRepeticoes > 0u) {
-                --g_otaCmdRepeticoes;
+        taskENTER_CRITICAL(&g_pubMux);
+        const uint16_t cmdOta = g_otaCmdSensora;
+        const bool cmdOtaPendente = (g_otaCmdRestantes > 0u) && (g_otaCmdTentativas > 0u);
+        taskEXIT_CRITICAL(&g_pubMux);
+        if (cmdOtaPendente) {
+            const bool enviou = g_link.sendOtaBroadcast(cmdOta).ok();
+            taskENTER_CRITICAL(&g_pubMux);
+            // A tentativa conta SEMPRE; o envio, so quando saiu. Assim um enlace morto para de
+            // tentar em 12 ciclos (600 ms) em vez de disparar a cada 50 ms para sempre.
+            if (g_otaCmdTentativas > 0u) {
+                --g_otaCmdTentativas;
             }
-            if (g_otaCmdRepeticoes == 0u) {
-                g_otaCmdSensoraPendente = false;
+            if (enviou && g_otaCmdRestantes > 0u) {
+                --g_otaCmdRestantes;
             }
+            taskEXIT_CRITICAL(&g_pubMux);
         }
 
         // Metade de saida: o quadro que a IHM le e latchado aqui, inteiro, sob o mesmo mux.
@@ -1363,11 +1392,17 @@ void loop() {
 
     // ANTES DO DESVIO DE CONFIG PERDIDA, e nao dentro de serviceHmi().
     //
-    // CONFIG PERDIDA (A8) devolve o laco aqui embaixo e nunca chega a serviceHmi() - e esse
-    // estado fica no ar por SEMANAS, ate alguem ir ao painel. Com a atualizacao atras daquele
-    // desvio, a unica placa que mais precisa receber firmware novo - a que esta travada em falha -
-    // seria justamente a unica que nao consegue. Aqui ela consegue, e com seguranca: em CONFIG
-    // PERDIDA os quatro reles JA estao em alarme, entao nao ha o que declarar.
+    // CONFIG PERDIDA (A8) devolve o laco aqui embaixo e nunca chega a serviceHmi(). Estar antes
+    // daquele desvio garante que uma atualizacao JA EM CURSO termina, e que um radio JA NO AR
+    // continua atendendo, mesmo que a configuracao se perca no meio.
+    //
+    // O QUE ISTO **NAO** DA, e o comentario anterior mentia dizendo que dava: nao da para LIGAR o
+    // radio estando em CONFIG PERDIDA. Ligar passa pelo item "Atualizar" do menu, o menu vive em
+    // serviceHmi(), e serviceHmi() nao roda neste estado - por desenho de A8, que congela a IHM.
+    // A saida documentada continua sendo a que A8 ja prescreve: Reset Geral na energizacao (5.11)
+    // e, com a configuracao de fabrica de volta, Menu > Atualizar. O tecnico que chega numa placa
+    // em CONFIG PERDIDA ja vai ao painel de qualquer forma - nao ha viagem a mais, ha um gesto a
+    // mais. Registrado em docs/ota.md 8.5.
     //
     // Uma atualizacao em curso e o unico estado em que o painel nao pertence a operacao normal: as
     // saidas estao em alarme declarado e a pergunta na tela e a unica coisa que o operador pode

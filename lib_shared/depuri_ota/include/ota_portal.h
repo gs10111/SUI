@@ -34,6 +34,15 @@ public:
     virtual bool onChunk(const uint8_t* dados, uint32_t n) = 0;
     virtual void onEnd() = 0;
     virtual void onAbort() = 0;
+
+    // O estado DEPOIS da decisao que acabou de ser tomada.
+    //
+    // Existe porque o portal so recebe o estado por publish(), do laco principal, e o laco ja
+    // rodou nesta volta quando os tratadores executam: o que o portal tinha em maos era a fase
+    // ANTERIOR. Um pacote recusado por alvo errado registrava no console
+    // "cabecalho RECUSADO - PRONTO PARA RECEBER" - a linha de diagnostico que existe justamente
+    // porque nao havia nada para olhar saia dizendo a coisa errada.
+    virtual void preencherStatus(PortalStatus& st) const = 0;
 };
 
 class IUpdatePortal {

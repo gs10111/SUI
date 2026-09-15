@@ -403,6 +403,11 @@ Status ModbusSensorLink::sendOtaBroadcast(uint16_t valor) {
     if (waiting_) {
         return Status(Err::Busy);
     }
+    // Mesma guarda de request(): sem o driver instalado, uart_write_bytes() e chamada sobre uma
+    // porta que nao existe. O chamador tem teto de tentativas, mas a guarda e aqui.
+    if (!installed_) {
+        return Status(Err::NotInit);
+    }
 
     uint8_t pdu[kRequestLen];
     pdu[0] = kBroadcastAddr;

@@ -4,3 +4,7 @@
 *.elf
 *.bin
 *.map
+
+# Artefato de build do Python: o empacotador e importado pelo post-script do PlatformIO.
+__pycache__/
+*.pyc

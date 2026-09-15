@@ -87,8 +87,12 @@ void OtaService::onEnd() {
     }
     // finish() e onde a propria IDF confere a imagem gravada. So depois dela a particao de boot
     // pode ser trocada - e trocar sem conferir e o que torna uma placa irrecuperavel.
+    // A IDF REPROVOU A IMAGEM GRAVADA. A troca de particao nem chegou a ser tentada, entao dizer
+    // "falha ao trocar a particao" mandaria quem esta depurando em campo olhar para o lugar
+    // errado. O que houve foi imagem invalida - so que descoberta pela verificacao da IDF, e nao
+    // pelo CRC-32/SHA-256 daqui.
     if (store_.finish().failed()) {
-        sessao_.noteTrocaDeParticao(false, agoraMs_);
+        sessao_.noteImagemReprovadaPelaIdf(agoraMs_);
         fecharFlashSeAberta();
         return;
     }
@@ -100,7 +104,7 @@ void OtaService::onAbort() {
     fecharFlashSeAberta();
 }
 
-void OtaService::preencherStatusDoPortal(PortalStatus& st) const {
+void OtaService::preencherStatus(PortalStatus& st) const {
     st.fase = textoDaFase(sessao_.phase());
     st.detalhe = "";
     if (sessao_.phase() == ota::Phase::Recusado) {
@@ -148,6 +152,7 @@ const char* textoDaFalha(ota::FailReason m) {
         case ota::FailReason::Estagnou: return "O ENVIO PAROU NO MEIO";
         case ota::FailReason::TempoEsgotado: return "O ENVIO DEMOROU DEMAIS";
         case ota::FailReason::ImagemInvalida: return "IMAGEM NAO CONFERE";
+        case ota::FailReason::ImagemReprovadaPelaIdf: return "IMAGEM REPROVADA NA GRAVACAO";
         case ota::FailReason::FalhaDeGravacao: return "FALHA AO GRAVAR NA FLASH";
         case ota::FailReason::FalhaDeTroca: return "FALHA AO TROCAR A PARTICAO";
         case ota::FailReason::Cancelado: return "CANCELADO";

@@ -59,9 +59,19 @@ public:
     // reles em alarme e as saidas analogicas no codigo de falha - so entao a flash e aberta.
     void service(uint32_t nowMs, bool saidasAplicadas);
 
-    void preencherStatusDoPortal(PortalStatus& st) const;
+    void preencherStatusDoPortal(PortalStatus& st) const { preencherStatus(st); }
+
+    // RELOGIO DURANTE UM ENVIO. service() nao roda enquanto handleClient() esta bloqueado - e ele
+    // fica bloqueado o envio inteiro - entao sem isto todo carimbo feito por onChunk/onEnd/onAbort
+    // seria o instante ANTERIOR ao envio. Um envio de 90 s que termina em imagem invalida
+    // carimbaria a falha 90 s no passado, e o proximo tick() ja a daria por expirada: o painel
+    // voltaria para "PRONTO PARA RECEBER" sem o operador saber que a imagem era ruim.
+    //
+    // Quem chama e o gancho de keep-alive do portal, que e o unico codigo que roda la dentro.
+    void noteAgora(uint32_t nowMs) { agoraMs_ = nowMs; }
 
     // --- IUpdatePortalSink ---
+    void preencherStatus(PortalStatus& st) const override;
     bool onHeader(const uint8_t* bytes, uint32_t n) override;
     bool onChunk(const uint8_t* dados, uint32_t n) override;
     void onEnd() override;

@@ -223,6 +223,17 @@ void WifiUpdatePortal::service() {
 
 // A ORDEM IMPORTA: servidor, DNS, ponto de acesso, radio. Derrubar o radio antes de fechar o
 // servidor deixaria sockets pendurados num stack que ja nao existe.
+//
+// PENDENCIA REGISTRADA: begin()/end() sobem e derrubam a pilha WiFi/netif/lwIP inteira, e isso e
+// alocacao depois do setup() - o que este projeto trata como regra dura em todo o resto (ver o
+// comentario "proibido pela regra dura" em ModbusSensorLink::begin, que faz questao de ser
+// idempotente sem alocar). Numa placa energizada por meses, com ativacoes repetidas, isso e
+// fragmentacao acumulada no caminho que grava flash.
+//
+// Nao foi consertado agora porque manter a pilha WiFi de pe com o radio desligado nao e obviamente
+// mais barato do que derruba-la, e a alternativa certa depende de MEDICAO 26 - se o radio de pe
+// custar jitter na tarefa ctrl, deixa-lo inicializado o tempo todo e pior, nao melhor. Medir
+// primeiro; ver docs/ota.md secao 9.
 void WifiUpdatePortal::end() {
     if (!noAr_) {
         return;
@@ -294,6 +305,9 @@ void WifiUpdatePortal::tratarCabecalho() {
         registrar("ota: sem destino para o pacote (erro de montagem do firmware)");
     } else {
         aceito = sink_->onHeader(cab, static_cast<uint32_t>(n));
+        // Pergunta o estado AGORA. O que estava em estado_ e a fase anterior: publish() so
+        // acontece no laco principal, que ja rodou nesta volta.
+        sink_->preencherStatus(estado_);
         registrar("ota: cabecalho %s - %s", aceito ? "ACEITO" : "RECUSADO",
                   estado_.detalhe == nullptr || estado_.detalhe[0] == '\0' ? estado_.fase
                                                                           : estado_.detalhe);
@@ -326,6 +340,7 @@ void WifiUpdatePortal::tratarImagemPedaco() {
         }
         if (!sink_->onChunk(envio.buf, envio.currentSize)) {
             envioAbortado_ = true;
+            sink_->preencherStatus(estado_);
             registrar("ota: envio RECUSADO no byte %u - %s", (unsigned)envio.totalSize,
                       estado_.detalhe == nullptr ? "" : estado_.detalhe);
             return;
@@ -333,6 +348,7 @@ void WifiUpdatePortal::tratarImagemPedaco() {
         // Uma linha a cada 64 KiB: o bastante para ver que anda, pouco o bastante para nao
         // inundar um console de 115200 durante um envio de 1280 KiB.
         if (envio.totalSize >= proximoAvisoBytes_) {
+            sink_->preencherStatus(estado_);
             registrar("ota: %u KiB gravados (%u por mil)", (unsigned)(envio.totalSize / 1024u),
                       (unsigned)estado_.progressoPorMil);
             proximoAvisoBytes_ = envio.totalSize + 65536u;
@@ -353,6 +369,9 @@ void WifiUpdatePortal::tratarImagemFim() {
     ++requisicoes_;
     if (sink_ != nullptr && !envioAbortado_) {
         sink_->onEnd();
+    }
+    if (sink_ != nullptr) {
+        sink_->preencherStatus(estado_);
     }
     registrar("ota: fim do envio - %s %s", estado_.fase == nullptr ? "?" : estado_.fase,
               estado_.detalhe == nullptr ? "" : estado_.detalhe);

@@ -165,6 +165,9 @@ static void test_imagem_truncada_nao_troca_a_particao(void) {
 }
 
 // E se a propria IDF reprovar a imagem gravada em finish(), tambem nao.
+// E O MOTIVO TEM DE SER O CERTO. A troca de particao nem chegou a ser TENTADA aqui: o que houve
+// foi a propria IDF reprovar a imagem gravada. Dizer "falha ao trocar a particao" mandaria quem
+// esta depurando em campo olhar para o lugar errado.
 static void test_finish_reprovado_pela_idf_nao_troca_a_particao(void) {
     FakeFirmwareStore flash;
     flash.falharFinish(true);
@@ -176,8 +179,45 @@ static void test_finish_reprovado_pela_idf_nao_troca_a_particao(void) {
     s.onEnd();
 
     TEST_ASSERT_TRUE(s.phase() == ota::Phase::Falhou);
-    TEST_ASSERT_TRUE(s.failReason() == ota::FailReason::FalhaDeTroca);
+    TEST_ASSERT_TRUE(s.failReason() == ota::FailReason::ImagemReprovadaPelaIdf);
+    TEST_ASSERT_TRUE_MESSAGE(s.failReason() != ota::FailReason::FalhaDeTroca,
+                             "a troca nem foi tentada - nao pode ser relatada como falha dela");
     TEST_ASSERT_EQUAL_UINT32(0, flash.activates());
+}
+
+// O RELOGIO DA SESSAO SO AVANCA POR noteAgora() DURANTE UM ENVIO: service() nao roda enquanto o
+// servidor esta bloqueado lendo o corpo do POST. Sem isto, uma falha no fim de um envio longo
+// nasce carimbada no passado e o proximo tick() ja a da por expirada - o painel volta para
+// "PRONTO PARA RECEBER" e ninguem fica sabendo que a imagem era ruim.
+static void test_falha_no_fim_de_um_envio_longo_fica_na_tela_o_tempo_todo(void) {
+    FakeFirmwareStore flash;
+    app::OtaService s(flash, ota::kAlvoSupervisora, true);
+    Pacote p;
+    montaPacote(p, ota::kAlvoSupervisora);
+    ateGravando(s, p, kT0);
+
+    // Envio de 90 s, com o relogio entrando SO pelo gancho de keep-alive.
+    const uint32_t kEnvioMs = 90000u;
+    p.imagem[kTamanho / 2u] ^= 0x01u;
+    for (uint32_t pos = 0; pos < kTamanho; pos += 1024u) {
+        s.noteAgora(kT0 + (kEnvioMs * pos) / kTamanho);
+        TEST_ASSERT_TRUE(s.onChunk(p.imagem + pos, 1024u));
+    }
+    s.noteAgora(kT0 + kEnvioMs);
+    s.onEnd();
+
+    TEST_ASSERT_TRUE(s.phase() == ota::Phase::Falhou);
+    TEST_ASSERT_TRUE(s.failReason() == ota::FailReason::ImagemInvalida);
+
+    // Logo depois do envio a mensagem TEM de continuar na tela.
+    s.service(kT0 + kEnvioMs + 1000u, false);
+    TEST_ASSERT_TRUE_MESSAGE(s.phase() == ota::Phase::Falhou,
+                             "a falha expirou antes de o operador poder ler");
+    s.service(kT0 + kEnvioMs + ota::kMensagemMs - 1u, false);
+    TEST_ASSERT_TRUE(s.phase() == ota::Phase::Falhou);
+    // E so entao sai.
+    s.service(kT0 + kEnvioMs + ota::kMensagemMs, false);
+    TEST_ASSERT_TRUE(s.phase() == ota::Phase::Ocioso);
 }
 
 // Pacote da outra placa: recusado antes de abrir a flash, e o motivo sai na pagina.
@@ -373,6 +413,7 @@ static void test_toda_fase_e_todo_motivo_tem_texto(void) {
         ota::FailReason::NaoConfirmado, ota::FailReason::Estagnou,
         ota::FailReason::TempoEsgotado, ota::FailReason::ImagemInvalida,
         ota::FailReason::FalhaDeGravacao, ota::FailReason::FalhaDeTroca,
+        ota::FailReason::ImagemReprovadaPelaIdf,
         ota::FailReason::Cancelado};
     for (size_t i = 0; i < sizeof(kMotivos) / sizeof(kMotivos[0]); ++i) {
         const char* t = app::textoDaFalha(kMotivos[i]);
@@ -460,6 +501,7 @@ int main(int, char**) {
     RUN_TEST(test_imagem_corrompida_nao_troca_a_particao);
     RUN_TEST(test_imagem_truncada_nao_troca_a_particao);
     RUN_TEST(test_finish_reprovado_pela_idf_nao_troca_a_particao);
+    RUN_TEST(test_falha_no_fim_de_um_envio_longo_fica_na_tela_o_tempo_todo);
     RUN_TEST(test_pacote_da_outra_placa_nem_abre_a_flash);
     RUN_TEST(test_o_tamanho_e_conferido_contra_a_particao_desta_placa);
     RUN_TEST(test_a_flash_nunca_fica_aberta_depois_de_a_sessao_morrer);

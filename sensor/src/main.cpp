@@ -168,6 +168,9 @@ void otaLog(void*, const char* linha) {
 
 void otaKeepAlive(void*) {
     g_wdt.heartbeat();
+    // Mesmo motivo da supervisora: service() nao roda durante o envio, entao o relogio da sessao
+    // so avanca por aqui.
+    g_ota.noteAgora(millis());
 }
 
 // Le MAC e senha. NAO liga radio: o radio so sobe por comando da supervisora.
@@ -273,13 +276,15 @@ void serviceOta(uint32_t nowMs) {
     // Nao ha rele nesta placa: "saidas em alarme" e sempre verdade aqui, porque a supervisora ja
     // declara falha assim que o enlace para de responder. Por isso o segundo argumento e o
     // proprio estado da sessao - nao ha nada a aplicar antes.
+    // AMOSTRA A FASE ANTES DE service(), e nao depois: nesta placa nao ha confirmacao a dar, entao
+    // service() leva Preparando direto a Gravando NA MESMA CHAMADA. Amostrando depois, a fase
+    // Preparando nunca era vista e o resumo - a unica coisa que liga o arquivo que subiu ao que
+    // saiu do build, numa placa sem painel - nunca era impresso.
+    const ota::Phase faseAntesDoServico = g_ota.phase();
     g_ota.service(nowMs, g_ota.saidasEmAlarme());
 
-    // O resumo, uma vez so, quando o pacote e aceito: e a unica coisa que liga o arquivo que
-    // subiu ao arquivo que saiu do sistema de compilacao. Esta placa nao tem painel nenhum, entao
-    // o console de bancada e o unico lugar onde isso pode ser conferido.
     static ota::Phase faseAnterior = ota::Phase::Ocioso;
-    if (faseAnterior == ota::Phase::Ocioso && g_ota.phase() == ota::Phase::Preparando) {
+    if (faseAnterior == ota::Phase::Ocioso && faseAntesDoServico == ota::Phase::Preparando) {
         const ota::PackageHeader& h = g_ota.header();
         g_io.printf("ota: pacote aceito, versao %u.%u.%u  sha256 ", static_cast<unsigned>(h.versaoMaior),
                     static_cast<unsigned>(h.versaoMenor), static_cast<unsigned>(h.versaoCorrecao));
@@ -288,7 +293,7 @@ void serviceOta(uint32_t nowMs) {
         }
         g_io.writeLine("");
     }
-    faseAnterior = g_ota.phase();
+    faseAnterior = faseAntesDoServico;
 
     PortalStatus st;
     g_ota.preencherStatusDoPortal(st);

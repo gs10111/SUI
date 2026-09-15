@@ -362,14 +362,21 @@ abrir o modulo.
 | operacao normal | no ar | sim |
 | Modo Programacao / assistentes | no ar | sim - a tela de confirmacao toma o painel |
 | falha de enlace, latch de A7 | no ar | sim |
-| **CONFIG PERDIDA (A8)** | no ar | **sim** |
+| **CONFIG PERDIDA (A8)** | continua no ar se ja estava | **nao da para LIGAR o radio** |
 | logomarca e autoteste do boot | no ar | **nao** - a pagina fica muda |
 
-**CONFIG PERDIDA merece a linha em negrito.** Aquele estado devolve o laco antes da IHM e fica no
-ar por semanas, ate alguem ir ao painel. Se a atualizacao vivesse atras daquele desvio, a placa
-que mais precisa de firmware novo - a que esta travada em falha - seria a unica que nao
-conseguiria receber. E e seguro: em CONFIG PERDIDA os quatro reles **ja** estao em alarme, entao
-nao ha o que declarar.
+**CONFIG PERDIDA merece a linha em negrito, e a resposta mudou.** Enquanto o radio ficava
+permanentemente no ar, aquela placa podia ser atualizada normalmente. Desde que o radio passou a
+ser **sob comando**, ligar exige o item `Atualizar` do menu - e o menu nao roda em CONFIG PERDIDA,
+porque A8 congela a IHM de proposito.
+
+O que continua valendo: uma atualizacao **ja em curso** termina, e um radio **ja no ar** continua
+atendendo, mesmo que a configuracao se perca no meio.
+
+Para atualizar uma placa nesse estado: **Reset Geral na energizacao** (secao 5.11 do manual, que e
+o que A8 ja prescreve para sair de CONFIG PERDIDA) e, com a configuracao de fabrica de volta,
+`Menu` > `Atualizar`. O tecnico que chega numa placa travada assim ja vai ao painel de qualquer
+forma - nao ha viagem a mais, ha um gesto a mais.
 
 Durante o **splash de boot** a pagina nao responde, de proposito: aceitar um pacote ali poria a
 tela de confirmacao atras da logomarca, o operador nao veria a pergunta e a sessao morreria por

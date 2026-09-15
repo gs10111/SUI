@@ -34,6 +34,12 @@ int main(int argc, char** argv) {
     uint8_t buf[4096]; size_t n;
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0) { if (!iv.feed(buf, n)) { printf("excesso\n"); return 1; } }
     fclose(f);
-    printf("imagem   : veredito=%d recebidos=%u de %u\n", (int)iv.finish(), iv.recebidos(), iv.esperado());
-    return iv.finish() == ota::ImageVerdict::Ok ? 0 : 1;
+    // UMA VEZ SO. Sha256::finish() acrescenta preenchimento e comprimento ao estado do hasher:
+    // chamar duas vezes re-preenche um resumo ja fechado e devolve outro digest. Com duas
+    // chamadas, esta ferramenta imprimia "veredito=1" (Ok) e saia com codigo 1 em TODO pacote
+    // bom - justamente a ferramenta cuja funcao e dizer se da para ir ao patio.
+    const ota::ImageVerdict veredito = iv.finish();
+    printf("imagem   : veredito=%d recebidos=%u de %u\n", (int)veredito, iv.recebidos(),
+           iv.esperado());
+    return veredito == ota::ImageVerdict::Ok ? 0 : 1;
 }

@@ -831,7 +831,8 @@ void SensorConsole::cmdWifi(const char* arg) {
         }
         ctx_.io.write("wifi  : LIGADO, pagina http://");
         ctx_.io.writeLine(ctx_.otaEndereco != nullptr ? ctx_.otaEndereco() : "?");
-        ctx_.io.writeLine("        cai sozinho depois de 10 min sem ninguem conectado");
+        ctx_.io.writeLine("        cai sozinho depois de 20 min sem NADA chegar (atividade, nao");
+        ctx_.io.writeLine("        cliente associado), ou 60 min no ar");
         return;
     }
     ctx_.io.printf("wifi  : modo %d, clientes %d\r\n", static_cast<int>(WiFi.getMode()),

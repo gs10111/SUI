@@ -362,6 +362,38 @@ static void test_aceita_bytes_so_em_gravando(void) {
     (void)sizeof(Caso);
 }
 
+// A REPROVACAO DA IDF SO VALE EM Verificando. Fora dali ela nao pode derrubar nada: chegando em
+// Concluido derrubaria uma atualizacao que JA trocou a particao, e chegando em Ocioso poria o
+// equipamento em falha sem nada ter acontecido.
+static void test_reprovacao_da_idf_so_vale_verificando(void) {
+    ota::Session ocioso(true);
+    ocioso.noteImagemReprovadaPelaIdf(kT0);
+    TEST_ASSERT_TRUE(ocioso.phase() == ota::Phase::Ocioso);
+
+    ota::Session gravando(true);
+    ateGravando(gravando, kT0);
+    gravando.noteImagemReprovadaPelaIdf(kT0);
+    TEST_ASSERT_TRUE_MESSAGE(gravando.phase() == ota::Phase::Gravando,
+                             "a IDF so opina depois que a imagem chegou inteira");
+
+    ota::Session concluido(true);
+    ateGravando(concluido, kT0);
+    concluido.noteImagemCompleta(ota::ImageVerdict::Ok, kT0);
+    concluido.noteTrocaDeParticao(true, kT0);
+    concluido.noteImagemReprovadaPelaIdf(kT0);
+    TEST_ASSERT_TRUE_MESSAGE(concluido.phase() == ota::Phase::Concluido,
+                             "a particao ja foi trocada - nao ha mais o que reprovar");
+
+    // E em Verificando, que e o lugar dela, funciona.
+    ota::Session verificando(true);
+    ateGravando(verificando, kT0);
+    verificando.noteImagemCompleta(ota::ImageVerdict::Ok, kT0);
+    verificando.noteImagemReprovadaPelaIdf(kT0);
+    TEST_ASSERT_TRUE(verificando.phase() == ota::Phase::Falhou);
+    TEST_ASSERT_TRUE(verificando.failReason() == ota::FailReason::ImagemReprovadaPelaIdf);
+    TEST_ASSERT_FALSE(verificando.saidasEmAlarme());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_nada_e_gravado_antes_da_confirmacao_no_painel);
@@ -379,5 +411,6 @@ int main(int, char**) {
     RUN_TEST(test_os_prazos_atravessam_o_wrap_de_2_elevado_a_32);
     RUN_TEST(test_depois_de_falhar_aceita_outra_tentativa);
     RUN_TEST(test_aceita_bytes_so_em_gravando);
+    RUN_TEST(test_reprovacao_da_idf_so_vale_verificando);
     return UNITY_END();
 }

@@ -46,7 +46,8 @@ enum class FailReason : uint8_t {
     NaoConfirmado,     // ninguem confirmou no painel dentro do prazo
     Estagnou,          // parou de chegar byte
     TempoEsgotado,     // teto absoluto da gravacao
-    ImagemInvalida,    // CRC-32, SHA-256 ou tamanho
+    ImagemInvalida,    // CRC-32, SHA-256 ou tamanho, conferidos aqui
+    ImagemReprovadaPelaIdf,  // gravou, e a verificacao da propria IDF reprovou
     FalhaDeGravacao,   // a flash recusou
     FalhaDeTroca,      // esp_ota_set_boot_partition falhou
     Cancelado,         // alguem cancelou no painel
@@ -162,6 +163,15 @@ public:
     }
 
     void noteFalhaDeGravacao(uint32_t nowMs) { falhar(FailReason::FalhaDeGravacao, nowMs); }
+
+    // A imagem foi gravada inteira e a verificacao da IDF a reprovou. E diferente de FalhaDeTroca:
+    // ali a troca foi tentada e falhou; aqui ela nem chegou a ser tentada.
+    void noteImagemReprovadaPelaIdf(uint32_t nowMs) {
+        if (fase_ != Phase::Verificando) {
+            return;
+        }
+        falhar(FailReason::ImagemReprovadaPelaIdf, nowMs);
+    }
 
     // A imagem chegou inteira; o veredito vem do ImageVerifier.
     void noteImagemCompleta(ImageVerdict veredito, uint32_t nowMs) {
