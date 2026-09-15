@@ -815,6 +815,11 @@ void serviceBootProof(const app::Application::Snapshot& snap) {
 // Na supervisora ele NAO bate o watchdog: quem bate e a tarefa ctrl, no core 0, que continua
 // rodando. O que ele faz e mexer o painel - sem isto a barra de progresso fica congelada no 0%
 // durante o envio inteiro, e quem esta na frente da maquina conclui que travou.
+// O portal e mudo por construcao - ele nao conhece Serial. Quem imprime e o composition root.
+void otaLog(void*, const char* linha) {
+    Serial.println(linha);
+}
+
 void otaKeepAlive(void*) {
     const uint32_t agora = g_clock.nowMs();
     if (static_cast<uint32_t>(agora - g_otaUltimoDesenhoMs) < 200u) {
@@ -854,6 +859,7 @@ void prepararCredenciaisOta() {
     }
 
     g_portal.setKeepAlive(&otaKeepAlive, nullptr);
+    g_portal.setLogger(&otaLog, nullptr);
 
     Serial.print(F("ota: radio DESLIGADO ate o menu mandar (item Atualizar, codigo "));
     Serial.print(ota::kCodigoAtivacao);

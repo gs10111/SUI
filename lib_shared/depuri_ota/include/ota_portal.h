@@ -77,6 +77,12 @@ public:
     // docs/ota.md.
     virtual void setKeepAlive(void (*fn)(void*), void* ctx) = 0;
 
+    // DIAGNOSTICO. Chamado a cada evento do portal com uma linha pronta. Existe porque a primeira
+    // tentativa de envio em bancada falhou e NAO HAVIA NADA para olhar: a barra nao andava, a
+    // pagina nao dizia nada e o console nao imprimia uma linha sequer. Um caminho que grava flash
+    // a 500 m nao pode ser mudo.
+    virtual void setLogger(void (*fn)(void*, const char*), void* ctx) = 0;
+
     // Derruba o ponto de acesso e o servidor. Existe porque o radio deixou de ficar no ar o
     // tempo todo em 2026-09-14: ele sobe sob comando e cai sozinho quando ninguem mais esta
     // usando, e "cai" tem de ser uma operacao de verdade e nao um sinalizador que finge.

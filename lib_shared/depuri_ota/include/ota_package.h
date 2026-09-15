@@ -112,6 +112,40 @@ inline const char* magic() { return "DEPURIOT"; }
 
 }  // namespace detail
 
+// O CABECALHO VIAJA EM HEXADECIMAL, e esta funcao e o motivo.
+//
+// O WebServer do core entrega o corpo de um POST como String, e faz isso com
+// `String(plainBuf)` (libraries/WebServer/src/Parsing.cpp:217) - construtor de C-string, que PARA
+// NO PRIMEIRO BYTE ZERO. O cabecalho tem um zero logo no offset 9 (o byte alto da versao do
+// formato), entao um POST binario chegava com 9 bytes em vez de 64: o pacote era descartado por
+// "curto demais" antes de qualquer conferencia, e a pagina nao tinha nem motivo para mostrar.
+//
+// Mandar 128 caracteres ASCII em vez de 64 bytes crus custa nada e nao depende de o transporte
+// preservar byte zero. A imagem continua indo crua, por multipart, que tem outro caminho no core.
+//
+// Devolve quantos bytes decodificou. Recusa comprimento impar, caractere fora de [0-9a-fA-F] e
+// saida que nao cabe - em silencio nao, com zero: quem chama distingue.
+inline size_t decodeHex(const char* texto, size_t n, uint8_t* saida, size_t cap) {
+    if (texto == nullptr || saida == nullptr || (n % 2u) != 0u || (n / 2u) > cap) {
+        return 0;
+    }
+    auto nibble = [](char c) -> int {
+        if (c >= '0' && c <= '9') { return c - '0'; }
+        if (c >= 'a' && c <= 'f') { return c - 'a' + 10; }
+        if (c >= 'A' && c <= 'F') { return c - 'A' + 10; }
+        return -1;
+    };
+    for (size_t i = 0; i < n; i += 2u) {
+        const int hi = nibble(texto[i]);
+        const int lo = nibble(texto[i + 1u]);
+        if (hi < 0 || lo < 0) {
+            return 0;
+        }
+        saida[i / 2u] = static_cast<uint8_t>((hi << 4) | lo);
+    }
+    return n / 2u;
+}
+
 // Le e julga o cabecalho. `out` so tem conteudo utilizavel quando devolve Ok.
 inline HeaderVerdict parseHeader(const uint8_t* bytes, size_t n, uint16_t meuAlvo,
                                  uint32_t tamanhoParticao, PackageHeader& out) {

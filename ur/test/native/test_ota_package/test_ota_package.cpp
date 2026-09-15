@@ -428,6 +428,81 @@ static void test_pacote_dourado_gerado_pelo_empacotador(void) {
                                       lido) == ota::HeaderVerdict::AlvoErrado);
 }
 
+// ---------------------------------------------------------------- cabecalho em hexadecimal
+
+// O DEFEITO QUE ESTA FUNCAO EXISTE PARA CONSERTAR, e que so apareceu na bancada: o WebServer do
+// core devolve o corpo de um POST com `String(plainBuf)` (Parsing.cpp:217), construtor de
+// C-string, que PARA NO PRIMEIRO BYTE ZERO. O cabecalho tem um zero no offset 9 - o byte alto da
+// versao do formato - entao um POST binario chegava com 9 bytes em vez de 64 e era descartado
+// como "curto demais", sem a pagina ter nem motivo para mostrar. Era deterministico: nunca
+// poderia ter funcionado.
+static void test_cabecalho_com_byte_zero_sobrevive_ao_hexadecimal(void) {
+    Imagem img(ota::kMinImageBytes);
+    ota::PackageHeader h;
+    cabecalhoDe(img, ota::kAlvoSensora, h);
+    uint8_t bruto[ota::kHeaderBytes];
+    ota::writeHeader(h, bruto);
+
+    // O byte do offset 9 E zero, e e ele que truncava tudo. Se um dia o layout mudar e este
+    // assert cair, o motivo do hexadecimal continua valendo - ha outros zeros no cabecalho.
+    TEST_ASSERT_EQUAL_HEX8(0x00, bruto[9]);
+
+    char texto[2 * ota::kHeaderBytes + 1];
+    static const char kHex[] = "0123456789abcdef";
+    for (size_t i = 0; i < ota::kHeaderBytes; ++i) {
+        texto[2 * i] = kHex[(bruto[i] >> 4) & 0x0Fu];
+        texto[2 * i + 1] = kHex[bruto[i] & 0x0Fu];
+    }
+    texto[2 * ota::kHeaderBytes] = '\0';
+    // O texto nao tem NENHUM zero no meio: e isso que o faz atravessar o String do core inteiro.
+    TEST_ASSERT_EQUAL_UINT32(2 * ota::kHeaderBytes, strlen(texto));
+
+    uint8_t voltou[ota::kHeaderBytes];
+    TEST_ASSERT_EQUAL_UINT32(ota::kHeaderBytes,
+                             ota::decodeHex(texto, strlen(texto), voltou, sizeof(voltou)));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(bruto, voltou, ota::kHeaderBytes);
+
+    ota::PackageHeader lido;
+    TEST_ASSERT_TRUE(ota::parseHeader(voltou, sizeof(voltou), ota::kAlvoSensora, kParticaoBytes,
+                                      lido) == ota::HeaderVerdict::Ok);
+}
+
+// Maiusculas e minusculas: o navegador e nosso, mas nao ha motivo para o decodificador ser
+// exigente onde nao custa nada.
+static void test_hexadecimal_aceita_as_duas_caixas(void) {
+    uint8_t a[4];
+    uint8_t b[4];
+    TEST_ASSERT_EQUAL_UINT32(4, ota::decodeHex("deadBEEF", 8, a, sizeof(a)));
+    TEST_ASSERT_EQUAL_UINT32(4, ota::decodeHex("DEADbeef", 8, b, sizeof(b)));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(a, b, 4);
+    TEST_ASSERT_EQUAL_HEX8(0xDE, a[0]);
+    TEST_ASSERT_EQUAL_HEX8(0xEF, a[3]);
+}
+
+// LIXO E RECUSADO COM ZERO, e nao decodificado pela metade: meio cabecalho aceito seria pior do
+// que nenhum, porque o CRC do cabecalho passaria a julgar bytes que ninguem mandou.
+static void test_hexadecimal_recusa_lixo_em_vez_de_decodificar_pela_metade(void) {
+    uint8_t buf[8];
+
+    // COMPRIMENTO IMPAR. O texto abaixo continua com caracteres validos DEPOIS do comprimento
+    // declarado, de proposito: com "abc" o decodificador sem a guarda tropecava no terminador e
+    // devolvia 0 por acidente, e o teste passava enquanto o codigo lia um byte alem do que lhe
+    // foi dito. Foi um mutante sobrevivente que mostrou isso.
+    const char impar[] = "abcdef";
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(0, ota::decodeHex(impar, 3, buf, sizeof(buf)),
+                                     "comprimento impar tem de ser recusado, nao arredondado");
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("abc", 3, buf, sizeof(buf)));        // impar
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("ab0g", 4, buf, sizeof(buf)));       // 'g'
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("ab 0", 4, buf, sizeof(buf)));       // espaco
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("aabbccddee", 10, buf, 4));          // nao cabe
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex(nullptr, 4, buf, sizeof(buf)));
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("aabb", 4, nullptr, 8));
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("", 0, buf, sizeof(buf)));           // vazio
+
+    // E o caso exato do defeito: 9 bytes de um cabecalho de 64 nao podem virar "quase".
+    TEST_ASSERT_EQUAL_UINT32(0, ota::decodeHex("444550555249", 12, buf, 4));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_crc32_bate_com_os_vetores_publicados);
@@ -449,5 +524,8 @@ int main(int, char**) {
     RUN_TEST(test_um_bit_trocado_no_meio_da_imagem_reprova);
     RUN_TEST(test_sha256_errado_reprova_mesmo_com_crc32_certo);
     RUN_TEST(test_pacote_dourado_gerado_pelo_empacotador);
+    RUN_TEST(test_cabecalho_com_byte_zero_sobrevive_ao_hexadecimal);
+    RUN_TEST(test_hexadecimal_aceita_as_duas_caixas);
+    RUN_TEST(test_hexadecimal_recusa_lixo_em_vez_de_decodificar_pela_metade);
     return UNITY_END();
 }

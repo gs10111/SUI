@@ -161,6 +161,11 @@ bool g_otaNoAr = false;
 // nao de conforto: ver ota_portal.h. handleClient() le o corpo inteiro do POST sem devolver o
 // controle, o laco nao passa, e nesta placa e o LACO que renova o token de liveness. Sem esta
 // funcao a sensora reseta no meio de todo envio, com a particao ociosa pela metade.
+// O portal e mudo por construcao - ele nao conhece a porta de console. Quem imprime e daqui.
+void otaLog(void*, const char* linha) {
+    g_io.writeLine(linha);
+}
+
 void otaKeepAlive(void*) {
     g_wdt.heartbeat();
 }
@@ -189,6 +194,7 @@ void prepararCredenciaisOta() {
     }
 
     g_portal.setKeepAlive(&otaKeepAlive, nullptr);
+    g_portal.setLogger(&otaLog, nullptr);
 
     g_io.write("ota: radio DESLIGADO ate a supervisora mandar. Rede seria ");
     g_io.write(g_otaSsid);

@@ -6,6 +6,8 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
+#include <stdarg.h>
+
 #include "ota_credentials.h"
 #include "ota_package.h"
 
@@ -57,12 +59,18 @@ $('bt').onclick=async()=>{
  const f=$('arq').files[0];if(!f)return;
  $('bt').disabled=true;ocupado=true;
  try{
-  const cab=await f.slice(0,64).arrayBuffer();
-  const r=await fetch('/cabecalho',{method:'POST',body:cab});
+  // HEXADECIMAL, e nao os 64 bytes crus: o WebServer do ESP32 entrega o corpo como String
+  // construida de C-string, que para no primeiro byte zero - e o cabecalho tem um zero no
+  // offset 9. Cru, chegavam 9 bytes e o pacote era descartado sem motivo visivel.
+  const b=new Uint8Array(await f.slice(0,64).arrayBuffer());
+  if(b.length<64){$('det').textContent='arquivo pequeno demais para ser um pacote';return;}
+  const hx=Array.from(b).map(x=>x.toString(16).padStart(2,'0')).join('');
+  const r=await fetch('/cabecalho',{method:'POST',body:hx});
   const j=await r.json();
   $('fase').textContent=j.fase;$('det').textContent=j.det||'';
-  if(j.ok){window.pend=f;}
- }catch(e){$('det').textContent='falha de conexao';}
+  if(j.ok){window.pend=f;$('det').textContent='pacote aceito - aguardando o painel';}
+  else if(!j.det){$('det').textContent='pacote recusado';}
+ }catch(e){$('det').textContent='falha de conexao ao enviar o cabecalho';}
  ocupado=false;
 };
 async function enviaImagem(f){
@@ -91,6 +99,9 @@ WifiUpdatePortal::WifiUpdatePortal()
       estado_{"", "", 0, false, false},
       keepAlive_(nullptr),
       keepAliveCtx_(nullptr),
+      logger_(nullptr),
+      loggerCtx_(nullptr),
+      proximoAvisoBytes_(0),
       noAr_(false),
       dnsNoAr_(false),
       rotasRegistradas_(false),
@@ -103,6 +114,23 @@ WifiUpdatePortal::WifiUpdatePortal()
 void WifiUpdatePortal::setKeepAlive(void (*fn)(void*), void* ctx) {
     keepAlive_ = fn;
     keepAliveCtx_ = ctx;
+}
+
+void WifiUpdatePortal::setLogger(void (*fn)(void*, const char*), void* ctx) {
+    logger_ = fn;
+    loggerCtx_ = ctx;
+}
+
+void WifiUpdatePortal::registrar(const char* fmt, ...) {
+    if (logger_ == nullptr) {
+        return;
+    }
+    char linha[160];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(linha, sizeof(linha), fmt, ap);
+    va_end(ap);
+    logger_(loggerCtx_, linha);
 }
 
 void WifiUpdatePortal::manterVivo() {
@@ -219,6 +247,7 @@ uint8_t WifiUpdatePortal::clientesConectados() const {
 
 void WifiUpdatePortal::tratarRaiz() {
     ++requisicoes_;
+    registrar("ota: pagina servida para %s", servidor_.client().remoteIP().toString().c_str());
     servidor_.send_P(200, "text/html", kPagina);
 }
 
@@ -240,11 +269,26 @@ void WifiUpdatePortal::tratarEstado() {
 // conexao aberta por um minuto.
 void WifiUpdatePortal::tratarCabecalho() {
     ++requisicoes_;
+    // EM HEXADECIMAL, e nao cru: ver decodeHex() em ota_package.h. O WebServer entrega o corpo
+    // como String construida de C-string, que para no primeiro byte zero - e o cabecalho tem um
+    // zero no offset 9.
     const String corpo = servidor_.arg("plain");
+    uint8_t cab[ota::kHeaderBytes];
+    const size_t n = ota::decodeHex(corpo.c_str(), corpo.length(), cab, sizeof(cab));
+    registrar("ota: POST /cabecalho  %u caracteres -> %u bytes", (unsigned)corpo.length(),
+              (unsigned)n);
+
     bool aceito = false;
-    if (corpo.length() >= ota::kHeaderBytes && sink_ != nullptr) {
-        aceito = sink_->onHeader(reinterpret_cast<const uint8_t*>(corpo.c_str()),
-                                 static_cast<uint32_t>(corpo.length()));
+    if (n != ota::kHeaderBytes) {
+        registrar("ota: cabecalho MALFORMADO (esperava %u caracteres hexadecimais)",
+                  (unsigned)(2u * ota::kHeaderBytes));
+    } else if (sink_ == nullptr) {
+        registrar("ota: sem destino para o pacote (erro de montagem do firmware)");
+    } else {
+        aceito = sink_->onHeader(cab, static_cast<uint32_t>(n));
+        registrar("ota: cabecalho %s - %s", aceito ? "ACEITO" : "RECUSADO",
+                  estado_.detalhe == nullptr || estado_.detalhe[0] == '\0' ? estado_.fase
+                                                                          : estado_.detalhe);
     }
     char json[256];
     snprintf(json, sizeof(json), "{\"ok\":%s,\"fase\":\"%s\",\"det\":\"%s\"}",
@@ -264,6 +308,8 @@ void WifiUpdatePortal::tratarImagemPedaco() {
     if (envio.status == UPLOAD_FILE_START) {
         g_cabecalhoLidos = 0;
         envioAbortado_ = false;
+        proximoAvisoBytes_ = 0;
+        registrar("ota: inicio do envio da imagem");
         return;
     }
     if (envio.status == UPLOAD_FILE_WRITE) {
@@ -272,11 +318,22 @@ void WifiUpdatePortal::tratarImagemPedaco() {
         }
         if (!sink_->onChunk(envio.buf, envio.currentSize)) {
             envioAbortado_ = true;
+            registrar("ota: envio RECUSADO no byte %u - %s", (unsigned)envio.totalSize,
+                      estado_.detalhe == nullptr ? "" : estado_.detalhe);
+            return;
+        }
+        // Uma linha a cada 64 KiB: o bastante para ver que anda, pouco o bastante para nao
+        // inundar um console de 115200 durante um envio de 1280 KiB.
+        if (envio.totalSize >= proximoAvisoBytes_) {
+            registrar("ota: %u KiB gravados (%u por mil)", (unsigned)(envio.totalSize / 1024u),
+                      (unsigned)estado_.progressoPorMil);
+            proximoAvisoBytes_ = envio.totalSize + 65536u;
         }
         return;
     }
     if (envio.status == UPLOAD_FILE_ABORTED) {
         envioAbortado_ = true;
+        registrar("ota: envio ABORTADO pelo cliente no byte %u", (unsigned)envio.totalSize);
         if (sink_ != nullptr) {
             sink_->onAbort();
         }
@@ -289,6 +346,8 @@ void WifiUpdatePortal::tratarImagemFim() {
     if (sink_ != nullptr && !envioAbortado_) {
         sink_->onEnd();
     }
+    registrar("ota: fim do envio - %s %s", estado_.fase == nullptr ? "?" : estado_.fase,
+              estado_.detalhe == nullptr ? "" : estado_.detalhe);
     char json[256];
     snprintf(json, sizeof(json), "{\"fase\":\"%s\",\"det\":\"%s\"}",
              estado_.fase == nullptr ? "" : estado_.fase,

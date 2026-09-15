@@ -50,6 +50,7 @@ public:
     void end() override;
     void publish(const PortalStatus& st) override;
     void setKeepAlive(void (*fn)(void*), void* ctx) override;
+    void setLogger(void (*fn)(void*, const char*), void* ctx) override;
     const char* enderecoPagina() const override { return endereco_; }
     uint32_t requisicoes() const override { return requisicoes_; }
     uint8_t clientesConectados() const override;
@@ -66,6 +67,7 @@ private:
     void tratarImagemFim();
     void tratarImagemPedaco();
     void manterVivo();
+    void registrar(const char* fmt, ...) __attribute__((format(printf, 2, 3)));
 
     static WifiUpdatePortal* instancia_;  // o WebServer so aceita callback sem contexto
 
@@ -75,6 +77,9 @@ private:
     PortalStatus estado_;
     void (*keepAlive_)(void*);
     void* keepAliveCtx_;
+    void (*logger_)(void*, const char*);
+    void* loggerCtx_;
+    uint32_t proximoAvisoBytes_;
     char ssid_[33];
     char endereco_[16];
     bool noAr_;

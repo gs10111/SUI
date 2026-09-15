@@ -377,6 +377,39 @@ prazo sem ele entender por que. Sao poucos segundos.
 
 ---
 
+## 8.6 Quando nao acontece nada: o que olhar
+
+Ligue o console (115200) da placa em que voce esta enviando. **Todo passo do portal imprime uma
+linha.** Um envio que da certo sai assim:
+
+```
+ota: pagina servida para 192.168.4.2
+ota: POST /cabecalho  128 caracteres -> 64 bytes
+ota: cabecalho ACEITO - CONFIRME NO PAINEL
+ota: pacote aceito, versao 0.2.0  sha256 2CB5A04C...
+ota: inicio do envio da imagem
+ota: 64 KiB gravados (68 por mil)
+...
+ota: fim do envio - CONCLUIDO - REINICIANDO
+```
+
+O que cada silencio quer dizer:
+
+| ultima linha vista | o que esta acontecendo |
+|---|---|
+| nenhuma | o celular nao chegou a falar com a placa - confira a rede e o endereco |
+| `pagina servida` e mais nada | voce nao chegou a tocar em Enviar, ou o botao esta desabilitado |
+| `POST /cabecalho ... -> 0 bytes` | o arquivo nao e um `.ota` (mandou o `firmware.bin`?) |
+| `cabecalho RECUSADO - ...` | o motivo esta na propria linha, e tambem na pagina |
+| `cabecalho ACEITO - CONFIRME NO PAINEL` | **va ao painel da supervisora e segure MENU 3 s** |
+| `inicio do envio` sem KiB depois | a conexao caiu logo no comeco |
+
+> **ESTE LOG FOI ACRESCENTADO EM 2026-09-15**, depois de a primeira tentativa de envio em bancada
+> falhar sem deixar absolutamente nada para olhar - a barra parada, a pagina muda e o console sem
+> uma linha. Um caminho que grava flash a 500 m nao pode ser mudo, e era.
+
+---
+
 ## 9. O que ainda nao foi medido
 
 Esta secao existe porque a atualizacao por WiFi foi implementada **antes** das medicoes que a
