@@ -94,6 +94,7 @@ WifiUpdatePortal::WifiUpdatePortal()
       noAr_(false),
       dnsNoAr_(false),
       rotasRegistradas_(false),
+      requisicoes_(0),
       envioAbortado_(false) {
     ssid_[0] = '\0';
     endereco_[0] = '\0';
@@ -217,10 +218,12 @@ uint8_t WifiUpdatePortal::clientesConectados() const {
 }
 
 void WifiUpdatePortal::tratarRaiz() {
+    ++requisicoes_;
     servidor_.send_P(200, "text/html", kPagina);
 }
 
 void WifiUpdatePortal::tratarEstado() {
+    ++requisicoes_;
     char json[320];
     snprintf(json, sizeof(json),
              "{\"fase\":\"%s\",\"det\":\"%s\",\"prog\":%u,\"pac\":%s,\"byt\":%s,\"ssid\":\"%s\"}",
@@ -236,6 +239,7 @@ void WifiUpdatePortal::tratarEstado() {
 // possivel, e responder na hora e o que permite exigir confirmacao no painel sem segurar uma
 // conexao aberta por um minuto.
 void WifiUpdatePortal::tratarCabecalho() {
+    ++requisicoes_;
     const String corpo = servidor_.arg("plain");
     bool aceito = false;
     if (corpo.length() >= ota::kHeaderBytes && sink_ != nullptr) {
@@ -254,6 +258,7 @@ void WifiUpdatePortal::tratarCabecalho() {
 // durante o envio inteiro.
 void WifiUpdatePortal::tratarImagemPedaco() {
     HTTPUpload& envio = servidor_.upload();
+    ++requisicoes_;  // cada pedaco conta: um envio longo nao pode vencer o prazo de inatividade
     manterVivo();
 
     if (envio.status == UPLOAD_FILE_START) {
@@ -280,6 +285,7 @@ void WifiUpdatePortal::tratarImagemPedaco() {
 }
 
 void WifiUpdatePortal::tratarImagemFim() {
+    ++requisicoes_;
     if (sink_ != nullptr && !envioAbortado_) {
         sink_->onEnd();
     }

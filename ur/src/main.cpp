@@ -922,7 +922,12 @@ bool serviceOta() {
 
     // O portao derruba o radio sozinho quando ninguem mais esta usando - mas nunca no meio de uma
     // gravacao, que tem os prazos dela.
-    g_apGate.tick(agora, g_portal.clientesConectados() > 0u, g_ota.emCurso());
+    // ATIVIDADE, e nao cliente associado: ver ota_gate.h.
+    static uint32_t ultimasRequisicoes = 0;
+    const uint32_t agoraRequisicoes = g_portal.requisicoes();
+    const bool houveAtividade = (agoraRequisicoes != ultimasRequisicoes);
+    ultimasRequisicoes = agoraRequisicoes;
+    g_apGate.tick(agora, houveAtividade, g_ota.emCurso());
     if (!g_apGate.ativo()) {
         desativarOta();
         return false;

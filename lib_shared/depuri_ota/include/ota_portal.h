@@ -90,6 +90,13 @@ public:
     // esta desligado.
     virtual const char* enderecoPagina() const = 0;
 
+    // Quantas requisicoes o radio ja atendeu desde que subiu. E o que alimenta o relogio de
+    // inatividade do portao (ota_gate.h): "houve atividade" e este numero ter mudado.
+    //
+    // CONTA REQUISICAO E NAO CLIENTE ASSOCIADO, e a diferenca e a que importa em campo: um
+    // celular no bolso continua associado a rede por horas sem pedir nada.
+    virtual uint32_t requisicoes() const = 0;
+
     virtual uint8_t clientesConectados() const = 0;
     virtual bool noAr() const = 0;
 

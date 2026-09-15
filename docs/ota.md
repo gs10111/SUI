@@ -18,7 +18,7 @@ sensora, este por RS-485. Quem precisa atualizar liga o celular naquela rede, ab
 escolhe o arquivo `.ota` e envia. A supervisora exige ainda uma confirmacao no painel, com aviso
 do que vai acontecer com as saidas; a sensora, que nao tem painel, aceita direto.
 
-O radio **cai sozinho** depois de 10 minutos sem ninguem conectado, ou de 60 minutos no ar.
+O radio **cai sozinho** depois de **20 minutos sem nada chegar**, ou de 60 minutos no ar.
 
 ---
 
@@ -157,13 +157,27 @@ entender por que.
 
 | relogio | valor | o que mata |
 |---|---|---|
+| **inatividade do radio** | **20 min** | ponto de acesso no ar e **nada chegando** |
+| teto do radio | 60 min | alguem usando de verdade, e continuando a usar |
 | confirmacao | 60 s | pacote aceito e ninguem confirmou no painel |
 | estagnacao | 60 s | parou de chegar byte |
 | teto da gravacao | 300 s | fluxo lento porem continuo, que nunca estagna |
 | mensagem na tela | 10 s | recusa ou erro sai sozinho e a placa volta a aceitar |
 
-Os dois primeiros da gravacao existem juntos porque **um fluxo lento porem continuo nunca estagna
-e um fluxo morto nunca estoura o teto**. Vencido qualquer um, a sessao morre e as saidas voltam.
+Os dois da gravacao existem juntos porque **um fluxo lento porem continuo nunca estagna e um
+fluxo morto nunca estoura o teto**. Vencido qualquer um, a sessao morre e as saidas voltam.
+
+### O relogio do radio conta ATIVIDADE, nao cliente conectado
+
+E a diferenca que importa em campo: **um celular no bolso continua associado a rede do
+equipamento por horas sem pedir nada**. Se associacao contasse como vida, o radio ficaria ligado
+exatamente no caso que o prazo existe para cobrir.
+
+O que renova os 20 minutos e uma requisicao chegar - abrir a pagina, a pagina consultar o estado,
+um pedaco de imagem subir. O teto de 60 minutos existe porque a propria pagina consulta o estado
+a cada 700 ms enquanto estiver aberta: uma aba esquecida aberta renovaria o prazo para sempre.
+
+Nenhum dos dois derruba o radio no meio de uma gravacao.
 
 Ha um caso que nenhum destes relogios cobre e que resolve sozinho: se o cliente parar de enviar
 **sem desconectar**, o `WebServer` do core fica em `while(!client.available() && client.connected())

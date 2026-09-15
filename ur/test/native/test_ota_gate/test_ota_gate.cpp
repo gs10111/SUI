@@ -30,50 +30,78 @@ static void test_nasce_fechado(void) {
     TEST_ASSERT_FALSE(p.ativo());
 }
 
-// O CASO COMUM DE VERDADE: o tecnico ativou, foi chamado para outra coisa e esqueceu. Ninguem
-// conectou, e o radio nao pode ficar ligado ate alguem passar por ali de novo.
-static void test_ativou_e_ninguem_conectou_cai_sozinho(void) {
+// O CASO COMUM DE VERDADE: o tecnico ativou, foi chamado para outra coisa e esqueceu. Nada chega,
+// e o radio nao pode ficar ligado ate alguem passar por ali de novo.
+static void test_ativou_e_nada_chegou_cai_sozinho(void) {
     ota::ApGate p;
     p.ativar(kT0);
     TEST_ASSERT_TRUE(p.ativo());
 
     p.tick(kT0 + 5u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
-    p.tick(kT0 + ota::kSemClienteMs - 1u, false, false);
+    p.tick(kT0 + ota::kSemAtividadeMs - 1u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
-    p.tick(kT0 + ota::kSemClienteMs, false, false);
+    p.tick(kT0 + ota::kSemAtividadeMs, false, false);
     TEST_ASSERT_FALSE(p.ativo());
 }
 
-// Cliente conectado RENOVA. Quem esta usando nao pode ter o radio derrubado embaixo.
-static void test_cliente_conectado_renova_o_prazo(void) {
+// O CASO QUE O CRITERIO DE ATIVIDADE EXISTE PARA COBRIR, e que o criterio antigo - "ha cliente
+// associado" - deixava passar: o celular fica no bolso, associado a rede do equipamento, por
+// horas, sem pedir nada. Associacao nao e uso.
+static void test_celular_associado_e_parado_nao_segura_o_radio(void) {
+    ota::ApGate p;
+    p.ativar(kT0);
+    // Muitos tiques, cliente presente o tempo todo, mas NADA chegando.
+    for (uint32_t t = kT0; ; t += 60000u) {
+        p.tick(t, /*houveAtividade=*/false, false);
+        if (!p.ativo()) {
+            TEST_ASSERT_TRUE(static_cast<uint32_t>(t - kT0) >= ota::kSemAtividadeMs);
+            return;
+        }
+        TEST_ASSERT_TRUE_MESSAGE(static_cast<uint32_t>(t - kT0) < ota::kSemAtividadeMs,
+                                 "passou do prazo e continuou no ar");
+    }
+}
+
+// E o prazo e o que o operador pediu: vinte minutos.
+static void test_o_prazo_sem_atividade_e_de_vinte_minutos(void) {
+    TEST_ASSERT_EQUAL_UINT32(20u * 60u * 1000u, ota::kSemAtividadeMs);
+}
+
+// Atividade RENOVA. Quem esta usando nao pode ter o radio derrubado embaixo.
+static void test_atividade_renova_o_prazo(void) {
     ota::ApGate p;
     p.ativar(kT0);
     uint32_t t = kT0;
-    for (int i = 0; i < 5; ++i) {
-        t += ota::kSemClienteMs - 1000u;
+    // O passo fica logo abaixo do prazo de inatividade E o total, abaixo do teto: senao este
+    // teste mediria o TETO e nao a renovacao, que foi o que aconteceu na primeira escrita dele.
+    const uint32_t passo = ota::kSemAtividadeMs - 1000u;
+    const uint32_t voltas = ota::kTetoMs / passo;
+    TEST_ASSERT_TRUE_MESSAGE(voltas >= 2u, "sem duas voltas nao ha renovacao a observar");
+    for (uint32_t i = 0; i < voltas; ++i) {
+        t += passo;
         p.tick(t, true, false);
         TEST_ASSERT_TRUE(p.ativo());
     }
 }
 
-// ...e quando ele vai embora, o prazo volta a correr do instante em que ele saiu.
-static void test_depois_que_o_cliente_sai_o_prazo_corre_de_novo(void) {
+// ...e quando ela para, o prazo volta a correr do instante da ULTIMA coisa que chegou.
+static void test_depois_que_a_atividade_para_o_prazo_corre_de_novo(void) {
     ota::ApGate p;
     p.ativar(kT0);
-    const uint32_t saiu = kT0 + 30000u;
-    p.tick(saiu, true, false);
+    const uint32_t ultimo = kT0 + 30000u;
+    p.tick(ultimo, true, false);
     TEST_ASSERT_TRUE(p.ativo());
 
-    p.tick(saiu + ota::kSemClienteMs - 1u, false, false);
+    p.tick(ultimo + ota::kSemAtividadeMs - 1u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
-    p.tick(saiu + ota::kSemClienteMs, false, false);
+    p.tick(ultimo + ota::kSemAtividadeMs, false, false);
     TEST_ASSERT_FALSE(p.ativo());
 }
 
-// UM CELULAR ESQUECIDO NO BOLSO, ligado na rede do equipamento, seguraria o ponto de acesso no ar
-// por dias. O teto existe so para isso.
-static void test_o_teto_derruba_mesmo_com_cliente_grudado(void) {
+// A PROPRIA PAGINA consulta o estado a cada 700 ms enquanto estiver aberta. Uma aba esquecida
+// aberta e atividade de verdade e renovaria o prazo para sempre. O teto existe so para isso.
+static void test_o_teto_derruba_mesmo_com_uso_continuo(void) {
     ota::ApGate p;
     p.ativar(kT0);
     uint32_t t = kT0;
@@ -87,7 +115,7 @@ static void test_o_teto_derruba_mesmo_com_cliente_grudado(void) {
         p.tick(t, true, false);
     }
     TEST_ASSERT_FALSE(p.ativo());
-    TEST_ASSERT_TRUE(ota::kTetoMs > ota::kSemClienteMs);
+    TEST_ASSERT_TRUE(ota::kTetoMs > ota::kSemAtividadeMs);
 }
 
 // MAS O TETO NAO ATROPELA UMA GRAVACAO EM CURSO. Derrubar o radio no meio deixaria a particao
@@ -102,12 +130,13 @@ static void test_o_teto_nao_derruba_no_meio_de_uma_gravacao(void) {
     TEST_ASSERT_FALSE(p.ativo());
 }
 
-// E o prazo de "ninguem conectou" tambem nao pode matar uma sessao - o caso existe porque a
-// sensora nao tem cliente nenhum durante a propria gravacao quando o envio vem por outro caminho.
-static void test_gravacao_em_curso_segura_tambem_o_prazo_sem_cliente(void) {
+// E o prazo de inatividade tambem nao pode matar uma sessao. O caso e real: durante a escrita na
+// flash o laco fica preso dentro de handleClient() e pode nao ticar com atividade nova por
+// segundos seguidos.
+static void test_gravacao_em_curso_segura_tambem_o_prazo_de_inatividade(void) {
     ota::ApGate p;
     p.ativar(kT0);
-    p.tick(kT0 + ota::kSemClienteMs + 1000u, false, /*sessaoEmCurso=*/true);
+    p.tick(kT0 + ota::kSemAtividadeMs + 1000u, false, /*sessaoEmCurso=*/true);
     TEST_ASSERT_TRUE(p.ativo());
 }
 
@@ -115,11 +144,11 @@ static void test_gravacao_em_curso_segura_tambem_o_prazo_sem_cliente(void) {
 static void test_reativar_renova_os_prazos(void) {
     ota::ApGate p;
     p.ativar(kT0);
-    p.tick(kT0 + ota::kSemClienteMs - 1u, false, false);
+    p.tick(kT0 + ota::kSemAtividadeMs - 1u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
 
-    p.ativar(kT0 + ota::kSemClienteMs - 1u);
-    p.tick(kT0 + ota::kSemClienteMs + 100u, false, false);
+    p.ativar(kT0 + ota::kSemAtividadeMs - 1u);
+    p.tick(kT0 + ota::kSemAtividadeMs + 100u, false, false);
     TEST_ASSERT_TRUE_MESSAGE(p.ativo(), "reativar tem de zerar o relogio");
 }
 
@@ -140,11 +169,11 @@ static void test_os_prazos_atravessam_o_wrap_de_2_elevado_a_32(void) {
     p.ativar(t);
     p.tick(t + 5u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
-    p.tick(t + ota::kSemClienteMs / 2u, false, false);
+    p.tick(t + ota::kSemAtividadeMs / 2u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
-    p.tick(t + ota::kSemClienteMs - 1u, false, false);
+    p.tick(t + ota::kSemAtividadeMs - 1u, false, false);
     TEST_ASSERT_TRUE(p.ativo());
-    p.tick(t + ota::kSemClienteMs, false, false);
+    p.tick(t + ota::kSemAtividadeMs, false, false);
     TEST_ASSERT_FALSE(p.ativo());
 }
 
@@ -153,14 +182,14 @@ static void test_o_tempo_restante_encolhe_e_nunca_mente(void) {
     ota::ApGate p;
     p.ativar(kT0);
     const uint16_t inicio = p.restanteS(kT0);
-    TEST_ASSERT_EQUAL_UINT16(ota::kSemClienteMs / 1000u, inicio);
+    TEST_ASSERT_EQUAL_UINT16(ota::kSemAtividadeMs / 1000u, inicio);
 
-    const uint16_t meio = p.restanteS(kT0 + ota::kSemClienteMs / 2u);
+    const uint16_t meio = p.restanteS(kT0 + ota::kSemAtividadeMs / 2u);
     TEST_ASSERT_TRUE(meio < inicio);
     TEST_ASSERT_TRUE(meio > 0);
 
-    TEST_ASSERT_EQUAL_UINT16(0, p.restanteS(kT0 + ota::kSemClienteMs));
-    // E nunca pode passar do teto, mesmo com o cliente renovando o prazo ocioso.
+    TEST_ASSERT_EQUAL_UINT16(0, p.restanteS(kT0 + ota::kSemAtividadeMs));
+    // E nunca pode passar do teto, mesmo com atividade renovando o prazo ocioso.
     ota::ApGate q;
     q.ativar(kT0);
     q.tick(kT0 + ota::kTetoMs - 30000u, true, false);
@@ -171,12 +200,14 @@ int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_so_o_codigo_certo_abre);
     RUN_TEST(test_nasce_fechado);
-    RUN_TEST(test_ativou_e_ninguem_conectou_cai_sozinho);
-    RUN_TEST(test_cliente_conectado_renova_o_prazo);
-    RUN_TEST(test_depois_que_o_cliente_sai_o_prazo_corre_de_novo);
-    RUN_TEST(test_o_teto_derruba_mesmo_com_cliente_grudado);
+    RUN_TEST(test_ativou_e_nada_chegou_cai_sozinho);
+    RUN_TEST(test_celular_associado_e_parado_nao_segura_o_radio);
+    RUN_TEST(test_o_prazo_sem_atividade_e_de_vinte_minutos);
+    RUN_TEST(test_atividade_renova_o_prazo);
+    RUN_TEST(test_depois_que_a_atividade_para_o_prazo_corre_de_novo);
+    RUN_TEST(test_o_teto_derruba_mesmo_com_uso_continuo);
     RUN_TEST(test_o_teto_nao_derruba_no_meio_de_uma_gravacao);
-    RUN_TEST(test_gravacao_em_curso_segura_tambem_o_prazo_sem_cliente);
+    RUN_TEST(test_gravacao_em_curso_segura_tambem_o_prazo_de_inatividade);
     RUN_TEST(test_reativar_renova_os_prazos);
     RUN_TEST(test_desativar_fecha_na_hora);
     RUN_TEST(test_os_prazos_atravessam_o_wrap_de_2_elevado_a_32);

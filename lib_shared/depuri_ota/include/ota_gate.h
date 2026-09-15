@@ -10,10 +10,16 @@
 //
 // POR QUE HA PRAZO, E POR QUE ELE NAO E UM SO:
 //
-//   - kSemClienteMs  - ativou e ninguem conectou. O caso comum e o tecnico que ativou, foi
-//                      chamado para outra coisa e esqueceu. Dez minutos.
-//   - kTetoMs        - alguem conectou e ficou. Um celular esquecido no bolso, ligado na rede do
-//                      equipamento, seguraria o ponto de acesso no ar por dias sem este teto.
+//   - kSemAtividadeMs - o radio esta no ar e NADA CHEGA. Cobre os dois casos de uma vez: o
+//                       tecnico que ativou e foi chamado para outra coisa, e o celular esquecido
+//                       no bolso, associado a rede e sem pedir nada. Vinte minutos.
+//   - kTetoMs         - alguem esta MESMO usando, e continua usando. A propria pagina consulta o
+//                       estado a cada 700 ms enquanto estiver aberta, entao uma aba esquecida
+//                       aberta renovaria o prazo de atividade para sempre sem este teto.
+//
+// A CONTA E DE ATIVIDADE, E NAO DE CLIENTE ASSOCIADO, e a diferenca e a que importa em campo: um
+// celular no bolso continua associado a rede por horas sem enviar nada. Contar associacao como
+// vida deixaria o radio ligado exatamente no caso que o prazo existe para cobrir.
 //
 // E POR QUE O TETO NAO VALE DURANTE UMA ATUALIZACAO: derrubar o radio no meio de uma gravacao
 // deixaria a particao ociosa pela metade e a maquina em alarme ate a sessao morrer por prazo
@@ -35,14 +41,14 @@ namespace ota {
 // com isso, ficar sem caminho de atualizacao. E saber 1234 nao basta para ligar o radio.
 constexpr uint16_t kCodigoAtivacao = 1976;
 
-constexpr uint32_t kSemClienteMs = 600000;   // 10 min sem ninguem conectar
-constexpr uint32_t kTetoMs = 3600000;        // 60 min no ar, mesmo com cliente
+constexpr uint32_t kSemAtividadeMs = 1200000;  // 20 min sem nada chegar
+constexpr uint32_t kTetoMs = 3600000;          // 60 min no ar, mesmo com uso continuo
 
 constexpr bool codigoCorreto(uint16_t digitado) { return digitado == kCodigoAtivacao; }
 
 class ApGate {
 public:
-    ApGate() : ativoDesdeMs_(0), ultimoClienteMs_(0), ativo_(false), jaTeveCliente_(false) {}
+    ApGate() : ativoDesdeMs_(0), ultimaAtividadeMs_(0), ativo_(false) {}
 
     bool ativo() const { return ativo_; }
 
@@ -51,18 +57,16 @@ public:
         // painel dizendo "ainda estou aqui" - recusar seria obrigar a esperar o prazo vencer
         // para poder pedir de novo.
         ativoDesdeMs_ = nowMs;
-        ultimoClienteMs_ = nowMs;
+        ultimaAtividadeMs_ = nowMs;
         ativo_ = true;
-        jaTeveCliente_ = false;
     }
 
-    void desativar() {
-        ativo_ = false;
-        jaTeveCliente_ = false;
-    }
+    void desativar() { ativo_ = false; }
 
-    // Chamada a cada volta do laco com o que o radio esta vendo.
-    void tick(uint32_t nowMs, bool clienteConectado, bool sessaoEmCurso) {
+    // Chamada a cada volta do laco. `houveAtividade` e verdadeiro quando ALGO CHEGOU pelo radio
+    // desde o tique anterior - uma requisicao a pagina, um pedaco de imagem. Nao e "ha alguem
+    // conectado": ver o cabecalho.
+    void tick(uint32_t nowMs, bool houveAtividade, bool sessaoEmCurso) {
         // GUARDA DEFENSIVA, e assumidamente equivalente hoje: nenhum caminho abaixo ABRE o
         // portao, so fecha, entao remove-la nao muda nada que se possa observar - um mutante que
         // a apaga sobrevive, e isso esta registrado aqui em vez de ser escondido atras de um
@@ -71,24 +75,19 @@ public:
         if (!ativo_) {
             return;
         }
-        if (clienteConectado) {
-            ultimoClienteMs_ = nowMs;
-            jaTeveCliente_ = true;
+        if (houveAtividade) {
+            ultimaAtividadeMs_ = nowMs;
         }
         if (sessaoEmCurso) {
             // Uma gravacao em curso tem os prazos dela. Derrubar o radio aqui deixaria a particao
             // ociosa pela metade e a maquina em alarme ate a sessao morrer sozinha.
             return;
         }
-        if (!jaTeveCliente_ && (nowMs - ativoDesdeMs_) >= kSemClienteMs) {
+        if ((nowMs - ultimaAtividadeMs_) >= kSemAtividadeMs) {
             desativar();
             return;
         }
         if ((nowMs - ativoDesdeMs_) >= kTetoMs) {
-            desativar();
-            return;
-        }
-        if (jaTeveCliente_ && (nowMs - ultimoClienteMs_) >= kSemClienteMs) {
             desativar();
         }
     }
@@ -98,9 +97,9 @@ public:
         if (!ativo_) {
             return 0;
         }
-        const uint32_t base = jaTeveCliente_ ? ultimoClienteMs_ : ativoDesdeMs_;
-        const uint32_t gastoOcioso = nowMs - base;
-        uint32_t faltaOcioso = (gastoOcioso >= kSemClienteMs) ? 0u : (kSemClienteMs - gastoOcioso);
+        const uint32_t gastoOcioso = nowMs - ultimaAtividadeMs_;
+        uint32_t faltaOcioso =
+            (gastoOcioso >= kSemAtividadeMs) ? 0u : (kSemAtividadeMs - gastoOcioso);
         const uint32_t gastoTeto = nowMs - ativoDesdeMs_;
         const uint32_t faltaTeto = (gastoTeto >= kTetoMs) ? 0u : (kTetoMs - gastoTeto);
         if (faltaTeto < faltaOcioso) {
@@ -111,9 +110,8 @@ public:
 
 private:
     uint32_t ativoDesdeMs_;
-    uint32_t ultimoClienteMs_;
+    uint32_t ultimaAtividadeMs_;
     bool ativo_;
-    bool jaTeveCliente_;
 };
 
 }  // namespace ota

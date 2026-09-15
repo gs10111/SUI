@@ -51,6 +51,7 @@ public:
     void publish(const PortalStatus& st) override;
     void setKeepAlive(void (*fn)(void*), void* ctx) override;
     const char* enderecoPagina() const override { return endereco_; }
+    uint32_t requisicoes() const override { return requisicoes_; }
     uint8_t clientesConectados() const override;
     bool noAr() const override { return noAr_; }
 
@@ -79,5 +80,6 @@ private:
     bool noAr_;
     bool dnsNoAr_;
     bool rotasRegistradas_;
+    uint32_t requisicoes_;
     bool envioAbortado_;
 };

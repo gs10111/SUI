@@ -3007,8 +3007,14 @@ radio permanente e um equipamento gravavel por quem passar perto do patio, o ano
 - o radio nasce **desligado** nas duas placas;
 - o item **`Atualizar`** do menu da supervisora, atras do codigo fixo **1976**, liga o ponto de
   acesso **das duas** - o da sensora por RS-485, em broadcast;
-- o radio **cai sozinho**: 10 min sem ninguem conectado, ou 60 min no ar, e nunca no meio de uma
+- o radio **cai sozinho**: **20 min sem nada chegar**, ou 60 min no ar, e nunca no meio de uma
   gravacao.
+
+**O RELOGIO CONTA ATIVIDADE, NAO CLIENTE ASSOCIADO** (ajustado pelo bigboss em 2026-09-15, depois
+da primeira bancada). Um celular no bolso continua associado a rede por horas sem pedir nada;
+contar associacao como vida deixaria o radio ligado exatamente no caso que o prazo existe para
+cobrir. O que renova os 20 min e uma requisicao chegar. O teto de 60 min continua existindo
+porque a propria pagina consulta o estado a cada 700 ms enquanto estiver aberta.
 
 Isto encolhe a janela de exposicao de "sempre" para "os minutos em que um tecnico esta na frente
 do painel", e e **o unico ganho de seguranca real que o produto teve depois que a senha virou
