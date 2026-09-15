@@ -6,6 +6,8 @@
 
 #include <WiFi.h>
 
+#include "ota_gate.h"
+
 #include "core/spi_probe.h"
 #include "drivers/scl3300_math.h"
 
@@ -201,7 +203,7 @@ void SensorConsole::printHelp() {
     ctx_.io.writeLine("  link       estatisticas do RS-485 e o baud");
     ctx_.io.writeLine("  proto      mostra ou troca o escravo: proto [jig|modbus]");
     ctx_.io.writeLine("  wdt        watchdog externo STWD100");
-    ctx_.io.writeLine("  wifi       ponto de acesso de atualizacao; wifi on | wifi off");
+    ctx_.io.writeLine("  wifi       ponto de acesso de atualizacao; wifi on <codigo> | wifi off");
     ctx_.io.writeLine("  ver        firmware, BOARD_REV e pinout");
     ctx_.io.writeLine("  spiprobe   bring-up do SPI: spiprobe miso | all | pin <n>");
     ctx_.io.writeLine("  spiraw     envia um quadro de 32 bits: spiraw <hex>");
@@ -807,13 +809,13 @@ void SensorConsole::cmdProto(const char* arg) {
 }
 
 // O CAMINHO DE VOLTA DA DECISAO 17, e a razao de ele existir esta em docs/ota.md: a radio ficou
-// ligada 100% do tempo nesta placa sem que a MEDICAO 12 - ruido de RF no SCL3300 - tivesse sido
+// ligada sob comando nesta placa sem que a MEDICAO 12 - ruido de RF no SCL3300 - tivesse sido
 // feita. Se a bancada mostrar que o inclinometro sofre com a radio no ar, "wifi off" derruba o
 // ponto de acesso na hora, sem regravar nada e sem tirar a placa do painel.
 //
-// Desligar NAO e persistente: o proximo boot sobe o ponto de acesso de novo. Isto e ferramenta de
-// medicao, nao configuracao - uma placa que se lembrasse de estar com a radio desligada seria uma
-// placa que ninguem consegue mais atualizar sem cabo.
+// Desligar NAO e persistente, e desde que o radio passou a ser sob comando isso deixou de ser
+// uma ressalva: o proximo boot sobe com o radio DESLIGADO de qualquer forma. O que nao persiste e
+// o estado ligado.
 void SensorConsole::cmdWifi(const char* arg) {
     if (arg != nullptr && strcmp(arg, "off") == 0) {
         if (ctx_.otaDesligar != nullptr) {
@@ -822,10 +824,23 @@ void SensorConsole::cmdWifi(const char* arg) {
         ctx_.io.writeLine("wifi  : DESLIGADO");
         return;
     }
-    if (arg != nullptr && strcmp(arg, "on") == 0) {
-        // Atalho de BANCADA. Em campo quem liga isto e a supervisora, pelo RS-485, depois do
-        // codigo digitado no painel. Aqui existe porque uma sensora na bancada, sem supervisora
-        // nenhuma ligada, precisa poder ser atualizada.
+    if (arg != nullptr && strncmp(arg, "on", 2) == 0) {
+        // EXIGE O CODIGO, e nao por capricho: a Decisao 15 item 3 - que a Decisao 17 declarou que
+        // continua valendo "sem uma virgula alterada" - lista `wifi on` entre os comandos de
+        // ATUACAO que nao podem existir no binario de producao, justamente porque um cabo USB no
+        // console nao pode acionar nada sem autenticacao. Sem o codigo aqui, este comando
+        // contornaria por completo o portao de 1976 do painel.
+        //
+        // O comando existe porque uma sensora na bancada, sem supervisora nenhuma ligada, precisa
+        // poder ser atualizada. Com o codigo, ele deixa de ser atuacao sem autenticacao.
+        const char* codigo = arg + 2;
+        while (*codigo == ' ') {
+            ++codigo;
+        }
+        if (!ota::codigoCorreto(static_cast<uint16_t>(strtoul(codigo, nullptr, 10)))) {
+            ctx_.io.writeLine("wifi  : uso 'wifi on <codigo>' - o mesmo codigo do painel");
+            return;
+        }
         if (ctx_.otaLigar != nullptr) {
             ctx_.otaLigar();
         }
@@ -841,7 +856,7 @@ void SensorConsole::cmdWifi(const char* arg) {
     if (ctx_.otaEndereco != nullptr && ctx_.otaEndereco()[0] != '\0') {
         ctx_.io.printf("pagina: http://%s\r\n", ctx_.otaEndereco());
     }
-    ctx_.io.writeLine("uso   : wifi on | wifi off");
+    ctx_.io.writeLine("uso   : wifi on <codigo> | wifi off");
     ctx_.io.writeLine("        em campo quem liga e a supervisora, pelo menu, com o codigo 1976");
 }
 

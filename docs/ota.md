@@ -359,11 +359,14 @@ abrir o modulo.
 
 | estado da supervisora | ponto de acesso | aceita pacote? |
 |---|---|---|
-| operacao normal | no ar | sim |
-| Modo Programacao / assistentes | no ar | sim - a tela de confirmacao toma o painel |
-| falha de enlace, latch de A7 | no ar | sim |
+| operacao normal | so depois de `Menu > Atualizar` | sim |
+| Modo Programacao / assistentes | idem | sim - a tela de confirmacao toma o painel |
+| falha de enlace, latch de A7 | idem | sim |
 | **CONFIG PERDIDA (A8)** | continua no ar se ja estava | **nao da para LIGAR o radio** |
-| logomarca e autoteste do boot | no ar | **nao** - a pagina fica muda |
+| logomarca e autoteste do boot | idem | **nao** - a pagina fica muda |
+
+Em toda linha, "no ar" quer dizer *depois de alguem ter digitado 1976 no painel*: o radio nasce
+desligado em todo boot.
 
 **CONFIG PERDIDA merece a linha em negrito, e a resposta mudou.** Enquanto o radio ficava
 permanentemente no ar, aquela placa podia ser atualizada normalmente. Desde que o radio passou a
@@ -428,28 +431,31 @@ As tarefas do stack WiFi do ESP-IDF rodam em prioridades 22 e 23 **no core 0**, 
 tarefa `ctrl`. Todo o orcamento de 50 ms do ciclo de seguranca foi calculado num core cujo unico
 ocupante de alta prioridade e o `esp_timer`.
 
-**A DECISIONS.md espera que esta medicao REPROVE.** Ela nunca foi feita. Ate que exista, o ponto de
-acesso permanentemente no ar e uma **escolha assumida, nao uma propriedade verificada** - e esta
-registrada como tal no proprio `setup()` de `ur/src/main.cpp`.
+**A DECISIONS.md espera que esta medicao REPROVE.** Ela nunca foi feita.
+
+O radio sob comando mudou o tamanho do problema, nao o problema: em vez de meses de operacao com
+o radio no ar, sao os minutos de uma atualizacao - durante os quais as saidas ja estao em alarme
+declarado, o que torna o jitter da `ctrl` muito menos critico. Mas a supervisora continua
+supervisionando durante a gravacao, e **isso continua sem medicao**.
 
 Aceitacao: periodo entre ticks <= 55 ms em 100.000 de 100.000 e zero transacoes Modbus perdidas
 por atraso.
 
 ### MEDICAO 12 - ruido de RF do radio no SCL3300 (sensora)
 
-`WiFi.mode(WIFI_OFF)` estava na sensora **desde o inicio por este motivo**. O inclinometro e a
-funcao inteira do produto, e o radio agora fica ligado 100% do tempo, nao so durante a
-atualizacao.
+`WiFi.mode(WIFI_OFF)` estava na sensora **desde o inicio por este motivo**, e o inclinometro e a
+funcao inteira do produto.
+
+O radio sob comando encolheu muito a exposicao - ele so sobe durante uma atualizacao e cai
+sozinho - mas **nao zerou o risco**: durante a gravacao o radio esta no ar e o SCL3300 continua
+sendo lido. Enquanto a medicao nao existir, nao se sabe se a leitura publicada durante uma
+atualizacao e confiavel.
 
 Caminho de volta, imediato e sem regravar nada:
 
 ```
 wifi off        # no console de bancada da sensora, 115200
 ```
-
-Desligar **nao persiste** no boot seguinte, de proposito: e ferramenta de medicao, nao
-configuracao. Uma placa que se lembrasse de estar sem radio seria uma placa que ninguem atualiza
-mais sem cabo.
 
 ### MEDICAO NOVA - alcance util do ponto de acesso
 
@@ -469,8 +475,15 @@ verificacao por `nm` no release. A **Decisao 17** a substitui nos itens 1, 2, 7 
 Continua valendo, sem alteracao:
 
 - **Item 3** - comandos de **atuacao** do console (`relay`, `ao raw`, `ao mode`, `test`,
-  `cal erase`) fora do binario de producao. Um ponto de acesso para atualizar firmware nao
-  autoriza escrever em rele por console.
+  `cal erase`, **`wifi on`**) fora do binario de producao. Um ponto de acesso para atualizar
+  firmware nao autoriza escrever em rele por console.
+
+  `wifi on` esta nessa lista **na Decisao 15 original**, e esta secao ja o omitiu uma vez - um
+  documento nao pode emendar em silencio um item que a Decisao 17 declarou valer "sem uma virgula
+  alterada". O comando existe na sensora porque uma placa na bancada, sem supervisora ligada,
+  precisa poder ser atualizada; para nao ser atuacao sem autenticacao, **ele exige o codigo**:
+  `wifi on 1976`. Sem o codigo, um cabo USB no console contornaria por completo o portao do
+  painel.
 - **Itens 4, 5 e 6** - ensaio funcional sem comandos de atuacao, marcacao `BUILD=FACTORY`, e a
   mesma regra nas duas placas.
 

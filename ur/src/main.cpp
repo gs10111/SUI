@@ -218,9 +218,10 @@ app::Application g_app(g_clock, g_link, g_relays, g_analog, g_wdt);
 app::BootSequence g_boot(g_display, g_keypad, g_clock, FW_VERSION);
 
 // ================================ ATUALIZACAO DE FIRMWARE (decisao 17) ======================
-// O ponto de acesso fica NO AR O TEMPO TODO, por escolha do operador: quem chega no patio liga o
-// celular na rede do equipamento e sobe o arquivo, sem gesto nenhum no painel antes. O que NAO
-// acontece sozinho e a gravacao - ela exige confirmacao aqui, com a consequencia escrita na tela.
+// O ponto de acesso nasce DESLIGADO e sobe pelo item "Atualizar" do menu, atras do codigo fixo
+// 1976 - o mesmo gesto levanta o radio da sensora, por RS-485. Depois disso quem chega no patio
+// liga o celular na rede do equipamento e sobe o arquivo. A GRAVACAO exige ainda uma segunda
+// confirmacao, aqui no painel, com a consequencia para as saidas escrita na tela.
 //
 // A ordem de composicao importa: o portal empurra bytes para g_ota, que decide; g_ota nao sabe o
 // que e um rele, e quem poe os quatro em alarme e este arquivo, pelo mesmo caminho publicado que
@@ -251,10 +252,8 @@ constexpr uint8_t kOtaCmdTentativasMax = 12;
 
 char g_otaSsid[33] = {0};
 char g_otaSenha[ota::kWpa2MaxChars + 1u] = {0};
-// Verdadeiro quando a senha saiu do MAC em vez da producao. Nesse estado ela NAO vale como
-// controle de acesso (ota_credentials.h explica), e o painel tem de dizer isso.
-// Verdadeiro quando a placa esta com a senha PADRAO de fabrica, por nao ter senha propria
-// gravada na producao. Nesse estado a senha nao distingue um equipamento do outro.
+// Verdadeiro quando a placa esta com a senha PADRAO de fabrica, por nao ter senha propria gravada
+// na producao. Nesse estado a senha nao distingue um equipamento do outro.
 bool g_otaSenhaPadrao = false;
 bool g_otaNoAr = false;
 uint32_t g_otaUltimoDesenhoMs = 0;
@@ -617,6 +616,9 @@ void startAssistant(domain::MenuAction action, const app::Application::Snapshot&
         // radio desta placa e mandar a sensora subir o dela.
         case domain::MenuAction::AtivarOta:
             ativarOta();
+            if (!g_otaNoAr) {
+                g_menu.notificarFalhaOta();
+            }
             break;
         case domain::MenuAction::ZerarPreset: {
             const Status st = g_preset.clearOffsets(g_params);
@@ -854,8 +856,8 @@ void otaKeepAlive(void*) {
                             g_ota.progressoPorMil());
 }
 
-// Sobe o ponto de acesso. E o ULTIMO passo do setup(), de proposito: uma falha de radio nao pode
-// impedir um supervisor de inclinacao de supervisionar inclinacao.
+// So LE MAC e senha, e monta o nome da rede. NAO sobe radio nenhum: quem sobe e ativarOta(),
+// chamado pelo item "Atualizar" do menu.
 // Le MAC e senha. NAO liga radio: ele sobe pelo menu, com codigo.
 void prepararCredenciaisOta() {
     uint8_t mac[ota::kMacBytes] = {0};
@@ -987,6 +989,12 @@ bool serviceOta() {
     // Reinicio: a placa nova so sobe depois de o operador ler o que aconteceu.
     if (g_ota.reinicioPendente()) {
         app::renderOtaProgresso(g_display, app::textoDaFase(g_ota.phase()), "", 1000);
+        // docs/ota.md secao 6 promete que "a placa mede e informa" a maior escrita. Este e o
+        // instante em que o numero existe e ainda da para imprimi-lo: a bancada compara com o
+        // prazo do watchdog em vez de acreditar numa estimativa.
+        Serial.print(F("ota: maior escrita em flash: "));
+        Serial.print(g_ota.maiorEscritaMs());
+        Serial.println(F(" ms"));
         Serial.println(F("ota: particao trocada - reiniciando"));
         Serial.flush();
         delay(1500);
@@ -1035,21 +1043,17 @@ bool serviceOta() {
         }
     }
 
-    const char* detalhe = "";
-    if (g_ota.phase() == ota::Phase::Recusado) {
-        detalhe = app::textoDaRecusa(g_ota.rejectReason());
-    } else if (g_ota.phase() == ota::Phase::Falhou) {
-        detalhe = app::textoDaFalha(g_ota.failReason());
-    }
-    app::renderOtaProgresso(g_display, app::textoDaFase(g_ota.phase()), detalhe,
-                            g_ota.progressoPorMil());
+    // A cascata fase -> detalhe vive num lugar so, em OtaService: repeti-la aqui era garantir que
+    // um motivo novo aparecesse na pagina e nao no painel, ou o contrario.
+    PortalStatus tela;
+    g_ota.preencherStatusDoPortal(tela);
+    app::renderOtaProgresso(g_display, tela.fase, tela.detalhe, tela.progressoPorMil);
     g_otaUltimoDesenhoMs = agora;
     return true;
 }
 
 void serviceHmi() {
     const app::Application::Snapshot snap = takeSnapshot();
-    serviceBootProof(snap);
     g_preset.sample(snap.raw[0], snap.raw[1]);
     g_preset.tick();
 
@@ -1367,6 +1371,13 @@ void loop() {
     // slot sujo nao fique pendurado no estado CONFIG PERDIDA nem durante o splash.
     servicePersist();
 
+    // A PROVA DE BOOT RODA AQUI, E NAO EM serviceHmi(): CONFIG PERDIDA (A8) devolve o laco antes
+    // de chegar la. Uma imagem recem-subida que caia naquele estado nao receberia veredito
+    // nenhum - ficaria em PENDING_VERIFY e seria revertida no proximo ciclo de energia, em
+    // silencio. E o lado seguro, mas nao e o que docs/ota.md promete ("5 ciclos bons em ate
+    // 30 s"), e ninguem entenderia por que a placa voltou sozinha ao firmware antigo.
+    serviceBootProof(takeSnapshot());
+
     // O passo 12 roda dentro da tarefa ctrl, entao o resultado dele so pode ser impresso aqui.
     if (!g_linkReported && g_linkBeginDone) {
         g_linkReported = true;
@@ -1375,10 +1386,11 @@ void loop() {
     }
 
     if (g_boot.ownsDisplay()) {
-        // O PORTAL FICA MUDO DURANTE O SPLASH, de proposito. O ponto de acesso ja esta no ar, mas
-        // aceitar um pacote aqui poria a tela de confirmacao atras da logomarca e do autoteste: o
-        // operador nao veria a pergunta e a sessao morreria por prazo, sem ele entender por que.
-        // Sao poucos segundos, e a pagina simplesmente nao responde enquanto isso.
+        // O PORTAL FICA MUDO DURANTE O SPLASH, de proposito. Em boot normal o radio nem esta no
+        // ar; mas uma placa que reinicia COM o radio ligado (a sensora atualizada, por exemplo,
+        // nao passa por aqui - a supervisora sim, se alguem reiniciar no meio) nao pode aceitar
+        // pacote com a tela de confirmacao atras da logomarca: o operador nao veria a pergunta e
+        // a sessao morreria por prazo, sem ele entender por que. Sao poucos segundos.
         g_boot.tick();
         if (g_boot.finished()) {
             g_gesture.flush();

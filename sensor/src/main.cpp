@@ -131,7 +131,9 @@ bool g_bootProofPending = false;
 bool g_bootProofDone = false;
 
 // ================================ ATUALIZACAO DE FIRMWARE (decisao 17) ======================
-// Ponto de acesso proprio, no ar o tempo todo, com senha WPA2 por equipamento. A sensora NAO tem
+// Ponto de acesso proprio, DESLIGADO no boot, com senha WPA2 padrao de fabrica. Quem o levanta e
+// a supervisora, por comando no RS-485, depois do codigo 1976 digitado no painel dela - ou, na
+// bancada, o comando "wifi on <codigo>" do console. A sensora NAO tem
 // painel nem teclado: nao ha onde confirmar, e por isso a sessao dela nao exige confirmacao. O
 // alarme sai do mesmo jeito - a supervisora ve o enlace cair e leva os quatro reles a alarme por
 // conta propria (decisao A5).
@@ -139,7 +141,8 @@ bool g_bootProofDone = false;
 // ================================ PENDENCIA QUE NAO FOI FECHADA ============================
 // WiFi.mode(WIFI_OFF) estava nesta placa desde o inicio POR UM MOTIVO: a MEDICAO 12 - ruido de RF
 // da radio no SCL3300 - nunca foi feita. O inclinometro e a funcao inteira deste produto, e a
-// radio agora fica ligada 100% do tempo, nao so durante a atualizacao. Se a medicao reprovar,
+// radio sobe sob comando e cai sozinho, entao a janela de exposicao sao os minutos de uma
+// atualizacao e nao o ano inteiro - mas ela NAO e zero. Se a medicao reprovar,
 // quem decide e o produto, e o caminho de volta ja existe: o comando de console "wifi off"
 // derruba a radio sem regravar nada. Registrado em docs/ota.md.
 // ==========================================================================================
@@ -224,7 +227,25 @@ void ligarRadioOta(uint32_t nowMs) {
     g_io.writeLine(g_portal.enderecoPagina());
 }
 
+// Verdadeiro quando chegou um "desliga" que teve de esperar o fim de uma gravacao.
+bool g_otaDesligarPendente = false;
+
 void desligarRadioOta() {
+    // NUNCA NO MEIO DE UMA GRAVACAO, e isto vale tambem para o comando que vem pelo RS-485.
+    //
+    // O caso e real e nao teorico: quem sobe firmware NESTA placa conecta o celular na rede
+    // DELA, entao o ponto de acesso da supervisora fica sem atividade nenhuma. Passados 20 min,
+    // o portao de la expira, a supervisora manda "desliga" em broadcast - e ate aqui isso
+    // derrubava o WiFi e o servidor no meio de um esp_ota_write, com a particao ociosa pela
+    // metade. A decisao 17 diz, com todas as letras, "nunca no meio de uma gravacao".
+    //
+    // O pedido nao e perdido: fica pendente e e aplicado assim que a sessao termina.
+    if (g_ota.emCurso()) {
+        g_otaDesligarPendente = true;
+        g_io.writeLine("ota: pedido de desligar ADIADO - gravacao em curso");
+        return;
+    }
+    g_otaDesligarPendente = false;
     g_apGate.desativar();
     if (!g_otaNoAr) {
         return;
@@ -269,6 +290,10 @@ void serviceOta(uint32_t nowMs) {
     const bool houveAtividade = (agoraRequisicoes != ultimasRequisicoes);
     ultimasRequisicoes = agoraRequisicoes;
     g_apGate.tick(nowMs, houveAtividade, g_ota.emCurso());
+    if (g_otaDesligarPendente && !g_ota.emCurso()) {
+        desligarRadioOta();
+        return;
+    }
     if (!g_apGate.ativo()) {
         desligarRadioOta();
         return;
@@ -301,6 +326,10 @@ void serviceOta(uint32_t nowMs) {
     g_portal.service();
 
     if (g_ota.reinicioPendente()) {
+        // Ver docs/ota.md secao 6: o tempo de apagamento de setor nao e derivavel (esp_ota_ops.c
+        // vem pre-compilado e depende do chip de flash soldado), entao a placa mede e informa.
+        g_io.printf("ota: maior escrita em flash: %u ms\r\n",
+                    static_cast<unsigned>(g_ota.maiorEscritaMs()));
         g_io.writeLine("ota: particao trocada - reiniciando");
         g_wdt.heartbeat();
         delay(300);
@@ -396,7 +425,8 @@ void setup() {
     pinMode(static_cast<uint8_t>(board::kStatusLed), OUTPUT);
     digitalWrite(static_cast<uint8_t>(board::kStatusLed), LOW);
 
-    // A radio nao fica mais desligada: ver a PENDENCIA acima, junto dos globais de atualizacao.
+    // A radio comeca desligada e so sobe por comando: ver os globais de atualizacao acima. O
+    // Bluetooth continua desligado - nunca foi usado e ocupa o mesmo radio.
     // O Bluetooth continua desligado - nunca foi usado e ocupa o mesmo radio.
     btStop();
 

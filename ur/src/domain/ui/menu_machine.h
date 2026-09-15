@@ -154,7 +154,12 @@ enum class MenuItem : uint8_t {
     // silencio, ao atravessar o portao de senha. Promessa na tela sem gesto correspondente
     // treina o operador a nao acreditar na tela.
     Rearmar = 9,
-    // DECIMO SEGUNDO ITEM, acrescentado em 2026-09-14. Liga o ponto de acesso de atualizacao
+    // ITEM 11 DE 12 (o penultimo; "Sair" e o ultimo), acrescentado em 2026-09-14. A contagem esta
+    // escrita assim de proposito: o comentario de "Rearmar" logo acima diz "decimo primeiro"
+    // contando quantos itens o menu passou a TER, e as duas leituras - posicao e total - nao
+    // batem. Aqui vale a posicao, que e o que o operador conta descendo a lista.
+    //
+    // Liga o ponto de acesso de atualizacao
     // desta placa E o da sensora, atras de um codigo fixo de quatro digitos.
     //
     // POR QUE ELE EXISTE, JA QUE O RADIO PODIA FICAR SEMPRE LIGADO: ficava, ate esta data, e a
@@ -262,6 +267,7 @@ public:
     // Decisao 17: o portao do ponto de acesso de atualizacao.
     static constexpr const char* kPrefixoCodigoOta = "Codigo OTA:";
     static constexpr const char* kMsgOtaLigado = "WIFI LIGADO - VER CONSOLE";
+    static constexpr const char* kMsgOtaFalhou = "FALHA AO LIGAR O WIFI";
     static constexpr const char* kMsgOtaRecusado = "Codigo incorreto!";
     static constexpr uint32_t kOtaMsgMs = 3000;
     // A9: aviso obrigatorio da troca de sentido, com o eixo e os dois limites a conferir.
@@ -330,6 +336,12 @@ public:
     // rascunho de limites, operacoes, sentido e senha fica intocado, senao a adocao descartaria
     // a edicao pendente que ela deveria preservar.
     void adoptExternalChanges();
+
+    // O painel dizia "WIFI LIGADO" no instante em que o codigo era aceito - ou seja, ANTES de
+    // alguem tentar subir o radio. Se o softAP falhasse, a tela afirmava o contrario do que
+    // aconteceu, e o operador ia procurar uma rede que nao existe. Quem sabe o desfecho e o
+    // composition root, que e quem tem o radio; ele avisa por aqui.
+    void notificarFalhaOta();
     uint8_t subItemCount() const;
 
 
@@ -417,6 +429,7 @@ private:
     bool requirePassword_;
     // Qual texto a tela GravOk esta mostrando: gravacao ou rearme de enlace.
     bool rearmMsg_;
+    bool otaFalhou_;
     bool pending_;
     bool dirty_;
 };

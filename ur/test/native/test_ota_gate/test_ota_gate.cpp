@@ -196,6 +196,29 @@ static void test_o_tempo_restante_encolhe_e_nunca_mente(void) {
     TEST_ASSERT_TRUE(q.restanteS(kT0 + ota::kTetoMs - 30000u) <= 30u);
 }
 
+// O ACHADO MAIS GRAVE DO REVIEW DE 2026-09-15, em forma de teste. O portao ja exemptava a sessao
+// em curso; o que faltava era o CAMINHO DO COMANDO fazer o mesmo. Cenario real: quem sobe
+// firmware na sensora conecta o celular na rede DELA, entao o ponto de acesso da supervisora fica
+// sem atividade nenhuma, expira em 20 min e manda "desliga" em broadcast - no meio de um
+// esp_ota_write. Este teste prende o lado puro: sessao em curso segura o portao contra TUDO que
+// nao seja um desativar() explicito.
+static void test_nada_derruba_o_portao_no_meio_de_uma_gravacao(void) {
+    ota::ApGate p;
+    p.ativar(kT0);
+
+    // Nem a inatividade, nem o teto, nem os dois somados.
+    p.tick(kT0 + ota::kSemAtividadeMs + 1u, false, /*sessaoEmCurso=*/true);
+    TEST_ASSERT_TRUE(p.ativo());
+    p.tick(kT0 + ota::kTetoMs + 1u, false, /*sessaoEmCurso=*/true);
+    TEST_ASSERT_TRUE(p.ativo());
+    p.tick(kT0 + ota::kTetoMs + ota::kSemAtividadeMs, false, /*sessaoEmCurso=*/true);
+    TEST_ASSERT_TRUE_MESSAGE(p.ativo(), "gravacao em curso tem de segurar o radio de pe");
+
+    // E assim que a gravacao termina, o prazo ja vencido cobra na primeira volta.
+    p.tick(kT0 + ota::kTetoMs + ota::kSemAtividadeMs + 1u, false, false);
+    TEST_ASSERT_FALSE(p.ativo());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_so_o_codigo_certo_abre);
@@ -208,6 +231,7 @@ int main(int, char**) {
     RUN_TEST(test_o_teto_derruba_mesmo_com_uso_continuo);
     RUN_TEST(test_o_teto_nao_derruba_no_meio_de_uma_gravacao);
     RUN_TEST(test_gravacao_em_curso_segura_tambem_o_prazo_de_inatividade);
+    RUN_TEST(test_nada_derruba_o_portao_no_meio_de_uma_gravacao);
     RUN_TEST(test_reativar_renova_os_prazos);
     RUN_TEST(test_desativar_fecha_na_hora);
     RUN_TEST(test_os_prazos_atravessam_o_wrap_de_2_elevado_a_32);

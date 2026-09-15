@@ -86,11 +86,6 @@ async function enviaImagem(f){
 setInterval(estado,700);estado();
 </script></html>)HTML";
 
-// Os 64 bytes do cabecalho, acumulados fora do escopo do callback do WebServer, que so entrega
-// pedacos.
-uint8_t g_cabecalho[ota::kHeaderBytes];
-uint32_t g_cabecalhoLidos = 0;
-
 }  // namespace
 
 WifiUpdatePortal::WifiUpdatePortal()
@@ -328,7 +323,6 @@ void WifiUpdatePortal::tratarImagemPedaco() {
     manterVivo();
 
     if (envio.status == UPLOAD_FILE_START) {
-        g_cabecalhoLidos = 0;
         envioAbortado_ = false;
         proximoAvisoBytes_ = 0;
         registrar("ota: inicio do envio da imagem");
@@ -362,7 +356,6 @@ void WifiUpdatePortal::tratarImagemPedaco() {
             sink_->onAbort();
         }
     }
-    (void)g_cabecalho;
 }
 
 void WifiUpdatePortal::tratarImagemFim() {

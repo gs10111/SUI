@@ -10,7 +10,6 @@
 // fechou.
 #include "app/application.h"
 
-#include <stdio.h>
 
 #include "domain/ui/text_fit.h"
 
@@ -646,11 +645,42 @@ const char kTextOtaTitulo[] = "ATUALIZAR FIRMWARE?";
 const char kTextOtaAviso[] = "SAIDAS VAO PARA ALARME";
 const char kTextOtaGesto[] = "Segure MENU 3s / DOWN sai";
 
+// SEM snprintf. normal_screen.h:102 declara a regra da casa - "nada de std::string, nada de
+// snprintf" - e ate esta entrega nao havia UMA ocorrencia em src/domain ou src/app. Duas
+// entraram aqui; saem. O resto da camada formata numero a mao em buffer fixo, como
+// PresetWizard::formatDeci().
+//
+// Devolve a posicao seguinte. Nao trunca no meio de um digito: quem chama dimensiona o buffer.
+uint8_t escreveUint(char* out, uint8_t pos, uint8_t cap, uint16_t valor) {
+    char digitos[5];
+    uint8_t n = 0;
+    do {
+        digitos[n++] = static_cast<char>('0' + (valor % 10u));
+        valor = static_cast<uint16_t>(valor / 10u);
+    } while (valor != 0u && n < sizeof(digitos));
+    while (n > 0u && pos + 1u < cap) {
+        out[pos++] = digitos[--n];
+    }
+    return pos;
+}
+
+uint8_t escreveTexto(char* out, uint8_t pos, uint8_t cap, const char* texto) {
+    while (*texto != '\0' && pos + 1u < cap) {
+        out[pos++] = *texto++;
+    }
+    return pos;
+}
+
 void renderOtaConfirm(IDisplay& display, uint8_t versaoMaior, uint8_t versaoMenor,
                       uint8_t versaoCorrecao) {
     char versao[32];
-    snprintf(versao, sizeof(versao), "Versao %u.%u.%u", static_cast<unsigned>(versaoMaior),
-             static_cast<unsigned>(versaoMenor), static_cast<unsigned>(versaoCorrecao));
+    uint8_t n = escreveTexto(versao, 0, sizeof(versao), "Versao ");
+    n = escreveUint(versao, n, sizeof(versao), versaoMaior);
+    n = escreveTexto(versao, n, sizeof(versao), ".");
+    n = escreveUint(versao, n, sizeof(versao), versaoMenor);
+    n = escreveTexto(versao, n, sizeof(versao), ".");
+    n = escreveUint(versao, n, sizeof(versao), versaoCorrecao);
+    versao[n] = '\0';
 
     const int16_t largura = static_cast<int16_t>(display.widthPx());
     const TextFont f1 = domain::ui::fontThatFits(display, kTextOtaTitulo, largura);
@@ -692,7 +722,9 @@ void renderOtaProgresso(IDisplay& display, const char* fase, const char* detalhe
         drawCentered(display, static_cast<int16_t>(display.lineHeightPx(f1) + 6), barra, f2);
 
         char pct[16];
-        snprintf(pct, sizeof(pct), "%u%%", static_cast<unsigned>(progressoPorMil / 10u));
+        uint8_t p = escreveUint(pct, 0, sizeof(pct), static_cast<uint16_t>(progressoPorMil / 10u));
+        p = escreveTexto(pct, p, sizeof(pct), "%");
+        pct[p] = '\0';
         const TextFont f3 = domain::ui::fontThatFits(display, pct, largura);
         drawCentered(display,
                      static_cast<int16_t>(display.heightPx() - display.lineHeightPx(f3)), pct, f3);

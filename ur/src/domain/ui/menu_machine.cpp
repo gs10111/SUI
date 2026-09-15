@@ -127,6 +127,7 @@ MenuMachine::MenuMachine(IDisplay& display, const IClock& clock, Password& passw
       recusaMsg_(""),
       requirePassword_(requirePassword),
       rearmMsg_(false),
+      otaFalhou_(false),
       pending_(false),
       dirty_(false) {
     line_[0] = '\0';
@@ -527,6 +528,7 @@ void MenuMachine::onEditSenha(const Gesture& gesture) {
 void MenuMachine::onCodigoOta(const Gesture& gesture) {
     if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
         const uint16_t digitado = static_cast<uint16_t>(editor_.value());
+        otaFalhou_ = false;
         if (ota::codigoCorreto(digitado)) {
             action_ = MenuAction::AtivarOta;
             showMessage(MenuState::OtaLigado, MenuState::Menu, kOtaMsgMs);
@@ -662,6 +664,14 @@ void MenuMachine::openSenha() {
 // ABRE EM 0000, e nao no codigo corrente como faz "Edita senha". A diferenca nao e estetica:
 // abrir ja preenchido com o valor certo transformaria o portao em "segure MENU para confirmar",
 // que e o contrario de um portao.
+void MenuMachine::notificarFalhaOta() {
+    if (state_ != MenuState::OtaLigado) {
+        return;
+    }
+    showMessage(MenuState::OtaRecusado, MenuState::Menu, kOtaMsgMs);
+    otaFalhou_ = true;
+}
+
 void MenuMachine::openCodigoOta() {
     editReturn_ = MenuState::Menu;
     editor_.open(kCampoSenha, 0);
@@ -921,9 +931,13 @@ void MenuMachine::render() {
         case MenuState::OtaLigado:
             drawLine(kConteudoY, kMsgOtaLigado, contentFont(kMsgOtaLigado));
             break;
-        case MenuState::OtaRecusado:
-            drawLine(kConteudoY, kMsgOtaRecusado, contentFont(kMsgOtaRecusado));
+        // A MESMA tela temporizada serve aos dois desfechos ruins, com textos diferentes: codigo
+        // errado e radio que nao subiu nao sao a mesma coisa para quem esta na frente do painel.
+        case MenuState::OtaRecusado: {
+            const char* texto = otaFalhou_ ? kMsgOtaFalhou : kMsgOtaRecusado;
+            drawLine(kConteudoY, texto, contentFont(texto));
             break;
+        }
 
         case MenuState::Recusa: drawLine(kConteudoY, recusaMsg_, contentFont(recusaMsg_)); break;
         // A mesma tela temporizada serve as duas confirmacoes, com textos diferentes: "Alteracao

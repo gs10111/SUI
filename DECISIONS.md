@@ -3113,9 +3113,10 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
 
 - **MEDICAO 26 - jitter da tarefa `ctrl` com o radio ligado.** As tarefas do stack WiFi rodam em
   prioridade 22 e 23 **no core 0**, que e onde vive a `ctrl`. Esta propria DECISIONS.md, na
-  Decisao 15, **espera que esta medicao REPROVE**. O ponto de acesso permanentemente no ar e hoje
-  uma escolha assumida, nao uma propriedade verificada, e esta registrada como tal no proprio
-  `setup()` de `ur/src/main.cpp`.
+  Decisao 15, **espera que esta medicao REPROVE**. A Emenda 2 (radio sob comando) mudou o TAMANHO
+  do problema e nao o problema: em vez de meses com o radio no ar, sao os minutos de uma
+  atualizacao, durante os quais as saidas ja estao em alarme declarado. Mas a supervisora continua
+  supervisionando enquanto grava, e isso continua sem medicao.
 - **MEDICAO 12 - ruido de RF do radio no SCL3300.** `WiFi.mode(WIFI_OFF)` estava na sensora desde o
   inicio por este motivo. O inclinometro e a funcao inteira do produto. Caminho de volta imediato,
   sem regravar: comando `wifi off` no console, que de proposito **nao persiste** no boot seguinte -
