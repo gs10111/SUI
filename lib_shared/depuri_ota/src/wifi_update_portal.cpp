@@ -248,6 +248,14 @@ uint8_t WifiUpdatePortal::clientesConectados() const {
 void WifiUpdatePortal::tratarRaiz() {
     ++requisicoes_;
     registrar("ota: pagina servida para %s", servidor_.client().remoteIP().toString().c_str());
+    // NUNCA GUARDAR ESTA PAGINA EM CACHE. O celular de quem faz manutencao volta a esta rede
+    // meses depois, com outro firmware na placa, e serviria a pagina velha de dentro do proprio
+    // navegador - com o JS velho falando um protocolo que a placa nova nao entende mais. Foi
+    // exatamente assim que a correcao do cabecalho em hexadecimal quase custou outra bancada
+    // inteira: a placa ja estava certa e o celular continuava mandando binario cru.
+    servidor_.sendHeader("Cache-Control", "no-store, must-revalidate");
+    servidor_.sendHeader("Pragma", "no-cache");
+    servidor_.sendHeader("Expires", "0");
     servidor_.send_P(200, "text/html", kPagina);
 }
 
