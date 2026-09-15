@@ -246,6 +246,29 @@ despercebido sem isso.
 
 ## 8. Procedimento
 
+### 8.0 No Windows
+
+Os comandos sao **os mesmos**; o que muda e a barra do caminho:
+
+```
+ur\.pio\build\esp32dev\firmware-supervisora-0.1.0.ota
+sensor\.pio\build\pusi\firmware-sensora-0.2.0.ota
+```
+
+O empacotamento automatico funciona igual: os scripts usam `os.path.join` e `sys.executable`,
+sem nada de shell.
+
+Duas diferencas reais:
+
+- **`scripts/verifica_ota.cpp` precisa de um compilador C++.** No Windows isso quer dizer MinGW,
+  MSVC ou WSL. Nao e obrigatorio - e conferencia opcional antes de ir ao patio.
+- **Gravar por cabo** precisa do driver do conversor USB-serial da placa (CP210x ou CH340) e,
+  se o PlatformIO nao achar sozinho, de `upload_port = COM<n>` no `platformio.ini`.
+
+> **ESTE REPOSITORIO NAO FOI COMPILADO NO WINDOWS.** O que esta acima e o que se espera pela
+> forma como as ferramentas foram escritas, nao um resultado observado. Se algo falhar la, e
+> informacao nova.
+
 ### 8.1 Gerar o pacote
 
 O `.ota` sai **automaticamente** junto do `firmware.bin`, com alvo e versao ja preenchidos:
