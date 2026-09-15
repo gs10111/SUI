@@ -3023,8 +3023,29 @@ fixa**. Nao substitui a senha sorteada na producao, que continua pendente.
 **SAO TRES SEGREDOS, com tres propositos, e confundi-los custa caro:** `1234` (Modo Programacao,
 o cliente troca) diz "posso mexer na configuracao"; `1976` (fixo) diz "posso ligar o radio";
 `dieletrons-2025` (fixo, na etiqueta) diz "posso falar com o radio". O `1976` e fixo de proposito:
-um cliente que troque a senha do Modo Programacao e a esqueca nao pode, com isso, ficar sem
-caminho de atualizacao - e saber `1234` nao basta para ligar o radio.
+nao ha um segundo segredo configuravel que o cliente possa trocar e esquecer, e **saber `1234` nao
+basta** para ligar o radio.
+
+**EMENDA 3, 2026-09-15 - a metade da frase que nao era verdade.** A redacao original desta decisao
+dizia tambem que um cliente que esquecesse `1234` "nao pode, com isso, ficar sem caminho de
+atualizacao". Um review de dois eixos mostrou que **pode**: o item `Atualizar` vive dentro do menu,
+portanto atras da senha do Modo Programacao.
+
+**O bigboss decidiu manter assim: a saida e o Reset Geral.** Registrado com o preco, que nao e
+zero:
+
+- O Reset Geral (5.11, gesto de tecla na energizacao) repoe a senha de fabrica `1234`, e com ela o
+  menu - e portanto `Atualizar` - volta a ser alcancavel.
+- Ele **preserva a calibracao analogica**, mas devolve os quatro limites em Operacao `Off`, com a
+  tela principal piscando `LIMITES DESATIVADOS - PROGRAMAR` (sub-item "O que o Reset Geral faz",
+  opcao B). Ou seja: **quem esquece `1234` reprograma os quatro setpoints**. O custo e real, e e
+  visivel e ruidoso por desenho - nao ha desativacao silenciosa.
+- Nao ha caminho de atualizacao que dispense o painel. Um segundo portao alcancavel sem passar
+  pelo primeiro seria uma superficie a mais num equipamento de seguranca, e a Decisao 15 item 3 ja
+  fecha a porta equivalente no console.
+
+Consequencia pratica para a assistencia tecnica: `1234` esquecida custa a reprogramacao dos quatro
+limites, e nao uma placa inatualizavel.
 
 **O ENLACE RS-485 DEIXOU DE SER SOMENTE LEITURA, e isso esta contido:** funcao 0x06 aceita, so no
 registrador 8, so com dois valores, com um unico efeito - ligar ou desligar o WiFi da sensora.
@@ -3133,6 +3154,10 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
 2. **Quando o jig passa a sortear e gravar a senha?** Ate la vale `dieletrons-2025` em toda a
    frota e o item 8 da Decisao 15 nao esta cumprido. Esta e a unica pendencia desta decisao que
    depende de producao e nao de bancada.
+
+   **RESOLVIDO em 2026-09-15 - onde o item `Atualizar` fica.** Ficou decidido que ele continua
+   dentro do menu, atras da senha do Modo Programacao, e que a saida de quem esqueceu `1234` e o
+   Reset Geral. Ver a Emenda 3 acima.
 3. **Secao de manual.** O item 8 da Decisao 15 exigia "secao nova de manual, superficie de ataque
    declarada". `docs/ota.md` cobre a parte de engenharia; **a secao de manual do cliente ainda nao
    existe**. Errata pendente tambem em L112: o menu passou de dez itens para **doze**.

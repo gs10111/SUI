@@ -92,9 +92,15 @@ O que continua distinguindo um equipamento do outro e o **SSID**, e so ele.
 | **`1976`** (codigo OTA) | posso **ligar o radio**? | ninguem: e fixo |
 | `dieletrons-2025` (WPA2) | posso falar com o radio? | ninguem: e fixo, vai na etiqueta |
 
-O codigo `1976` ser fixo e deliberado: um cliente que troque a senha do Modo Programacao e a
-esqueca nao pode, com isso, ficar sem caminho de atualizacao. E saber `1234` nao basta para ligar
-o radio de um equipamento de seguranca.
+O codigo `1976` ser fixo e deliberado: nao ha um segundo segredo configuravel que o cliente possa
+trocar e esquecer, e **saber `1234` nao basta** para ligar o radio de um equipamento de seguranca.
+
+**`Atualizar` esta DENTRO do menu, logo atras da senha `1234`.** Quem esquecer `1234` chega ao
+caminho de atualizacao pelo **Reset Geral** (5.11, gesto de tecla na energizacao), que repoe a
+senha de fabrica. O preco esta escrito e nao e zero: o Reset Geral preserva a calibracao analogica
+mas devolve os quatro limites em `Off`, com a tela piscando `LIMITES DESATIVADOS - PROGRAMAR` -
+os quatro setpoints tem de ser reprogramados. Decisao assumida (DECISIONS.md, Decisao 17,
+Emenda 3).
 
 **E por isso que o radio deixou de ficar permanentemente no ar.** Com a senha WPA2 fixa e
 publicada, um ponto de acesso permanente e um equipamento gravavel por quem passar perto do patio,
