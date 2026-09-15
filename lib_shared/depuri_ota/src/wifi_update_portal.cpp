@@ -96,6 +96,7 @@ WifiUpdatePortal::WifiUpdatePortal()
       rotasRegistradas_(false),
       envioAbortado_(false) {
     ssid_[0] = '\0';
+    endereco_[0] = '\0';
 }
 
 void WifiUpdatePortal::setKeepAlive(void (*fn)(void*), void* ctx) {
@@ -156,6 +157,11 @@ Status WifiUpdatePortal::begin(const char* ssid, const char* senha, IUpdatePorta
     dns_.setErrorReplyCode(DNSReplyCode::NoError);
     dnsNoAr_ = dns_.start(53, "*", WiFi.softAPIP());
 
+    // Perguntado a pilha de rede, e nao assumido: o valor padrao do softAP e do esp_netif, vem
+    // de uma biblioteca pre-compilada e nao esta em cabecalho nenhum deste repositorio. Quem
+    // esta no patio le o numero de verdade, no console.
+    snprintf(endereco_, sizeof(endereco_), "%s", WiFi.softAPIP().toString().c_str());
+
     noAr_ = true;
     return kOk;
 }
@@ -201,6 +207,7 @@ void WifiUpdatePortal::end() {
     WiFi.mode(WIFI_OFF);
     noAr_ = false;
     envioAbortado_ = false;
+    endereco_[0] = '\0';
 }
 
 void WifiUpdatePortal::publish(const PortalStatus& st) { estado_ = st; }

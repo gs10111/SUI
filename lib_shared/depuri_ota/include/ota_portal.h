@@ -84,6 +84,12 @@ public:
 
     virtual void publish(const PortalStatus& st) = 0;
 
+    // O ENDERECO QUE O RADIO REALMENTE ASSUMIU, em texto ("192.168.4.1"). Existe para que
+    // ninguem - nem a documentacao, nem quem esta no patio - tenha de confiar no valor padrao de
+    // memoria: ele vem da pilha de rede, depois de o ponto de acesso subir. Vazio quando o radio
+    // esta desligado.
+    virtual const char* enderecoPagina() const = 0;
+
     virtual uint8_t clientesConectados() const = 0;
     virtual bool noAr() const = 0;
 

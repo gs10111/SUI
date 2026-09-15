@@ -829,12 +829,17 @@ void SensorConsole::cmdWifi(const char* arg) {
         if (ctx_.otaLigar != nullptr) {
             ctx_.otaLigar();
         }
-        ctx_.io.writeLine("wifi  : LIGADO (cai sozinho depois de 10 min sem ninguem conectado)");
+        ctx_.io.write("wifi  : LIGADO, pagina http://");
+        ctx_.io.writeLine(ctx_.otaEndereco != nullptr ? ctx_.otaEndereco() : "?");
+        ctx_.io.writeLine("        cai sozinho depois de 10 min sem ninguem conectado");
         return;
     }
     ctx_.io.printf("wifi  : modo %d, clientes %d\r\n", static_cast<int>(WiFi.getMode()),
                    static_cast<int>(WiFi.softAPgetStationNum()));
     ctx_.io.printf("ssid  : %s\r\n", WiFi.softAPSSID().c_str());
+    if (ctx_.otaEndereco != nullptr && ctx_.otaEndereco()[0] != '\0') {
+        ctx_.io.printf("pagina: http://%s\r\n", ctx_.otaEndereco());
+    }
     ctx_.io.writeLine("uso   : wifi on | wifi off");
     ctx_.io.writeLine("        em campo quem liga e a supervisora, pelo menu, com o codigo 1976");
 }

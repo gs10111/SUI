@@ -269,8 +269,16 @@ Vale mais a pena rodar com o alvo **errado** de proposito: tem de dar veredito 5
 1. No celular, ligue na rede `SUI-UR-XXXXXX` (supervisora) ou `SUI-SEN-XXXXXX` (sensora), onde
    `XXXXXX` sao os tres ultimos bytes do MAC. A senha esta na etiqueta da placa.
 2. O celular abre a tela de atualizacao sozinho, como faz em rede de hotel (ha um servidor DNS na
-   placa que manda toda consulta para ela mesma). Se o seu celular nao abrir, digite
-   **`192.168.4.1`** no navegador.
+   placa que manda toda consulta para ela mesma). Se o seu celular nao abrir, digite o endereco a
+   mao - **a propria placa imprime qual e**, no console, no instante em que o radio sobe:
+
+   ```
+   ota: ponto de acesso NO AR SUI-SEN-184710  pagina http://192.168.4.1
+   ```
+
+   O endereco e perguntado a pilha de rede e nao assumido: o padrao do softAP vem de uma
+   biblioteca pre-compilada do ESP-IDF e nao esta em cabecalho nenhum deste repositorio. Na
+   sensora, o comando `wifi` no console tambem mostra.
 3. Escolha o `.ota` e toque em **Enviar**.
 4. **Supervisora:** o painel mostra `ATUALIZAR FIRMWARE?` com o aviso `SAIDAS VAO PARA ALARME` e a
    versao. Confirme **segurando MENU por 3 s**; **DOWN** cancela. (Mesmo gesto do commit de

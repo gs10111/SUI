@@ -2,7 +2,6 @@
 // Unico lugar que constroi objetos concretos e o unico que conhece temporizacao de enquadramento.
 #include <Arduino.h>
 #include <SPI.h>
-#include <Preferences.h>
 #include <WiFi.h>
 #include <esp_bt.h>
 #include <esp_system.h>
@@ -11,6 +10,7 @@
 #include "esp_firmware_store.h"
 #include "ota_credentials.h"
 #include "ota_gate.h"
+#include "ota_password_store.h"
 #include "ota_partition.h"
 #include "ota_proof.h"
 #include "ota_service.h"
@@ -171,12 +171,10 @@ void prepararCredenciaisOta() {
     WiFi.macAddress(mac);
     ota::apSsid(ota::kAlvoSensora, mac, g_otaSsid, sizeof(g_otaSsid));
 
-    Preferences prefs;
-    g_otaSenha[0] = '\0';
-    if (prefs.begin("ota", true)) {
-        prefs.getString("pw", g_otaSenha, sizeof(g_otaSenha));
-        prefs.end();
-    }
+    // NAO usa Preferences: ver ota_password_store.h. Preferences imprimiria um [E] no console em
+    // todo boot de toda placa que nao passou pelo jig - ou seja, hoje, todas - para relatar um
+    // estado previsto e tratado.
+    (void)ota::readProvisionedPassword(g_otaSenha, sizeof(g_otaSenha));
     // Sem senha propria: cai na padrao de fabrica. Ver ota_credentials.h - a padrao esta no
     // firmware, e o firmware e o arquivo que entregamos ao cliente. Escolha declarada.
     g_otaSenhaPadrao = !ota::passwordWellFormed(g_otaSenha);
@@ -212,7 +210,9 @@ void ligarRadioOta(uint32_t nowMs) {
         return;
     }
     g_io.write("ota: ponto de acesso NO AR ");
-    g_io.writeLine(g_otaSsid);
+    g_io.write(g_otaSsid);
+    g_io.write("  pagina http://");
+    g_io.writeLine(g_portal.enderecoPagina());
 }
 
 void desligarRadioOta() {
@@ -231,6 +231,7 @@ void desligarRadioOta() {
 // Adaptadores sem argumento para o console de bancada. Ele nao conhece o relogio; quem conhece
 // e este arquivo.
 void otaLigarPeloConsole() { ligarRadioOta(millis()); }
+const char* otaEnderecoPagina() { return g_portal.enderecoPagina(); }
 void otaDesligarPeloConsole() { desligarRadioOta(); }
 
 void serviceComandoOta(uint32_t nowMs) {
@@ -415,15 +416,16 @@ void setup() {
         g_io.printf("ALERTA: RS-485 nao subiu (%s)\r\n", errName(linkStatus.err));
     }
 
-    g_console.begin();
-
-    // ULTIMO PASSO, como na supervisora: se o radio nao subir, a sensora continua medindo
-    // inclinacao e respondendo ao mestre. Um inclinometro que nao arranca porque o WiFi falhou
-    // trocou a funcao dele pela conveniencia de atualizar.
+    // ANTES do console, para que a linha do ponto de acesso saia junto do banner e nao DEPOIS do
+    // prompt. Isto nao liga radio nenhum - so le MAC e senha - entao nao ha motivo para ficar por
+    // ultimo: o que precisava ficar por ultimo era subir o radio, e ele deixou de subir no boot.
     // Atribuidos e nao inicializados na lista: ver o comentario no fim de SensorCtx.
     g_ctx.otaLigar = &otaLigarPeloConsole;
     g_ctx.otaDesligar = &otaDesligarPeloConsole;
+    g_ctx.otaEndereco = &otaEnderecoPagina;
     prepararCredenciaisOta();
+
+    g_console.begin();
 }
 
 void loop() {

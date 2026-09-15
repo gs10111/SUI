@@ -76,7 +76,6 @@
 // em silencio (A8 / decisao 2 item 10): ele trava em falha, com os quatro reles em alarme e as
 // duas saidas em 3932, e so o Reset Geral de 5.11 sai desse estado.
 #include <Arduino.h>
-#include <Preferences.h>
 #include <SPI.h>
 #include <WiFi.h>
 #include <driver/gpio.h>
@@ -96,6 +95,7 @@
 #include "esp_firmware_store.h"
 #include "ota_credentials.h"
 #include "ota_gate.h"
+#include "ota_password_store.h"
 #include "ota_partition.h"
 #include "ota_proof.h"
 #include "ota_service.h"
@@ -836,12 +836,10 @@ void prepararCredenciaisOta() {
     // A SENHA DE NVS GANHA SEMPRE. Quando a producao passar a sortear e gravar, nenhuma linha
     // daqui muda: as placas novas saem com senha propria e as antigas seguem com a padrao ate
     // serem regravadas. Sem senha em NVS - que e o caso de hoje - vale a padrao de fabrica.
-    Preferences prefs;
-    g_otaSenha[0] = '\0';
-    if (prefs.begin("ota", true)) {
-        prefs.getString("pw", g_otaSenha, sizeof(g_otaSenha));
-        prefs.end();
-    }
+    // NAO usa Preferences: ver ota_password_store.h. Preferences imprimiria um [E] no console em
+    // todo boot de toda placa que nao passou pelo jig - ou seja, hoje, todas - para relatar um
+    // estado previsto e tratado.
+    (void)ota::readProvisionedPassword(g_otaSenha, sizeof(g_otaSenha));
     // Sem senha propria: cai na padrao de fabrica. Ver ota_credentials.h - a padrao esta no
     // firmware, e o firmware e o arquivo que entregamos ao cliente. Escolha declarada.
     g_otaSenhaPadrao = !ota::passwordWellFormed(g_otaSenha);
@@ -895,6 +893,10 @@ void ativarOta() {
     Serial.print(g_otaSsid);
     Serial.print(F(" senha "));
     Serial.println(g_otaSenha);
+    if (g_otaNoAr) {
+        Serial.print(F("ota: pagina http://"));
+        Serial.println(g_portal.enderecoPagina());
+    }
     Serial.println(F("ota: sensora avisada por broadcast (sem confirmacao no fio - a rede dela"));
     Serial.println(F("ota: tem de aparecer na lista do celular como SUI-SEN-...)"));
 }
@@ -1256,14 +1258,13 @@ void setup() {
         Serial.println(F("ota: imagem EM PROVA - 5 ciclos bons em ate 30 s ou reverte"));
     }
 
-    // ULTIMO PASSO DO BOOT, e nao um dos primeiros. Se o radio nao subir, a placa continua
-    // supervisionando inclinacao: um supervisor de seguranca que nao arranca porque o WiFi
-    // falhou trocou a funcao dele pela conveniencia de atualizar.
+    // So le MAC e senha; o radio NAO sobe no boot desde a decisao 17 - quem o levanta e o item
+    // "Atualizar" do menu, com o codigo, e ele cai sozinho depois.
     //
     // PENDENCIA REGISTRADA (docs/ota.md, MEDICAO 26): o efeito do radio no jitter da tarefa ctrl
-    // do core 0 nunca foi medido nesta placa. A DECISIONS.md espera que a medicao REPROVE. Ate
-    // ela existir, o ponto de acesso no ar o tempo todo e uma escolha assumida, nao uma
-    // propriedade verificada.
+    // do core 0 nunca foi medido nesta placa, e a DECISIONS.md espera que a medicao REPROVE. O
+    // radio sob comando encolhe a janela em que isso pode morder - dos meses de operacao para os
+    // minutos de uma atualizacao - mas NAO fecha a pendencia.
     prepararCredenciaisOta();
 
     g_boot.begin(bootAtMs, g_bootKeyMask);

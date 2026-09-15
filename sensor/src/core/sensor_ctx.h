@@ -43,4 +43,5 @@ struct SensorCtx {
     // ao lado do comando que chega pelo RS-485.
     void (*otaLigar)() = nullptr;
     void (*otaDesligar)() = nullptr;
+    const char* (*otaEndereco)() = nullptr;
 };

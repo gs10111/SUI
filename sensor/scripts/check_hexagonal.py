@@ -36,7 +36,7 @@ VIGIADOS = ("src/domain", "src/app", "src/ports")
 OTA_COMPARTILHADO = os.path.join(
     os.path.dirname(PROJECT_DIR), "lib_shared", "depuri_ota")
 OTA_IMPUROS = ("esp_firmware_store.h", "esp_firmware_store.cpp", "wifi_update_portal.h",
-               "wifi_update_portal.cpp", "ota_partition.h")
+               "wifi_update_portal.cpp", "ota_partition.h", "ota_password_store.h")
 
 PROIBIDOS = (
     re.compile(r'^\s*#\s*include\s*[<"]Arduino\.h[>"]'),
