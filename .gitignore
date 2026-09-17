@@ -8,3 +8,8 @@
 # Artefato de build do Python: o empacotador e importado pelo post-script do PlatformIO.
 __pycache__/
 *.pyc
+
+# O PDF de referencia que o bigboss deixou aqui vem com o .git dele dentro. Nao e submodulo
+# deste projeto e nao deve virar gitlink: ficaria um ponteiro para um commit que ninguem
+# consegue resolver ao clonar.
+template/
