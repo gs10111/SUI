@@ -95,6 +95,29 @@
 
 namespace app {
 
+// ================= QUAL EIXO DA SENSORA ALIMENTA O CANAL Y DO PRODUTO =================
+//
+// DECISAO DE PRODUTO DE 2026-09-17: o canal Y da Unidade Remota - display, saida analogica Y e
+// os Limites 3 e 4 - passa a ser alimentado pelo ANG_Z da sensora, e nao mais pelo ANG_Y.
+//
+// O QUE FOI MEDIDO ANTES DE FAZER, e que o dono do produto decidiu assumir: com o eixo Z do
+// SCL3300 montado NA VERTICAL, o ANG_Z nao distingue para que lado a estrutura se inclina. A
+// Tabela 9 do datasheet (doc 4921 Rev.2, p.15) define ANG_eixo = arcsin(ACC_eixo) - confere com
+// as seis orientacoes da tabela - e com Z vertical vale ACC_Z = -cos(inclinacao), que e PAR:
+// +5 graus e -5 graus produzem o MESMO numero. Consequencias aceitas:
+//   - Limites 3 e 4 em ">=" ou "<=" deixam de separar os lados (viram modulo na pratica);
+//   - a saida analogica Y so anda para um lado do Preset;
+//   - "Sentido Sensor Y" nao tem sinal para inverter;
+//   - aprumado, a leitura crua vale -90,0 graus, e e o Preset que a traz para zero.
+// A leitura NAO sai da faixa valida: arcsin nunca devolve menos de -90 nem mais de +90.
+//
+// A troca mora nesta funcao, e em nenhum outro lugar, exatamente para que desfaze-la seja uma
+// linha - foi assim que o dono do produto pediu ("se der errado nos invertemos").
+inline int16_t deciDoEixoY(const SensorSample& amostra) {
+    return amostra.zDeci;   // inverter a decisao = trocar por amostra.yDeci
+}
+
+
 constexpr uint8_t kAppAxisCount = 2;
 
 // Parametros da tarefa que main.cpp cria: DECISIONS.md 2.1, kCtrlTaskPriority/Core/StackBytes.

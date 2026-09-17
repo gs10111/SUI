@@ -128,7 +128,11 @@ static void test_resposta_dentro_do_prazo_e_fresh_com_carimbo(void) {
     clock.advanceMs(5u);
     TEST_ASSERT_TRUE(link.poll(out) == LinkPoll::Fresh);
     TEST_ASSERT_EQUAL_INT16(123, out.xDeci);
-    TEST_ASSERT_EQUAL_INT16(-456, out.yDeci);
+    // O segundo parametro de goodSample() e o eixo Y DO PRODUTO, que desde 2026-09-17 viaja no
+    // registrador 2 (ANG_Z). O registrador 1 leva veneno de proposito - ver o comentario em
+    // FakeSensorLink::goodSample.
+    TEST_ASSERT_EQUAL_INT16(-456, out.zDeci);
+    TEST_ASSERT_EQUAL_INT16(FakeSensorLink::kVenenoEixoAbandonado, out.yDeci);
     TEST_ASSERT_EQUAL_UINT16(9u, out.heartbeat);
     TEST_ASSERT_EQUAL_UINT32(1015u, out.atMs);
     TEST_ASSERT_EQUAL_UINT32(1u, link.stats().fresh);

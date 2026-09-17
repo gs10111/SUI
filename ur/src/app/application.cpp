@@ -358,7 +358,7 @@ bool Application::accept(const SensorSample& sample, uint32_t nowMs) const {
         return false;
     }
     return domain::Angle::fromDeciDegrees(sample.xDeci).valid() &&
-           domain::Angle::fromDeciDegrees(sample.yDeci).valid();
+           domain::Angle::fromDeciDegrees(deciDoEixoY(sample)).valid();
 }
 
 void Application::updateHealth(bool good, uint32_t nowMs) {
@@ -520,7 +520,7 @@ void Application::finishCycle() {
     const bool frameArrived = (verdict_ == LinkPoll::Fresh);
 
     for (uint8_t i = 0; i < kAppAxisCount; ++i) {
-        const int16_t deci = (i == 0) ? sample_.xDeci : sample_.yDeci;
+        const int16_t deci = (i == 0) ? sample_.xDeci : deciDoEixoY(sample_);
         const domain::Angle fresh =
             good ? domain::Angle::fromDeciDegrees(deci) : domain::Angle::invalid();
         const domain::Angle medido =

@@ -1276,6 +1276,64 @@ static void test_buildNormalInput_usa_a_calibracao_gravada_e_nao_a_nominal(void)
     TEST_ASSERT_EQUAL_INT16(100, in.analogPercent[0]);
 }
 
+// --- qual eixo da sensora alimenta o canal Y do produto (decisao de 2026-09-17) ------------
+//
+// O canal Y da Unidade Remota passou a vir do ANG_Z da sensora. Este teste existe porque a
+// troca e invisivel: nada no display, no rele ou na saida analogica denuncia qual registrador
+// esta por tras, e um refactor bem-intencionado que "arrumasse" o nome do campo desfaria a
+// decisao do dono do produto sem ninguem perceber.
+static void test_o_canal_Y_e_alimentado_pelo_ANG_Z_da_sensora(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    // Amostra montada A MAO, com os tres eixos DIFERENTES entre si: e a unica forma de dizer
+    // qual deles chegou ao canal Y.
+    SensorSample amostra = FakeSensorLink::goodSample(100, 0, 500);
+    amostra.xDeci = 100;   // ANG_X  -> canal X
+    amostra.yDeci = 200;   // ANG_Y  -> NAO usado pelo produto
+    amostra.zDeci = 300;   // ANG_Z  -> canal Y
+    rig.link.replySample(amostra, 18);
+    cycles(rig.clock, rig.app, 4);
+
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_TRUE(snap.raw[0].valid() && snap.raw[1].valid());
+    TEST_ASSERT_EQUAL_INT16_MESSAGE(100, snap.raw[0].deciDegrees(),
+                                    "o canal X continua vindo do ANG_X");
+    TEST_ASSERT_EQUAL_INT16_MESSAGE(300, snap.raw[1].deciDegrees(),
+                                    "o canal Y tem de vir do ANG_Z, e nao do ANG_Y");
+    TEST_ASSERT_TRUE_MESSAGE(snap.raw[1].deciDegrees() != 200,
+                             "o canal Y voltou a ler o ANG_Y");
+}
+
+// E a amostra e julgada pelo eixo que o produto USA. Um ANG_Y fora da faixa nao pode reprovar
+// uma leitura boa, e um ANG_Z fora da faixa TEM de reprovar.
+static void test_a_validade_da_amostra_segue_o_eixo_que_o_produto_usa(void) {
+    Rig bom;
+    bom.power();
+    settleClear(bom);
+    SensorSample a = FakeSensorLink::goodSample(0, 0, 600);
+    a.xDeci = kQuietDeci;
+    a.yDeci = 1500;        // ANG_Y fora de +-900: irrelevante, o produto nao o usa
+    a.zDeci = kQuietDeci;  // ANG_Z num angulo que nao dispara limite
+    bom.link.replySample(a, 18);
+    cycles(bom.clock, bom.app, 4);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllClear, bom.app.snapshot().relayMask,
+                                    "ANG_Y fora da faixa nao pode reprovar a amostra");
+
+    Rig ruim;
+    ruim.power();
+    settleClear(ruim);
+    SensorSample b = FakeSensorLink::goodSample(0, 0, 700);
+    b.xDeci = kQuietDeci;
+    b.yDeci = kQuietDeci;
+    b.zDeci = 1500;   // ANG_Z fora de +-900: agora E o eixo do produto, tem de reprovar
+    ruim.link.replySample(b, 18);
+    cycles(ruim.clock, ruim.app, 4);
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllSignalled, ruim.app.snapshot().relayMask,
+                                    "ANG_Z fora da faixa tem de levar os quatro reles a alarme");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1321,5 +1379,7 @@ int main(int, char**) {
     RUN_TEST(test_otaHold_forca_alarme_e_3932_com_o_enlace_perfeito);
     RUN_TEST(test_otaHold_sai_sozinho_sem_rearme);
     RUN_TEST(test_otaHold_nao_se_confunde_com_o_latch_de_configuracao);
+    RUN_TEST(test_o_canal_Y_e_alimentado_pelo_ANG_Z_da_sensora);
+    RUN_TEST(test_a_validade_da_amostra_segue_o_eixo_que_o_produto_usa);
     return UNITY_END();
 }

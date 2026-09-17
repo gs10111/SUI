@@ -108,11 +108,21 @@ public:
     // Amostra de transporte valido e conteudo saudavel, ponto de partida do roteiro. O teste
     // do dominio estraga o campo que quiser: status = 0x0011 (angulo congelado), 0x0009
     // (selftest latchado), heartbeat repetido, |angulo| > 900.
+    // O SEGUNDO PARAMETRO E O EIXO Y DO PRODUTO, e nao o registrador 1 do fio.
+    //
+    // Desde a decisao de 2026-09-17 o canal Y da Unidade Remota e alimentado pelo ANG_Z da
+    // sensora (ver deciDoEixoY em app/application.h), entao o valor vai para zDeci.
+    //
+    // O registrador 1 recebe VENENO: 1234 decimos esta fora da faixa mecanica de +-900, entao
+    // qualquer caminho que volte a ler yDeci invalida a amostra e derruba os quatro reles em
+    // alarme - a suite quebra alto, em vez de passar com o eixo errado ligado.
+    static constexpr int16_t kVenenoEixoAbandonado = 1234;
+
     static SensorSample goodSample(int16_t xDeci, int16_t yDeci, uint16_t heartbeat) {
         SensorSample sample{};
         sample.xDeci = xDeci;
-        sample.yDeci = yDeci;
-        sample.zDeci = 0;
+        sample.yDeci = kVenenoEixoAbandonado;
+        sample.zDeci = yDeci;
         sample.status = kStsDataValid;
         sample.tempDeciC = 250;
         sample.whoAmI = 0x00C1;

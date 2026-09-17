@@ -42,8 +42,12 @@ constexpr int16_t kAngleDeciMax = 900;
 
 struct SensorSample {
     int16_t xDeci;      // reg 0, decimos de grau, com sinal
-    int16_t yDeci;      // reg 1
-    int16_t zDeci;      // reg 2, diagnostico; nao decide rele
+    // ATENCAO AOS NOMES: estes campos carregam os eixos DA SENSORA, como vem do fio. Desde
+    // 2026-09-17 o canal Y do PRODUTO e alimentado por zDeci, e nao por yDeci - a escolha mora
+    // em deciDoEixoY(), em app/application.h, e o porque esta em docs/protocolo-rs485.md
+    // secao 14. Nao renomeie estes campos para "eixo do produto": eles descrevem o fio.
+    int16_t yDeci;      // reg 1, ANG_Y - NAO usado pelo produto desde 2026-09-17
+    int16_t zDeci;      // reg 2, ANG_Z - alimenta o canal Y do produto
     uint16_t status;    // reg 3, bitfield cru, sem interpretacao
     int16_t tempDeciC;  // reg 4, decimos de grau Celsius
     uint16_t whoAmI;    // reg 5, 0x00C1 quando o SCL3300 respondeu

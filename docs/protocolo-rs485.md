@@ -279,8 +279,8 @@ realmente escreve. **Nao ha registrador de escrita.**
 | Addr | Nome | Tipo no fio | Interpretacao | Unidade | Faixa util | Significado |
 |---:|---|---|---|---|---|---|
 | 0 | `ANG_X` | uint16 big-endian | **reinterpretar como int16 com sinal** | decimo de grau | -900 a +900 | Inclinacao do eixo X. O formato representa ate +/-1800 (+/-180,0 graus) |
-| 1 | `ANG_Y` | uint16 BE | int16 com sinal | decimo de grau | -900 a +900 | Inclinacao do eixo Y |
-| 2 | `ANG_Z` | uint16 BE | int16 com sinal | decimo de grau | -900 a +900 | Inclinacao do eixo Z. **Diagnostico apenas** — a UR le, registra, e nao usa para rele nem para saida analogica |
+| 1 | `ANG_Y` | uint16 BE | int16 com sinal | decimo de grau | -900 a +900 | Inclinacao do eixo Y **NAO usado pela UR desde 2026-09-17** (ver secao 14); continua publicado e visivel no console da sensora |
+| 2 | `ANG_Z` | uint16 BE | int16 com sinal | decimo de grau | -900 a +900 | Inclinacao do eixo Z. **DESDE 2026-09-17 E O EIXO Y DO PRODUTO** — alimenta o display Y, a saida analogica Y e os Limites 3 e 4. Ver a secao 14 |
 | 3 | `STATUS` | uint16 BE | bitfield | — | ver secao 7 | Palavra de saude do sensor. **E o unico criterio de validade do dado** |
 | 4 | `TEMP` | uint16 BE | int16 com sinal | decimo de grau Celsius | tipico -400 a +900 | Temperatura interna do SCL3300 |
 | 5 | `WHO_AM_I` | uint16 BE | constante | — | `0x00C1` ou `0x0000` | `0x00C1` quando o SCL3300 respondeu ao menos uma vez; `0x0000` desde o boot ate a primeira leitura boa |
@@ -676,3 +676,50 @@ um rollout. Se o painel mudar, isto nao muda.
 |---|---|---|---|---|
 | **REQ-COM-01** | A UR e o Sensor de Inclinacao comunicam-se por interface serial RS-485, com o sensor instalado a ate 500 m da UR; a perda dessa comunicacao e detectada e sinalizada | Manual 2.1 (linhas 27 e 34), 4 (linha 58), 7 (linhas 297-298) | Secao 2 (meio fisico, terminacao, blindagem, 500 m e o limite de 50 m para alimentacao remota); secao 3 (19200 8N1, Modbus RTU, CRC16-MODBUS); secao 4 (escravo 1); secao 5 (funcoes, excecoes e silencios); secao 8 (t3.5 de 1,82 ms, polling de 50 ms, timeout de 30 ms); secao 9.2 (3 quadros invalidos declaram falha em 150 ms; 10 validos restabelecem em 500 ms) | Bancada: 500 m de par trancado terminado, 1 h sem quadro invalido. Host: V5, V6, V7, V12 (secao 10.4). Campo: rompimento de A, inversao de A/B e queda do +5 Vcc, cada um declarando falha em <= 150 ms |
 | **REQ-MEA-02** | O angulo e calculado no sensor e transmitido a UR ja convertido em graus, com faixa de +/-90,0 graus por eixo e resolucao de 0,1 grau, e a UR so utiliza leitura comprovadamente valida | Manual 2.1 (linhas 25, 28-29), 5.5 (linha 130), 6.1 | Secao 6 (registradores 0/1/2 como `int16` em decimos de grau; conversao `raw * 900 / 16384` com 18,2 LSB por decimo; faixa util -900..+900; regra de Preset e Sentido como aritmetica inteira exata); secao 7 (palavra de status bit a bit); secao 7.2 (aceitacao so com `status == 0x0001` exato); secao 7.3 (frescor pelo registrador 7); secao 9.2 (fora de faixa como falha mecanica, nao como valor truncado) | Host: V1, V2, V3, V4, V8, V9, V10, V11 (secao 10.4). Bancada: mesa de seno em -90,0 / -45,0 / 0,0 / +45,0 / +90,0 graus por eixo, um eixo por vez (X e Y nao podem valer +/-90 simultaneamente), erro <= 0,1 grau. Sensor desconectado do SCL3300 com a sensora viva: a UR tem de recusar, nao congelar |
+
+---
+
+## 14. Qual eixo da sensora alimenta o canal Y do produto (2026-09-17)
+
+O canal Y da Unidade Remota — display, saida analogica Y e Limites 3 e 4 — passou a ser
+alimentado pelo **registrador 2 (`ANG_Z`)**, e nao mais pelo registrador 1 (`ANG_Y`).
+
+**O fio nao mudou.** A sensora continua publicando os tres eixos exatamente como antes, e a UR
+continua lendo os oito registradores. O que mudou foi qual deles a UR usa, e isso vive numa
+funcao so: `deciDoEixoY()`, em `ur/src/app/application.h`. Desfazer e trocar uma linha.
+
+### O que foi medido antes, e que o dono do produto decidiu assumir
+
+A Tabela 9 do datasheet do SCL3300 (doc 4921 Rev.2, p.15) define, e confere com as seis
+orientacoes tabeladas:
+
+    ANG_eixo = arcsin(ACC_eixo / |ACC|)
+
+Com o eixo Z montado **na vertical**, vale `ACC_Z = -cos(inclinacao)`. Cosseno e uma funcao PAR:
+
+| inclinacao da estrutura | `ANG_Z` assinado |
+|---|---|
+| 0 grau (aprumado) | -90,0 |
+| **+-**2 graus | -88,0 |
+| **+-**5 graus | -85,0 |
+| **+-**10 graus | -80,0 |
+| **+-**45 graus | -45,0 |
+
+Repare no `+-`: **inclinar para um lado ou para o outro produz o mesmo numero.** Consequencias,
+aceitas por decisao de produto:
+
+- os Limites 3 e 4 em `>=` ou `<=` deixam de separar os lados — na pratica operam como `+ (modulo)`;
+- a saida analogica Y so anda para um lado do Preset;
+- `Sentido Sensor Y` nao tem sinal para inverter;
+- aprumado, a leitura crua vale -90,0 graus, e e o Preset que a traz para zero.
+
+**A leitura nao sai da faixa valida:** `arcsin` nunca devolve menos de -90 nem mais de +90, entao
+nao ha risco de amostra recusada por faixa.
+
+### Se isto for revertido
+
+Trocar `amostra.zDeci` por `amostra.yDeci` em `deciDoEixoY()`, e reverter esta secao, a linha do
+registrador 1 e a do registrador 2 da tabela acima. Os testes
+`test_o_canal_Y_e_alimentado_pelo_ANG_Z_da_sensora` e
+`test_a_validade_da_amostra_segue_o_eixo_que_o_produto_usa` quebram de proposito, para que a
+reversao seja deliberada e nao silenciosa.
