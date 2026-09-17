@@ -78,9 +78,12 @@ namespace {
 // E o DECIMO SEGUNDO, "Atualizar", entrou depois, tambem antes de "Sair" e pelo mesmo criterio:
 // acrescentar no fim nao reordena nenhum dos que o operador ja decorou, entao a errata do manual
 // continua sendo "mais um item" e nao "lista reescrita".
+// E o DECIMO TERCEIRO, "Atraso Alarme", entrou em 2026-09-17, tambem antes de "Sair" e pelo
+// mesmo criterio: acrescentar no fim nao reordena nada do que o operador ja decorou.
 const char* const kOrdemDoManual[MenuMachine::kItemCount] = {
     "Voltar",   "Ajusta Preset",  "Auto Calibracao", "Limite 1",  "Limite 2",   "Limite 3",
-    "Limite 4", "Sentido Sensor", "Senha",           "Rearmar",   "Atualizar",  "Sair",
+    "Limite 4", "Sentido Sensor", "Senha",           "Rearmar",   "Atualizar",
+    "Atraso Alarme", "Sair",
 };
 
 // Os quatro limites: item de menu, etiqueta de eixo (L202), tela de submenu, tela do editor
@@ -1626,14 +1629,16 @@ static void test_menu_tem_o_item_rearmar_antes_do_sair(void) {
     Bancada b;
     entrarNoMenu(b);
 
-    TEST_ASSERT_EQUAL_UINT8(12u, MenuMachine::kItemCount);
+    TEST_ASSERT_EQUAL_UINT8(13u, MenuMachine::kItemCount);
     descerAte(b, MenuItem::Rearmar);
     TEST_ASSERT_EQUAL_STRING("Rearmar", selecionado(b));
     TEST_ASSERT_TRUE(b.tela.showsExactly("Rearmar"));
 
-    // "Atualizar" entrou depois, entre os dois, e "Sair" continua sendo o ultimo
+    // "Atualizar" e "Atraso Alarme" entraram depois, nesta ordem, e "Sair" continua sendo o ultimo
     toque(b, Key::Down);
     TEST_ASSERT_EQUAL_STRING("Atualizar", selecionado(b));
+    toque(b, Key::Down);
+    TEST_ASSERT_EQUAL_STRING("Atraso Alarme", selecionado(b));
     toque(b, Key::Down);
     TEST_ASSERT_EQUAL_STRING("Sair", selecionado(b));
 }
@@ -1804,6 +1809,86 @@ static void test_toque_solto_nao_confirma_o_codigo(void) {
 }
 
 
+// --- ATRASO ALARME (2026-09-17) -------------------------------------------------------------
+//
+// Unico para os quatro canais, editado em segundos com uma casa. O piso e 00,1 - o tempo que a
+// placa sempre teve - e o teto e 10,0: acima disso um supervisor de inclinacao deixa de ser
+// dispositivo de seguranca.
+
+static void test_atraso_abre_no_valor_corrente_e_grava(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::AtrasoAlarme);
+    TEST_ASSERT_EQUAL_STRING("Atraso Alarme", selecionado(b));
+
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::EditAtraso), code(b.menu.state()));
+    // Abre no valor corrente, como "Edita senha" - e ao contrario do codigo de OTA, que e portao.
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Atraso Alarme(s):00,1"));
+
+    // 00,1 -> 03,0
+    toque(b, Key::Menu);          // vai para o digito das unidades
+    for (int i = 0; i < 3; ++i) {
+        toque(b, Key::Up);
+    }
+    toque(b, Key::Menu);
+    toque(b, Key::Menu);
+    // volta ao digito dos decimos e zera
+    TEST_ASSERT_TRUE(b.tela.shows("Atraso Alarme(s):"));
+
+    hold(b);
+    esperar(b, MenuMachine::kGravOkMs);
+    // A edicao fica PENDENTE ate a saida ser confirmada - regra unica de A13, igual a dos limites.
+    TEST_ASSERT_TRUE_MESSAGE(b.menu.pendingConfig(),
+                             "editar o atraso tem de marcar configuracao pendente");
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(1u, b.ativo.alarmDelayDeciS(),
+                                     "o agregado ativo so muda na confirmacao da saida");
+
+    descerAte(b, MenuItem::Sair);
+    toque(b, Key::Menu);
+    hold(b);   // confirma NOVA CONFIG - CONFIRMA?
+    TEST_ASSERT_TRUE_MESSAGE(b.ativo.alarmDelayDeciS() != 1u,
+                             "confirmada a saida, o atraso novo passa a valer");
+}
+
+// O piso e portao, e o portao fecha na CONFIRMACAO - regra unica de A13, a mesma dos limites:
+// o campo deixa digitar, e a confirmacao recusa com a mensagem da faixa, sem clamp silencioso.
+// 00,0 desligaria o antichatter de 100 ms que a placa sempre teve.
+static void test_atraso_abaixo_do_piso_e_recusado_na_confirmacao(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    const uint16_t antes = b.ativo.alarmDelayDeciS();
+    descerAte(b, MenuItem::AtrasoAlarme);
+    toque(b, Key::Menu);
+
+    toque(b, Key::Down);   // 00,1 -> 00,0
+    TEST_ASSERT_TRUE(b.tela.showsExactly("Atraso Alarme(s):00,0"));
+
+    hold(b);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(code(MenuState::Recusa), code(b.menu.state()),
+                                  "00,0 tem de ser recusado, e nao grampeado em silencio");
+    TEST_ASSERT_TRUE(b.tela.shows(MenuMachine::kMsgAtrasoForaDaFaixa));
+
+    esperar(b, MenuMachine::kRecusaMs);
+    TEST_ASSERT_EQUAL_INT_MESSAGE(code(MenuState::EditAtraso), code(b.menu.state()),
+                                  "a recusa devolve o cursor ao campo");
+    TEST_ASSERT_EQUAL_UINT16(antes, b.ativo.alarmDelayDeciS());
+}
+
+// Sair do editor sem hold nao pode gravar nada.
+static void test_atraso_sem_confirmacao_nao_grava(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    const uint16_t antes = b.ativo.alarmDelayDeciS();
+    descerAte(b, MenuItem::AtrasoAlarme);
+    toque(b, Key::Menu);
+    toque(b, Key::Up);
+    toque(b, Key::Up);
+    esperar(b, 130000);   // abandona o painel: timeout de 120 s
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(antes, b.ativo.alarmDelayDeciS(),
+                                     "sem confirmar a saida, nada pode ter sido gravado");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -1856,6 +1941,9 @@ int main(int, char**) {
     RUN_TEST(test_codigo_errado_nao_pede_nada_e_volta_ao_menu);
     RUN_TEST(test_ativar_ota_nao_suja_a_configuracao);
     RUN_TEST(test_toque_solto_nao_confirma_o_codigo);
+    RUN_TEST(test_atraso_abre_no_valor_corrente_e_grava);
+    RUN_TEST(test_atraso_abaixo_do_piso_e_recusado_na_confirmacao);
+    RUN_TEST(test_atraso_sem_confirmacao_nao_grava);
     RUN_TEST(test_rearmar_pede_a_acao_e_confirma_com_texto_proprio);
     RUN_TEST(test_rearmar_nao_cria_pendencia_de_configuracao);
     RUN_TEST(test_depois_do_rearme_a_gravacao_volta_ao_texto_de_gravacao);

@@ -268,6 +268,9 @@ void Application::applyPublished() {
 }
 
 void Application::applyRules() {
+    // Unico para os quatro canais, por decisao de produto de 2026-09-17. Entra junto das regras
+    // porque e a mesma travessia: o conjunto ativo INTEIRO passa a valer no mesmo instante.
+    evaluator_.setAttackConfirmMs(active_.alarmDelayMs());
     for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
         const domain::LimitId id = static_cast<domain::LimitId>(i);
         const domain::Angle value = active_.limitValue(id);

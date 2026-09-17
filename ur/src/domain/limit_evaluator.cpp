@@ -11,7 +11,8 @@ namespace domain {
 
 LimitEvaluator::LimitEvaluator(const IClock& clockRef)
     : clock_(clockRef), channels_(), lastUpdateMs_(clockRef.nowMs()),
-      invalidRun_(kInvalidCyclesToFault), linkFaulted_(true) {
+      invalidRun_(kInvalidCyclesToFault), linkFaulted_(true),
+      attackConfirmMs_(kAttackConfirmMs) {
     for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
         channels_[i].rule = LimitRule();
         channels_[i].relayState = RelayState::Signalled;
@@ -28,6 +29,16 @@ LimitEvaluator::LimitEvaluator(const IClock& clockRef)
 
 uint8_t LimitEvaluator::indexOf(LimitChannel channel) {
     return static_cast<uint8_t>(channel);
+}
+
+// GRAMPEIA EM VEZ DE RECUSAR, e de proposito: quem chama e a camada de aplicacao a partir de um
+// parametro ja validado por Parameters. Um valor impossivel chegando aqui e defeito de
+// programacao, e nesse caso o comportamento seguro e o prazo de fabrica - nunca um prazo de
+// varios minutos que deixaria os quatro reles quietos diante de uma inclinacao real.
+void LimitEvaluator::setAttackConfirmMs(uint32_t ms) {
+    const uint32_t piso = kAttackConfirmMs;
+    const uint32_t teto = 10000u;
+    attackConfirmMs_ = (ms < piso) ? piso : ((ms > teto) ? piso : ms);
 }
 
 void LimitEvaluator::setRule(LimitChannel channel, const LimitRule& newRule) {
@@ -112,7 +123,7 @@ void LimitEvaluator::evaluate(Channel& channel, int16_t angleDeci, uint32_t nowM
     }
 
     const uint32_t spanMs =
-        atRest ? kAttackConfirmMs : (channel.ceiling ? kReleaseCeilingMs : kReleaseConfirmMs);
+        atRest ? attackConfirmMs_ : (channel.ceiling ? kReleaseCeilingMs : kReleaseConfirmMs);
     if (!deadlineReached(channel.sinceMs, nowMs, spanMs)) {
         return;
     }

@@ -78,9 +78,16 @@ public:
 
     static constexpr uint32_t kParamMagic = 0x44505231u;  // "DPR1"
     static constexpr uint32_t kCalMagic = 0x44435231u;    // "DCR1"
-    static constexpr uint16_t kParamVersion = 1;
+    // VERSAO 2 desde 2026-09-17: o bloco ganhou o atraso de alarme. A versao 1 CONTINUA sendo
+    // aceita na leitura - ver loadParams - porque toda placa ja instalada tem um bloco de 32
+    // bytes gravado, e recusa-lo levaria a frota inteira a CONFIG PERDIDA na atualizacao, com os
+    // quatro reles em alarme. Um bloco v1 e carregado com o atraso no valor de fabrica, que e
+    // exatamente o comportamento que aquela placa ja tinha.
+    static constexpr uint16_t kParamVersion = 2;
+    static constexpr uint16_t kParamVersionLegado = 1;
+    static constexpr uint16_t kParamBlobSizeLegado = 32;
     static constexpr uint16_t kCalVersion = 1;
-    static constexpr uint16_t kParamBlobSize = 32;
+    static constexpr uint16_t kParamBlobSize = 34;
     static constexpr uint16_t kCalBlobSize = 20;
 
     static constexpr uint16_t kPasswordMax = 9999;
@@ -117,6 +124,24 @@ public:
     static constexpr int16_t kDefaultLimitDeci = 50;
     static constexpr int16_t kDefaultLimitOffDeci = 0;
     static constexpr uint16_t kDefaultPassword = 1234;
+
+    // ATRASO DE ARMAMENTO DO ALARME (2026-09-17), em DECIMOS DE SEGUNDO, unico para os quatro
+    // canais. E o tempo que o angulo precisa permanecer alem do limite antes de o rele atuar.
+    //
+    // POR QUE EXISTE: um solavanco de dois segundos numa estrutura portuaria atravessa o limite,
+    // dispara rele e sirene, e volta. O alarme falso repetido ensina o operador a ignorar o
+    // alarme - que e o oposto do que este equipamento existe para fazer.
+    //
+    // O PISO E O COMPORTAMENTO DE HOJE (0,1 s), e nao zero: os 100 ms sempre existiram como
+    // antichatter e tirar isso nao foi pedido. O TETO E 10,0 s, e o motivo esta escrito: acima
+    // disso um supervisor de inclinacao deixa de ser dispositivo de seguranca e vira indicador.
+    //
+    // O ATRASO VALE SO PARA O ANGULO. Falha de enlace, sensor doente e configuracao perdida
+    // continuam levando os quatro reles a alarme na hora, porque nenhuma delas passa pelo
+    // avaliador de limites - ver Application::driveRelays.
+    static constexpr uint16_t kAlarmDelayMinDeciS = 1;    // 0,1 s - o que a placa sempre fez
+    static constexpr uint16_t kAlarmDelayMaxDeciS = 100;  // 10,0 s
+    static constexpr uint16_t kDefaultAlarmDelayDeciS = kAlarmDelayMinDeciS;
     static constexpr int16_t kDefaultCalFullScaleDeci = 450;
 
     // Seletor vindo da IHM (indice de menu) ou de um blob e dado externo, nao invariante de
@@ -153,6 +178,14 @@ public:
         return limitIdValid(id) ? static_cast<LimitOp>(rel_.limitOp[idx(id)]) : LimitOp::Off;
     }
     uint16_t password() const { return rel_.password; }
+
+    uint16_t alarmDelayDeciS() const { return rel_.alarmDelayDeciS; }
+    uint32_t alarmDelayMs() const { return static_cast<uint32_t>(rel_.alarmDelayDeciS) * 100u; }
+    Status setAlarmDelayDeciS(uint16_t deciS);
+
+    static constexpr bool alarmDelayValid(uint16_t deciS) {
+        return deciS >= kAlarmDelayMinDeciS && deciS <= kAlarmDelayMaxDeciS;
+    }
 
     Angle calFullScale(Axis axis) const {
         return axisValid(axis) ? Angle::fromDeciDegrees(cal_.fullScaleDeci[idx(axis)])
@@ -218,6 +251,7 @@ private:
         uint8_t limitOp[kLimitCount];
         uint8_t sensorDir[kAxisCount];
         uint16_t password;
+        uint16_t alarmDelayDeciS;
     };
 
     struct CalGroup {

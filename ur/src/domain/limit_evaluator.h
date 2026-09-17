@@ -78,6 +78,10 @@
 
 namespace domain {
 
+// Valor de FABRICA da confirmacao de ataque. Desde 2026-09-17 ele e configuravel pelo item
+// "Atraso Alarme" do menu, unico para os quatro canais - ver Parameters::kAlarmDelayMinDeciS. A
+// constante continua aqui porque e o piso e o default, e porque um avaliador recem-construido,
+// antes de qualquer setAttackConfirmMs(), tem de se comportar como a placa sempre se comportou.
 constexpr uint32_t kAttackConfirmMs = 100;
 constexpr uint32_t kReleaseConfirmMs = 3000;
 constexpr uint32_t kReleaseCeilingMs = 60000;
@@ -107,6 +111,21 @@ public:
     LimitEvaluator& operator=(const LimitEvaluator&) = delete;
 
     void setRule(LimitChannel channel, const LimitRule& newRule);
+
+    // ATRASO DE ARMAMENTO DO ALARME, unico para os quatro canais: o angulo tem de permanecer
+    // alem do limite por este tempo antes de o rele atuar. Existe para que um solavanco de
+    // poucos segundos nao dispare sirene.
+    //
+    // NAO TOCA NA LIBERACAO, que continua com kReleaseConfirmMs e o teto antichatter - o pedido
+    // foi atrasar o disparo, e alargar a liberacao junto deixaria o rele preso em alarme depois
+    // que a estrutura ja voltou.
+    //
+    // E NAO TOCA NA FALHA: enlace morto, sensor doente e configuracao perdida nao passam por
+    // este avaliador, sao decididos em Application::driveRelays e continuam levando os quatro
+    // reles a alarme na hora. Atrasar uma falha de leitura seria atrasar a unica informacao que
+    // o equipamento tem de que parou de enxergar.
+    void setAttackConfirmMs(uint32_t ms);
+    uint32_t attackConfirmMs() const { return attackConfirmMs_; }
 
     RelayMask update(const LimitInput& in);
 
@@ -149,6 +168,9 @@ private:
     uint32_t lastUpdateMs_;
     uint8_t invalidRun_;
     bool linkFaulted_;
+    // Atraso de armamento do alarme, unico para os quatro canais (2026-09-17). Nasce no valor de
+    // fabrica para que um avaliador recem-construido se comporte como a placa sempre se comportou.
+    uint32_t attackConfirmMs_;
 };
 
 }  // namespace domain

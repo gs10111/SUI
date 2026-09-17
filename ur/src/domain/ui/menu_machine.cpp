@@ -52,13 +52,20 @@ constexpr int16_t kListaItemY[MenuMachine::kListWindow] = {14, 30, 46};
 // sinal, faixa 0000 a 9999 da Tabela 1 (L131).
 const DigitFieldSpec kCampoSenha = {4, 0, false, 0, 9999, ""};
 
+// Atraso de armamento: tres digitos com UMA casa, 00,1 a 10,0 segundos. O valor viaja em decimos
+// de segundo, como o resto do produto viaja em decimos de grau.
+const DigitFieldSpec kCampoAtraso = {3, 1, false, Parameters::kAlarmDelayMinDeciS,
+                                     Parameters::kAlarmDelayMaxDeciS,
+                                     MenuMachine::kMsgAtrasoForaDaFaixa};
+
 // Campo angular de Valor Limite (L214 a L217): +XXX,X em decimos de grau, -90,0 a +90,0.
 const DigitFieldSpec kCampoAngular = {4, 1, true, Angle::kMinDeciDeg, Angle::kMaxDeciDeg,
                                       MenuMachine::kMsgForaDaFaixa};
 
 const char* const kNomeItem[MenuMachine::kItemCount] = {
     "Voltar",   "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2", "Limite 3",
-    "Limite 4", "Sentido Sensor", "Senha",          "Rearmar",  "Atualizar", "Sair",
+    "Limite 4", "Sentido Sensor", "Senha",          "Rearmar",  "Atualizar",
+    "Atraso Alarme", "Sair",
 };
 
 // docs/ihm-estados.md 3.4: "Limite 1>Voltar   Valor Limite X1   Operacao Limite X1".
@@ -231,6 +238,7 @@ void MenuMachine::onGesture(const Gesture& gesture) {
         case MenuState::EditSentido: onEditSentido(gesture); break;
         case MenuState::EditSenha: onEditSenha(gesture); break;
         case MenuState::CodigoOta: onCodigoOta(gesture); break;
+        case MenuState::EditAtraso: onEditAtraso(gesture); break;
         case MenuState::Revisao: onRevisao(gesture); break;
         // Telas temporizadas, bloqueio e assistente: gesto IGNORADO, nunca reinterpretado
         // (invariante 6 de docs/ihm-estados.md secao 6; o aviso de A9 e obrigatorio e nao
@@ -548,6 +556,38 @@ void MenuMachine::onCodigoOta(const Gesture& gesture) {
     dirty_ = true;
 }
 
+void MenuMachine::onEditAtraso(const Gesture& gesture) {
+    if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
+        // MESMO portao do editor de Valor Limite (A13): recusa explicita com a mensagem da
+        // faixa, sem clamp silencioso. Sem esta chamada o valor fora de faixa chegaria ao
+        // agregado, seria recusado la, e a tela diria "Falha de gravacao!" - que manda o
+        // operador procurar defeito de memoria quando o que houve foi numero fora da faixa.
+        if (editor_.confirm() != ConfirmResult::Ok) {
+            recusaMsg_ = editor_.outOfRangeMessage();
+            showMessage(MenuState::Recusa, MenuState::EditAtraso, kRecusaMs);
+            return;
+        }
+        const uint16_t novo = static_cast<uint16_t>(editor_.value());
+        if (novo != draft_.alarmDelayDeciS()) {
+            if (!gravacaoAceita(draft_.setAlarmDelayDeciS(novo))) {
+                return;
+            }
+            pending_ = true;
+        }
+        gravado();
+        return;
+    }
+    if (gesture.kind != GestureKind::ShortTap) {
+        return;
+    }
+    switch (gesture.key) {
+        case Key::Menu: editor_.menu(); break;
+        case Key::Up: editor_.up(); break;
+        case Key::Down: editor_.down(); break;
+    }
+    dirty_ = true;
+}
+
 void MenuMachine::onRevisao(const Gesture& gesture) {
     if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
         commitOnExit();
@@ -616,6 +656,7 @@ void MenuMachine::openItem() {
         // senha do Modo Programacao; ligar o radio de um equipamento de seguranca e outra
         // autoridade, e a senha do Modo Programacao o cliente troca.
         case MenuItem::Atualizar: openCodigoOta(); break;
+        case MenuItem::AtrasoAlarme: openAtraso(); break;
     }
 }
 
@@ -670,6 +711,13 @@ void MenuMachine::notificarFalhaOta() {
     }
     showMessage(MenuState::OtaRecusado, MenuState::Menu, kOtaMsgMs);
     otaFalhou_ = true;
+}
+
+void MenuMachine::openAtraso() {
+    editReturn_ = MenuState::Menu;
+    editor_.open(kCampoAtraso, static_cast<int16_t>(draft_.alarmDelayDeciS()));
+    state_ = MenuState::EditAtraso;
+    dirty_ = true;
 }
 
 void MenuMachine::openCodigoOta() {
@@ -911,6 +959,14 @@ void MenuMachine::render() {
 
         case MenuState::EditSenha: {
             const uint8_t prefixo = buildFieldLine(kPrefixoEditaSenha);
+            drawEditLine(kConteudoY, line_,
+                         static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
+                         contentFont(line_));
+            break;
+        }
+
+        case MenuState::EditAtraso: {
+            const uint8_t prefixo = buildFieldLine(kPrefixoAtraso);
             drawEditLine(kConteudoY, line_,
                          static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
                          contentFont(line_));

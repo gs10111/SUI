@@ -921,6 +921,103 @@ static void test_A8_um_registro_nao_e_aceito_no_lugar_do_outro(void) {
     ASSERT_ERR(Err::Storage, p.loadParams(esticado, sizeof(esticado)));
 }
 
+// --- atraso de alarme e a migracao do bloco v1 (2026-09-17) ---------------------------------
+
+// O TESTE QUE PROTEGE A FROTA. Toda placa ja instalada tem um bloco da VERSAO 1, com 32 bytes e
+// sem o campo de atraso. Se a atualizacao de firmware recusasse esse bloco, o equipamento
+// entraria em CONFIG PERDIDA - quatro reles em alarme - em TODA unidade do campo, ao mesmo
+// tempo, por causa de um campo novo. Este teste monta um bloco v1 a mao, byte a byte, como o
+// firmware antigo gravava.
+static void test_bloco_da_versao_1_continua_carregando(void) {
+    uint8_t v1[32];
+    memset(v1, 0, sizeof(v1));
+    // magica "DPR1" e versao 1
+    v1[0] = 0x31; v1[1] = 0x52; v1[2] = 0x50; v1[3] = 0x44;
+    v1[4] = 1; v1[5] = 0;
+    auto p16 = [&](uint16_t off, uint16_t v) {
+        v1[off] = static_cast<uint8_t>(v & 0xFFu);
+        v1[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+    };
+    p16(6, static_cast<uint16_t>(0));      // preset X
+    p16(8, static_cast<uint16_t>(0));      // preset Y
+    p16(10, static_cast<uint16_t>(0));     // offset X
+    p16(12, static_cast<uint16_t>(0));     // offset Y
+    p16(14, static_cast<uint16_t>(123));   // limite X1 = +12,3 graus
+    p16(16, static_cast<uint16_t>(-456));  // limite X2
+    p16(18, static_cast<uint16_t>(50));    // limite Y1
+    p16(20, static_cast<uint16_t>(0));     // limite Y2
+    v1[22] = 1; v1[23] = 2; v1[24] = 3; v1[25] = 0;   // operacoes
+    v1[26] = 1; v1[27] = 0;                            // sentidos
+    p16(28, 4321);                                     // senha
+    p16(30, crc16Modbus(v1, 30));                      // CRC v1: sobre 30 bytes, no fim de 32
+
+    Parameters p;
+    TEST_ASSERT_TRUE_MESSAGE(p.loadParams(v1, sizeof(v1)).ok(),
+                             "bloco v1 recusado: a frota inteira iria a CONFIG PERDIDA");
+
+    // Tudo o que estava gravado tem de chegar intacto.
+    TEST_ASSERT_EQUAL_INT16(123, p.limitValue(LimitId::X1).deciDegrees());
+    TEST_ASSERT_EQUAL_INT16(-456, p.limitValue(LimitId::X2).deciDegrees());
+    TEST_ASSERT_EQUAL_UINT16(4321, p.password());
+    TEST_ASSERT_TRUE(p.sensorDir(Axis::X) == SensorDir::CounterClockwise);
+
+    // E o campo que nao existia assume o comportamento que aquela placa ja tinha.
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(Parameters::kDefaultAlarmDelayDeciS, p.alarmDelayDeciS(),
+                                     "bloco v1 tem de herdar o atraso de fabrica");
+    TEST_ASSERT_EQUAL_UINT32(100u, p.alarmDelayMs());
+}
+
+// E o bloco v2 tem de sobreviver a uma ida e volta completa, com o campo novo preservado.
+static void test_atraso_sobrevive_a_gravacao_e_a_leitura(void) {
+    Parameters origem;
+    TEST_ASSERT_TRUE(origem.setAlarmDelayDeciS(35).ok());   // 3,5 s
+
+    uint8_t blob[Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    TEST_ASSERT_TRUE(origem.serializeParams(blob, sizeof(blob), n).ok());
+    TEST_ASSERT_EQUAL_UINT16(Parameters::kParamBlobSize, n);
+
+    Parameters destino;
+    TEST_ASSERT_TRUE(destino.loadParams(blob, n).ok());
+    TEST_ASSERT_EQUAL_UINT16(35, destino.alarmDelayDeciS());
+    TEST_ASSERT_EQUAL_UINT32(3500u, destino.alarmDelayMs());
+}
+
+// A faixa e um portao, nao uma sugestao: o piso e o comportamento que a placa sempre teve e o
+// teto e o ponto em que um supervisor de inclinacao deixaria de ser dispositivo de seguranca.
+static void test_atraso_fora_da_faixa_e_recusado(void) {
+    Parameters p;
+    const uint16_t antes = p.alarmDelayDeciS();
+
+    TEST_ASSERT_TRUE(p.setAlarmDelayDeciS(0).failed());     // abaixo do piso
+    TEST_ASSERT_TRUE(p.setAlarmDelayDeciS(101).failed());   // acima do teto
+    TEST_ASSERT_TRUE(p.setAlarmDelayDeciS(65535).failed());
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(antes, p.alarmDelayDeciS(),
+                                     "recusa nao pode ter escrito nada");
+
+    TEST_ASSERT_TRUE(p.setAlarmDelayDeciS(Parameters::kAlarmDelayMinDeciS).ok());
+    TEST_ASSERT_TRUE(p.setAlarmDelayDeciS(Parameters::kAlarmDelayMaxDeciS).ok());
+    TEST_ASSERT_EQUAL_UINT32(10000u, p.alarmDelayMs());
+}
+
+// Um bloco v2 com atraso fora da faixa e recusado INTEIRO. CRC aprovado nao autoriza valor fora
+// de faixa - e a mesma regra de A8 que ja vale para os outros campos.
+static void test_bloco_com_atraso_fora_da_faixa_nao_entra(void) {
+    Parameters origem;
+    uint8_t blob[Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    origem.serializeParams(blob, sizeof(blob), n);
+    blob[30] = 0xFF; blob[31] = 0xFF;                  // atraso impossivel
+    const uint16_t crc = crc16Modbus(blob, n - 2u);
+    blob[n - 2] = static_cast<uint8_t>(crc & 0xFFu);
+    blob[n - 1] = static_cast<uint8_t>((crc >> 8) & 0xFFu);
+
+    Parameters destino;
+    const uint16_t antes = destino.alarmDelayDeciS();
+    TEST_ASSERT_TRUE(destino.loadParams(blob, n).failed());
+    TEST_ASSERT_EQUAL_UINT16(antes, destino.alarmDelayDeciS());
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_RST_01_defaults_da_tabela_2_preset_e_sentido_do_sensor);
@@ -959,5 +1056,9 @@ int main(int, char**) {
     RUN_TEST(test_A8_calibracao_corrompida_nao_derruba_os_parametros);
     RUN_TEST(test_A8_parametros_corrompidos_nao_derrubam_a_calibracao);
     RUN_TEST(test_A8_um_registro_nao_e_aceito_no_lugar_do_outro);
+    RUN_TEST(test_bloco_da_versao_1_continua_carregando);
+    RUN_TEST(test_atraso_sobrevive_a_gravacao_e_a_leitura);
+    RUN_TEST(test_atraso_fora_da_faixa_e_recusado);
+    RUN_TEST(test_bloco_com_atraso_fora_da_faixa_nao_entra);
     return UNITY_END();
 }

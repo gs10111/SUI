@@ -167,7 +167,14 @@ enum class MenuItem : uint8_t {
     // gravavel por quem passar perto do patio, o ano inteiro. Com o radio sob comando, a janela
     // encolhe para os minutos em que um tecnico esta na frente do painel.
     Atualizar = 10,
-    Sair = 11,
+    // ITEM 12 DE 13, acrescentado em 2026-09-17 a pedido do dono do produto. Tempo que o angulo
+    // precisa permanecer alem do limite antes de o rele atuar - UNICO para os quatro canais.
+    //
+    // Existe porque um solavanco de poucos segundos numa estrutura portuaria atravessa o limite,
+    // dispara rele e sirene, e volta. Alarme falso repetido ensina o operador a ignorar o alarme,
+    // que e o oposto do que este equipamento existe para fazer.
+    AtrasoAlarme = 11,
+    Sair = 12,
 };
 
 enum class MenuState : uint8_t {
@@ -185,6 +192,7 @@ enum class MenuState : uint8_t {
     AvisoPresetZerado,  // aviso obrigatorio de 3 s do "Zerar Preset": mover o zero desloca os
                         // quatro pontos de atuacao, exatamente como a troca de sentido
     EditSenha,       // E5
+    EditAtraso,      // atraso de armamento do alarme, em segundos com uma casa
     // Codigo de quatro digitos que libera o ponto de acesso de atualizacao. NAO e a senha do Modo
     // Programacao: quem chegou aqui ja atravessou aquela. Sao dois portoes porque sao duas
     // autoridades - mexer na configuracao do equipamento e ligar o radio dele nao sao a mesma
@@ -223,7 +231,7 @@ enum class MenuAction : uint8_t {
 
 class MenuMachine {
 public:
-    static constexpr uint8_t kItemCount = 12;
+    static constexpr uint8_t kItemCount = 13;
     static constexpr uint8_t kSubItemCount = 3;
     // O submenu de Preset tem um item a mais - "Zerar Preset" - desde 2026-09-01. Os de Auto
     // Calibracao e Sentido continuam com tres. E errata do manual 5.6, que lista tres.
@@ -251,6 +259,8 @@ public:
     static constexpr const char* kMsgGravOk = "Alteracao bem sucedida!";
     static constexpr const char* kPrefixoLogin = "Senha de acesso:";
     static constexpr const char* kPrefixoEditaSenha = "Edita senha:";
+    static constexpr const char* kPrefixoAtraso = "Atraso Alarme(s):";
+    static constexpr const char* kMsgAtrasoForaDaFaixa = "FORA DA FAIXA 00,1 a 10,0";
     static constexpr const char* kCabecalhoMenu = "Menu>";
     static constexpr const char* kCabecalhoPreset = "Preset>";
     static constexpr const char* kCabecalhoAutoCal = "Auto Cal>";
@@ -362,6 +372,7 @@ private:
     void onEditOperacao(const Gesture& gesture);
     void onEditSentido(const Gesture& gesture);
     void onEditSenha(const Gesture& gesture);
+    void onEditAtraso(const Gesture& gesture);
     void onCodigoOta(const Gesture& gesture);
     void onRevisao(const Gesture& gesture);
 
@@ -375,6 +386,7 @@ private:
     void openOperacao();
     void openSentido(Axis axis);
     void openSenha();
+    void openAtraso();
     void openCodigoOta();
     void requestExit();
     void commitOnExit();

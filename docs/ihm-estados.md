@@ -481,3 +481,54 @@ Nao sao estados, sao regras que valem **em todos** os estados. Elas nao aparecem
 6. **Um gesto sem funcao declarada e ignorado**, nunca reinterpretado. `[PEND D1]`
 7. **A serigrafia do CN3 esta cruzada** (`LIM1` -> CN3-6, serigrafado "LED LIM3"; `LIM2` -> CN3-8, "LED LIM1"; `LIM3` -> CN3-7, "LED LIM2"). O LED e a base do transistor do rele compartilham o mesmo net, entao **nao ha correcao possivel em firmware**: o operador que programar o Limite 1 (X1) vera acender o LED rotulado "LIM3". Exige correcao de serigrafia ou remapeamento de fiacao antes de imprimir etiqueta. Nao afeta o diagrama, afeta a leitura que o operador faz dele.
 8. **A numeracao de bornes do manual nao bate com a da placa**: o manual poe os reles no CN2 terminais 14/15, 17/18, 20/21, 23/24 (Tabela 4); o esquematico os poe em CN1D..CN1K. Nao existe no repositorio um mapa que amarre um ao outro.
+
+---
+
+## Atraso de armamento do alarme (item de menu, 2026-09-17)
+
+Tempo que o angulo precisa **permanecer** alem do limite antes de o rele atuar. **Unico para os
+quatro canais**, editado em `Menu > Atraso Alarme`.
+
+| Item | Valor |
+|---|---|
+| Tela | `Atraso Alarme(s):00,1` — tres digitos, uma casa decimal |
+| Faixa | **00,1 a 10,0 s** |
+| Padrao de fabrica | **00,1 s** — exatamente o que a placa sempre fez |
+| Abre em | valor corrente (como `Edita senha`) |
+| Confirma | MENU mantido por 3 s; a efetivacao e no SAIR, como todo parametro (A13) |
+| Fora da faixa | `FORA DA FAIXA 00,1 a 10,0`, sem clamp silencioso |
+
+### Por que existe
+
+Um solavanco de poucos segundos numa estrutura portuaria atravessa o limite, dispara rele e
+sirene, e volta. **Alarme falso repetido ensina o operador a ignorar o alarme** — que e o oposto
+do que este equipamento existe para fazer.
+
+### O que ele NAO atrasa, e isso e o que mais importa
+
+| Evento | Atrasado? |
+|---|---|
+| Angulo alem do limite | **sim**, pelo tempo configurado |
+| Liberacao (angulo voltando) | nao — continua com a banda de 0,3 grau e os 3 s de permanencia |
+| Falha de comunicacao com o sensor | **NAO — imediato** |
+| Sensor declarando falha interna | **NAO — imediato** |
+| Configuracao perdida (A8) | **NAO — imediato** |
+| Atualizacao de firmware em curso | **NAO — imediato** |
+
+Nenhuma dessas falhas passa pelo avaliador de limites: elas sao decididas em
+`Application::driveRelays` e levam os quatro reles a alarme na hora. **Atrasar uma falha de
+leitura seria atrasar a unica informacao que o equipamento tem de que parou de enxergar.**
+
+### O teto de 10,0 s nao e arbitrario
+
+Acima disso um supervisor de inclinacao deixa de ser dispositivo de seguranca e vira indicador.
+O piso de 00,1 s e o antichatter de 100 ms que sempre existiu; zera-lo nao foi pedido e nao esta
+disponivel.
+
+### Compatibilidade com a frota instalada
+
+O bloco de parametros passou da versao 1 (32 bytes) para a 2 (34 bytes). **A versao 1 continua
+sendo aceita na leitura**: uma placa ja instalada carrega a configuracao dela normalmente e herda
+o atraso de fabrica, que e o comportamento que ela ja tinha. Sem isso, a atualizacao de firmware
+levaria toda a frota a `CONFIG PERDIDA` — quatro reles em alarme, em todo equipamento, ao mesmo
+tempo. Ha teste dedicado a isso (`test_bloco_da_versao_1_continua_carregando`).

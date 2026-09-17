@@ -38,6 +38,9 @@ constexpr uint16_t kOffLimitValue = 14;
 constexpr uint16_t kOffLimitOp = 22;
 constexpr uint16_t kOffSensorDir = 26;
 constexpr uint16_t kOffPassword = 28;
+// Campo da versao 2. Fica onde ficava o CRC da versao 1, e por isso o bloco cresceu
+// dois bytes: o CRC anda para o fim.
+constexpr uint16_t kOffAlarmDelay = 30;
 
 constexpr uint16_t kOffCalFullScale = 6;
 constexpr uint16_t kOffCalZeroCode = 10;
@@ -106,6 +109,7 @@ Parameters::Parameters() : rel_(), cal_() {
     rel_.limitOp[idx(LimitId::Y1)] = static_cast<uint8_t>(LimitOp::Absolute);
     rel_.limitOp[idx(LimitId::Y2)] = static_cast<uint8_t>(LimitOp::Off);
     rel_.password = kDefaultPassword;
+    rel_.alarmDelayDeciS = kDefaultAlarmDelayDeciS;
 }
 
 Parameters Parameters::factoryDefaults() { return Parameters(); }
@@ -267,6 +271,7 @@ Status Parameters::serializeParams(uint8_t* dst, uint16_t cap, uint16_t& outLen)
         dst[kOffLimitOp + limit] = rel_.limitOp[limit];
     }
     put16(dst + kOffPassword, rel_.password);
+    put16(dst + kOffAlarmDelay, rel_.alarmDelayDeciS);
     sign(dst, kParamBlobSize);
     outLen = kParamBlobSize;
     return kOk;
@@ -289,8 +294,21 @@ Status Parameters::serializeCal(uint8_t* dst, uint16_t cap, uint16_t& outLen) co
     return kOk;
 }
 
+// ACEITA OS DOIS FORMATOS, e isso nao e conveniencia: toda placa ja instalada tem um bloco da
+// versao 1 gravado, com 32 bytes. Recusa-lo na atualizacao de firmware levaria a frota inteira a
+// CONFIG PERDIDA - quatro reles em alarme, em todo equipamento, ao mesmo tempo, por causa de um
+// campo novo. O bloco v1 e carregado com o atraso de alarme no valor de fabrica, que e
+// exatamente o que aquela placa ja fazia; a proxima gravacao o promove a v2, sem pressa e sem
+// escrita de boot.
 Status Parameters::loadParams(const uint8_t* src, uint16_t len) {
-    const Status envelope = checkEnvelope(src, len, kParamBlobSize, kParamMagic, kParamVersion);
+    if (src == nullptr || len < kParamBlobSizeLegado) {
+        return Err::Param;
+    }
+    const bool legado = (get16(src + kOffVersion) == kParamVersionLegado);
+    const uint16_t tamanho = legado ? kParamBlobSizeLegado : kParamBlobSize;
+    const uint16_t versao = legado ? kParamVersionLegado : kParamVersion;
+
+    const Status envelope = checkEnvelope(src, len, tamanho, kParamMagic, versao);
     if (envelope.failed()) {
         return envelope;
     }
@@ -322,7 +340,22 @@ Status Parameters::loadParams(const uint8_t* src, uint16_t len) {
         return Err::Range;
     }
 
+    // O bloco v1 nao tem o campo: assume o valor de fabrica, que e o comportamento que aquela
+    // placa ja tinha (100 ms de confirmacao de ataque).
+    lido.alarmDelayDeciS = legado ? kDefaultAlarmDelayDeciS : get16(src + kOffAlarmDelay);
+    if (!alarmDelayValid(lido.alarmDelayDeciS)) {
+        return Err::Range;
+    }
+
     rel_ = lido;
+    return kOk;
+}
+
+Status Parameters::setAlarmDelayDeciS(uint16_t deciS) {
+    if (!alarmDelayValid(deciS)) {
+        return Err::Range;
+    }
+    rel_.alarmDelayDeciS = deciS;
     return kOk;
 }
 

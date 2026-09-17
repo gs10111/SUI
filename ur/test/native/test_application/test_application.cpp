@@ -1334,6 +1334,101 @@ static void test_a_validade_da_amostra_segue_o_eixo_que_o_produto_usa(void) {
                                     "ANG_Z fora da faixa tem de levar os quatro reles a alarme");
 }
 
+// Publica SO o atraso, pelo mesmo caminho de qualquer outro parametro: rascunho do agregado
+// ativo, publicacao, e a troca inteira entrando no topo do tick seguinte.
+static void publicarAtraso(Rig& rig, uint16_t deciS) {
+    domain::Parameters novo = rig.app.active();
+    TEST_ASSERT_TRUE(novo.setAlarmDelayDeciS(deciS).ok());
+    rig.app.publishParameters(novo);
+    rig.app.applyPublished();
+    TEST_ASSERT_EQUAL_UINT16(deciS, rig.app.active().alarmDelayDeciS());
+}
+
+// --- atraso de armamento do alarme (2026-09-17) ---------------------------------------------
+//
+// O PEDIDO, nas palavras do dono do produto: "pode acontecer que um solavanco de 2 segundos arme
+// e dispare os alarmes e sirenes sendo um falso positivo que desacredita o funcionamento do
+// sensor". O atraso e unico para os quatro canais.
+
+static void test_solavanco_mais_curto_que_o_atraso_nao_dispara_o_rele(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    publicarAtraso(rig, 50);   // 5,0 s
+
+    // Solavanco de 2 s muito alem do limite: 40 ciclos de 50 ms.
+    for (uint8_t i = 0; i < 40u; ++i) {
+        scriptGood(rig.link, 800, kQuietDeci, static_cast<uint16_t>(900u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllClear, rig.app.snapshot().relayMask,
+                                    "solavanco de 2 s com atraso de 5 s nao pode disparar");
+
+    // Passou o solavanco: a estrutura volta e o contador tem de zerar.
+    for (uint8_t i = 0; i < 10u; ++i) {
+        scriptGood(rig.link, kQuietDeci, kQuietDeci, static_cast<uint16_t>(960u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_EQUAL_UINT8(kRelayMaskAllClear, rig.app.snapshot().relayMask);
+}
+
+// E uma inclinacao DE VERDADE tem de disparar assim que o prazo vencer - senao o atraso deixou
+// de ser filtro de solavanco e virou um equipamento que nao alarma.
+static void test_inclinacao_sustentada_dispara_quando_o_prazo_vence(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    publicarAtraso(rig, 20);   // 2,0 s = 40 ciclos de 50 ms
+
+    for (uint8_t i = 0; i < 35u; ++i) {
+        scriptGood(rig.link, 800, kQuietDeci, static_cast<uint16_t>(1000u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllClear, rig.app.snapshot().relayMask,
+                                    "antes do prazo o rele tem de ficar quieto");
+
+    for (uint8_t i = 0; i < 20u; ++i) {
+        scriptGood(rig.link, 800, kQuietDeci, static_cast<uint16_t>(1040u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_TRUE_MESSAGE(rig.app.snapshot().relayMask != kRelayMaskAllClear,
+                             "vencido o prazo, a inclinacao sustentada TEM de alarmar");
+}
+
+// O QUE O ATRASO NAO PODE TOCAR. Falha de enlace nao e angulo: ela nao passa pelo avaliador de
+// limites, e atrasa-la seria atrasar a unica informacao de que o equipamento parou de enxergar.
+static void test_o_atraso_nao_alcanca_a_falha_de_enlace(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    publicarAtraso(rig, domain::Parameters::kAlarmDelayMaxDeciS);   // 10,0 s, o teto
+
+    // Enlace morre. Com o atraso no teto, se ele alcancasse a falha os reles ficariam 10 s
+    // quietos com o sensor mudo.
+    for (uint8_t i = 0; i < 4u; ++i) {
+        rig.link.replySilence();
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllSignalled, rig.app.snapshot().relayMask,
+                                    "falha de enlace tem de alarmar na hora, com qualquer atraso");
+}
+
+// E o atraso e UNICO: um valor so vale para os quatro canais, como foi pedido.
+static void test_o_atraso_vale_para_os_quatro_canais(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    publicarAtraso(rig, 50);   // 5,0 s
+
+    // Os DOIS eixos alem do limite ao mesmo tempo, por 2 s.
+    for (uint8_t i = 0; i < 40u; ++i) {
+        scriptGood(rig.link, 800, 800, static_cast<uint16_t>(1100u + i));
+        cycle(rig.clock, rig.app);
+    }
+    TEST_ASSERT_EQUAL_UINT8_MESSAGE(kRelayMaskAllClear, rig.app.snapshot().relayMask,
+                                    "o atraso tem de valer para os quatro canais, nao so para X");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1381,5 +1476,9 @@ int main(int, char**) {
     RUN_TEST(test_otaHold_nao_se_confunde_com_o_latch_de_configuracao);
     RUN_TEST(test_o_canal_Y_e_alimentado_pelo_ANG_Z_da_sensora);
     RUN_TEST(test_a_validade_da_amostra_segue_o_eixo_que_o_produto_usa);
+    RUN_TEST(test_solavanco_mais_curto_que_o_atraso_nao_dispara_o_rele);
+    RUN_TEST(test_inclinacao_sustentada_dispara_quando_o_prazo_vence);
+    RUN_TEST(test_o_atraso_nao_alcanca_a_falha_de_enlace);
+    RUN_TEST(test_o_atraso_vale_para_os_quatro_canais);
     return UNITY_END();
 }

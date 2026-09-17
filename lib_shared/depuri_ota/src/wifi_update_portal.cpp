@@ -73,15 +73,35 @@ $('bt').onclick=async()=>{
  }catch(e){$('det').textContent='falha de conexao ao enviar o cabecalho';}
  ocupado=false;
 };
-async function enviaImagem(f){
+// XMLHttpRequest, e nao fetch: e o unico jeito de a barra andar durante o envio.
+// O servidor do ESP32 atende UMA conexao por vez e fica preso lendo o corpo do POST do
+// primeiro ao ultimo byte, entao nenhuma consulta a /estado e respondida enquanto o envio
+// acontece - com fetch, a barra so se mexia quando ja tinha acabado, e na sensora, que nao tem
+// painel, era impossivel saber se algo estava sendo gravado.
+// upload.onprogress e contado pelo NAVEGADOR e nao depende de resposta nenhuma da placa.
+function enviaImagem(f){
  ocupado=true;
- try{
-  const fd=new FormData();fd.append('img',f.slice(64),'img.bin');
-  const r=await fetch('/imagem',{method:'POST',body:fd});
-  const j=await r.json();
-  $('fase').textContent=j.fase;$('det').textContent=j.det||'';
- }catch(e){$('det').textContent='conexao caiu durante o envio';}
- ocupado=false;
+ const corpo=new FormData();corpo.append('img',f.slice(64),'img.bin');
+ const x=new XMLHttpRequest();
+ x.open('POST','/imagem');
+ x.upload.onprogress=function(e){
+  if(!e.lengthComputable)return;
+  const pm=Math.round(e.loaded*1000/e.total);
+  $('pr').value=pm;
+  // "enviado" e nao "gravado": isto e o que o navegador ja empurrou para o socket, que corre
+  // um pouco a frente do que a placa gravou. O numero verdadeiro chega no fim, do lado da placa.
+  $('fase').textContent='ENVIANDO '+Math.floor(pm/10)+'%';
+  $('det').textContent='nao desligue o equipamento';
+ };
+ x.onload=function(){
+  ocupado=false;
+  try{const j=JSON.parse(x.responseText);
+      $('fase').textContent=j.fase;$('det').textContent=j.det||'';}
+  catch(e){$('det').textContent='resposta inesperada do equipamento';}
+ };
+ x.onerror=function(){ocupado=false;$('det').textContent='conexao caiu durante o envio';};
+ x.onabort=function(){ocupado=false;$('det').textContent='envio cancelado';};
+ x.send(corpo);
 }
 setInterval(estado,700);estado();
 </script></html>)HTML";
