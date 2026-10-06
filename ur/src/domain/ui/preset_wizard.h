@@ -160,9 +160,9 @@ public:
 
     static constexpr uint8_t kItemCount = 3;
 
-    // "+XXX,X" mais o terminador. O offset vai a +/-1800 decimos (180,0 graus) e por isso NAO e
-    // um Angle, mas continua cabendo no formato de tres inteiros e um decimo de L131.
-    static constexpr uint8_t kValueTextCap = 7;
+    // "+XXX,XX" mais o terminador (pior caso, duas casas - Decisao 18). O offset vai a +/-1800
+    // decimos (180,0 graus) e por isso NAO e um Angle, mas continua cabendo em tres inteiros.
+    static constexpr uint8_t kValueTextCap = 8;
     static_assert(kValueTextCap == kDeciTextCap, "o texto do offset sai de formatDeciText");
     static constexpr uint8_t kIndicatorTextCap = 8 + kValueTextCap;   // "PSET X:" + valor
     static constexpr uint8_t kConfirmTextCap = 13 + kValueTextCap;    // "Novo PSET X:" + valor

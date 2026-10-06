@@ -11,6 +11,7 @@
 
 using domain::Angle;
 using domain::AngleDecimals;
+using domain::formatCentiText;
 using domain::formatDeciText;
 using domain::kDeciTextCap;
 
@@ -220,6 +221,43 @@ static void test_D18_texto_de_decimos_cobre_o_offset_e_recusa_o_que_nao_cabe(voi
     TEST_ASSERT_FALSE(formatDeciText(0, AngleDecimals::One, texto, kDeciTextCap - 1));
 }
 
+// --- DECISAO 18, EMENDA 1: DUAS CASAS (2026-10-06) ----------------------------------------------
+//
+// Duas casas mostram o centesimo que o filtro da UR estima (formatCentiText) ou, num valor que so
+// existe em decimo exato - limite, offset -, o decimo seguido de 0, que e verdade por construcao.
+
+static void test_D18E1_centesimo_formata_com_sinal_tres_digitos_e_duas_casas(void) {
+    struct Caso { int16_t centi; const char* texto; };
+    const Caso casos[] = {
+        {4537, "+045,37"}, {-4537, "-045,37"}, {0, "+000,00"}, {-1, "-000,01"},
+        {9000, "+090,00"}, {-9000, "-090,00"}, {5, "+000,05"}, {32767, "+327,67"},
+    };
+    for (const Caso& c : casos) {
+        char texto[kDeciTextCap];
+        TEST_ASSERT_TRUE(formatCentiText(c.centi, texto, sizeof(texto)));
+        TEST_ASSERT_EQUAL_STRING(c.texto, texto);
+    }
+    char curto[kDeciTextCap - 1];
+    TEST_ASSERT_FALSE(formatCentiText(0, curto, sizeof(curto)));
+    TEST_ASSERT_FALSE(formatCentiText(0, nullptr, kDeciTextCap));
+}
+
+static void test_D18E1_decimo_exato_com_duas_casas_termina_em_zero(void) {
+    char texto[kDeciTextCap];
+    TEST_ASSERT_TRUE(formatDeciText(453, AngleDecimals::Two, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("+045,30", texto);
+    TEST_ASSERT_TRUE(formatDeciText(-1800, AngleDecimals::Two, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("-180,00", texto);
+    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(-1).format(texto, sizeof(texto), AngleDecimals::Two));
+    TEST_ASSERT_EQUAL_STRING("-000,10", texto);
+}
+
+static void test_D18E1_sem_leitura_com_duas_casas_e_traco_da_mesma_largura(void) {
+    char texto[Angle::kTextCap];
+    TEST_ASSERT_TRUE(Angle::invalid().format(texto, sizeof(texto), AngleDecimals::Two));
+    TEST_ASSERT_EQUAL_STRING("---,--", texto);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_MEA_01_aceita_os_dois_extremos_da_faixa);
@@ -242,5 +280,8 @@ int main(int, char**) {
     RUN_TEST(test_D18_sem_casa_largura_constante_na_faixa_inteira);
     RUN_TEST(test_D18_sem_leitura_sem_casa_e_traco_sem_virgula);
     RUN_TEST(test_D18_texto_de_decimos_cobre_o_offset_e_recusa_o_que_nao_cabe);
+    RUN_TEST(test_D18E1_centesimo_formata_com_sinal_tres_digitos_e_duas_casas);
+    RUN_TEST(test_D18E1_decimo_exato_com_duas_casas_termina_em_zero);
+    RUN_TEST(test_D18E1_sem_leitura_com_duas_casas_e_traco_da_mesma_largura);
     return UNITY_END();
 }

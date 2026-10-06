@@ -20,15 +20,21 @@
 namespace domain {
 
 // Quantas casas a INDICACAO mostra (Decisao 18). So apresentacao: reles, limites, Preset e saida
-// analogica continuam em decimo inteiro. Duas casas ficaram de fora de proposito - a sensora
-// entrega decimo e a exatidao declarada e +/-0,09 grau, entao a segunda casa seria ruido.
+// analogica continuam em decimo inteiro.
+//
+// DUAS CASAS (Emenda 1 da Decisao 18): a sensora entrega decimo, entao o centesimo da leitura NAO
+// vem do fio - vem do estado interno do filtro da UR (LowPassFilter, ponto fixo Q8), que e a
+// media das ultimas amostras e por isso carrega informacao abaixo do decimo quando o sinal
+// oscila. E resolucao de indicacao, nao exatidao: a exatidao declarada continua +/-0,09 grau.
+// Valor que so existe em decimo exato (limite, offset) sai com o 0 final, que e verdade.
 enum class AngleDecimals : uint8_t {
     Zero = 0,  // "+045"
     One = 1,   // "+045,0" - o formato do manual, padrao de fabrica
+    Two = 2,   // "+045,37"
 };
 
-// "+045,0" mais o terminador; o texto sem casa e mais curto e cabe no mesmo buffer.
-constexpr uint8_t kDeciTextCap = 7;
+// "+045,37" mais o terminador; os textos com menos casas sao mais curtos e cabem no mesmo buffer.
+constexpr uint8_t kDeciTextCap = 8;
 
 // DONO UNICO do texto de um valor em decimos de grau: a leitura (Angle::format) e o offset de
 // Preset (PresetWizard::formatDeci, faixa +/-1800) passam por aqui, para que os dois nunca
@@ -62,7 +68,32 @@ inline bool formatDeciText(int16_t deci, AngleDecimals decimals, char* out, uint
     }
     out[4] = ',';
     out[5] = static_cast<char>('0' + (magnitude % 10));
+    if (decimals == AngleDecimals::Two) {
+        out[6] = '0';   // decimo exato: o centesimo e zero de verdade
+        out[7] = '\0';
+        return true;
+    }
     out[6] = '\0';
+    return true;
+}
+
+// Texto de um valor em CENTESIMOS de grau, "+045,37", mesma largura e mesma regra de sinal de
+// formatDeciText. Sem arredondamento: quem estima o centesimo ja entrega inteiro. int16 cobre
+// +/-327,67, mais que o dobro da faixa de medicao.
+inline bool formatCentiText(int16_t centi, char* out, uint8_t cap) {
+    if (out == nullptr || cap < kDeciTextCap) {
+        return false;
+    }
+    const int32_t magnitude = (centi < 0) ? -static_cast<int32_t>(centi) : centi;
+    const int32_t inteiro = magnitude / 100;
+    out[0] = (centi < 0) ? '-' : '+';
+    out[1] = static_cast<char>('0' + (inteiro / 100));
+    out[2] = static_cast<char>('0' + ((inteiro / 10) % 10));
+    out[3] = static_cast<char>('0' + (inteiro % 10));
+    out[4] = ',';
+    out[5] = static_cast<char>('0' + ((magnitude / 10) % 10));
+    out[6] = static_cast<char>('0' + (magnitude % 10));
+    out[7] = '\0';
     return true;
 }
 
@@ -71,8 +102,8 @@ public:
     static constexpr int16_t kMinDeciDeg = -900;
     static constexpr int16_t kMaxDeciDeg = 900;
 
-    // "+045,0" mais o terminador.
-    static constexpr uint8_t kTextLen = 6;
+    // "+045,37" mais o terminador (o pior caso, duas casas).
+    static constexpr uint8_t kTextLen = 7;
     static constexpr uint8_t kTextCap = kTextLen + 1;
     static_assert(kTextCap == kDeciTextCap, "Angle e formatDeciText tem de concordar no buffer");
 
@@ -132,6 +163,11 @@ public:
             }
             out[3] = ',';
             out[4] = '-';
+            if (decimals == AngleDecimals::Two) {
+                out[5] = '-';
+                out[6] = '\0';
+                return true;
+            }
             out[5] = '\0';
             return true;
         }
