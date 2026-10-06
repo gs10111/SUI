@@ -1,7 +1,8 @@
 // Angulo de inclinacao de um eixo, em decimos de grau inteiros.
 //
 // Manual SUI-DI141388XY secoes 2.1 (L21) e 5.5 (L130 a L133): faixa +/-90,0 graus, resolucao
-// 0,1 grau, indicacao sempre em graus no formato +XXX,X com uma casa decimal fixa.
+// 0,1 grau. A INDICACAO sai com uma casa (+XXX,X, o formato do manual) ou sem casa (+XXX),
+// escolhido no menu - Decisao 18, desvio declarado do manual. O valor guardado e sempre decimo.
 //
 // Por que int16 e nao float: REQ-MEA-05 limita o erro de arredondamento a 0,05 grau em toda a
 // cadeia, e o ponto de atuacao dos reles e ajustado no decimo de grau (L133). Em decimos
@@ -18,6 +19,50 @@
 
 namespace domain {
 
+// Quantas casas a INDICACAO mostra (Decisao 18). So apresentacao: reles, limites, Preset e saida
+// analogica continuam em decimo inteiro. Duas casas ficaram de fora de proposito - a sensora
+// entrega decimo e a exatidao declarada e +/-0,09 grau, entao a segunda casa seria ruido.
+enum class AngleDecimals : uint8_t {
+    Zero = 0,  // "+045"
+    One = 1,   // "+045,0" - o formato do manual, padrao de fabrica
+};
+
+// "+045,0" mais o terminador; o texto sem casa e mais curto e cabe no mesmo buffer.
+constexpr uint8_t kDeciTextCap = 7;
+
+// DONO UNICO do texto de um valor em decimos de grau: a leitura (Angle::format) e o offset de
+// Preset (PresetWizard::formatDeci, faixa +/-1800) passam por aqui, para que os dois nunca
+// arredondem diferente. Largura constante - sinal sempre presente e tres digitos inteiros - para
+// o numero nao dancar ao cruzar o zero e o 10.
+//
+// Sem casa: inteiro mais proximo com o meio indo para longe do zero, a mesma convencao da
+// conversao da sensora. O sinal acompanha o NUMERO MOSTRADO: -0,4 vira "+000", porque "-000"
+// diria que ha leitura negativa onde a tela mostra zero.
+inline bool formatDeciText(int32_t deci, AngleDecimals decimals, char* out, uint8_t cap) {
+    if (out == nullptr || cap < kDeciTextCap) {
+        return false;
+    }
+    const int32_t magnitude = (deci < 0) ? -deci : deci;
+    const bool semCasa = (decimals == AngleDecimals::Zero);
+    const int32_t inteiro = semCasa ? (magnitude + 5) / 10 : magnitude / 10;
+    if (inteiro > 999) {
+        return false;
+    }
+    const bool negativo = semCasa ? (deci < 0 && inteiro > 0) : (deci < 0);
+    out[0] = negativo ? '-' : '+';
+    out[1] = static_cast<char>('0' + (inteiro / 100));
+    out[2] = static_cast<char>('0' + ((inteiro / 10) % 10));
+    out[3] = static_cast<char>('0' + (inteiro % 10));
+    if (semCasa) {
+        out[4] = '\0';
+        return true;
+    }
+    out[4] = ',';
+    out[5] = static_cast<char>('0' + (magnitude % 10));
+    out[6] = '\0';
+    return true;
+}
+
 class Angle {
 public:
     static constexpr int16_t kMinDeciDeg = -900;
@@ -26,6 +71,7 @@ public:
     // "+045,0" mais o terminador.
     static constexpr uint8_t kTextLen = 6;
     static constexpr uint8_t kTextCap = kTextLen + 1;
+    static_assert(kTextCap == kDeciTextCap, "Angle e formatDeciText tem de concordar no buffer");
 
     constexpr Angle() : deci_(0), valid_(false) {}
 
@@ -66,10 +112,10 @@ public:
     }
     constexpr bool operator!=(const Angle& other) const { return !(*this == other); }
 
-    // Escreve "+XXX,X" ou "-XXX,X" com largura constante, ou "---,-" quando nao ha leitura.
-    // Largura constante importa: sem ela o display danca ao cruzar 9,9 para 10,0 e ao cruzar
-    // o zero. Devolve false sem tocar no buffer se ele nao couber.
-    bool format(char* out, uint8_t cap) const {
+    // Escreve a leitura com a quantidade de casas pedida, ou o traco quando nao ha leitura -
+    // "---,-" ou "---", na mesma largura do numero. Devolve false sem tocar no buffer se ele
+    // nao couber.
+    bool format(char* out, uint8_t cap, AngleDecimals decimals) const {
         if (out == nullptr || cap < kTextCap) {
             return false;
         }
@@ -77,22 +123,16 @@ public:
             out[0] = '-';
             out[1] = '-';
             out[2] = '-';
+            if (decimals == AngleDecimals::Zero) {
+                out[3] = '\0';
+                return true;
+            }
             out[3] = ',';
             out[4] = '-';
             out[5] = '\0';
             return true;
         }
-        const int16_t magnitude = absDeciDegrees();
-        const int16_t inteiro = static_cast<int16_t>(magnitude / 10);
-        const int16_t decimo = static_cast<int16_t>(magnitude % 10);
-        out[0] = (deci_ < 0) ? '-' : '+';
-        out[1] = static_cast<char>('0' + (inteiro / 100));
-        out[2] = static_cast<char>('0' + ((inteiro / 10) % 10));
-        out[3] = static_cast<char>('0' + (inteiro % 10));
-        out[4] = ',';
-        out[5] = static_cast<char>('0' + decimo);
-        out[6] = '\0';
-        return true;
+        return formatDeciText(deci_, decimals, out, cap);
     }
 
 private:

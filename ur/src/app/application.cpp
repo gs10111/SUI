@@ -773,7 +773,8 @@ void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& pres
             linha[n++] = ':';
         }
         char campo[domain::Angle::kTextCap];
-        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap);
+        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap,
+                                        domain::AngleDecimals::One);
         for (uint8_t k = 0; campo[k] != '\0' && (n + 1u) < sizeof(linha); ++k) {
             linha[n++] = campo[k];
         }

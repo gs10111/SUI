@@ -10,6 +10,9 @@
 #include "domain/angle.h"
 
 using domain::Angle;
+using domain::AngleDecimals;
+using domain::formatDeciText;
+using domain::kDeciTextCap;
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -47,19 +50,19 @@ static void test_REQ_MEA_01_angulo_invalido_nao_entrega_leitura(void) {
 static void test_REQ_MEA_01_formata_com_sinal_tres_digitos_e_uma_casa(void) {
     char texto[Angle::kTextCap];
 
-    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(450).format(texto, sizeof(texto)));
+    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(450).format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_STRING("+045,0", texto);
 
-    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(0).format(texto, sizeof(texto)));
+    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(0).format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_STRING("+000,0", texto);
 
-    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(250).format(texto, sizeof(texto)));
+    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(250).format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_STRING("+025,0", texto);
 
-    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(-900).format(texto, sizeof(texto)));
+    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(-900).format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_STRING("-090,0", texto);
 
-    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(-1).format(texto, sizeof(texto)));
+    TEST_ASSERT_TRUE(Angle::fromDeciDegrees(-1).format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_STRING("-000,1", texto);
 }
 
@@ -68,7 +71,7 @@ static void test_REQ_MEA_01_formato_tem_sempre_a_mesma_largura(void) {
     // quando cruza o zero.
     char texto[Angle::kTextCap];
     for (int16_t v = -900; v <= 900; ++v) {
-        TEST_ASSERT_TRUE(Angle::fromDeciDegrees(v).format(texto, sizeof(texto)));
+        TEST_ASSERT_TRUE(Angle::fromDeciDegrees(v).format(texto, sizeof(texto), AngleDecimals::One));
         TEST_ASSERT_EQUAL_UINT(6u, static_cast<unsigned>(strlen(texto)));
         TEST_ASSERT_TRUE(texto[0] == '+' || texto[0] == '-');
         TEST_ASSERT_EQUAL_CHAR(',', texto[4]);
@@ -77,13 +80,13 @@ static void test_REQ_MEA_01_formato_tem_sempre_a_mesma_largura(void) {
 
 static void test_REQ_MEA_01_formato_recusa_buffer_curto_sem_escrever(void) {
     char texto[4] = {'z', 'z', 'z', 'z'};
-    TEST_ASSERT_FALSE(Angle::fromDeciDegrees(450).format(texto, sizeof(texto)));
+    TEST_ASSERT_FALSE(Angle::fromDeciDegrees(450).format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_CHAR('z', texto[0]);
 }
 
 static void test_REQ_MEA_01_angulo_invalido_formata_como_traco(void) {
     char texto[Angle::kTextCap];
-    TEST_ASSERT_TRUE(Angle::invalid().format(texto, sizeof(texto)));
+    TEST_ASSERT_TRUE(Angle::invalid().format(texto, sizeof(texto), AngleDecimals::One));
     TEST_ASSERT_EQUAL_STRING("---,-", texto);
 }
 
@@ -153,6 +156,69 @@ static void test_REQ_LIM_05_compara_por_valor_e_por_modulo(void) {
     TEST_ASSERT_EQUAL_INT16(0, Angle::fromDeciDegrees(0).absDeciDegrees());
 }
 
+// --- DECISAO 18: CASAS DECIMAIS (2026-10-06) ---------------------------------------------------
+//
+// Sem casa: inteiro mais proximo, meio para longe do zero. Mesma convencao da conversao da
+// sensora (DECISIONS.md, Decisao 11 item 2), e erro maximo de 0,5 grau, simetrico nos sinais.
+
+static void test_D18_sem_casa_arredonda_para_o_inteiro_mais_proximo(void) {
+    struct Caso { int16_t deci; const char* texto; };
+    const Caso casos[] = {
+        {453, "+045"}, {445, "+045"}, {444, "+044"}, {-445, "-045"}, {-444, "-044"},
+        {0, "+000"},   {900, "+090"}, {-900, "-090"}, {5, "+001"},   {-5, "-001"},
+    };
+    for (const Caso& c : casos) {
+        char texto[Angle::kTextCap];
+        TEST_ASSERT_TRUE(Angle::fromDeciDegrees(c.deci).format(texto, sizeof(texto),
+                                                                AngleDecimals::Zero));
+        TEST_ASSERT_EQUAL_STRING(c.texto, texto);
+    }
+}
+
+// "-000" diria que a leitura e negativa quando o numero mostrado e zero.
+static void test_D18_sem_casa_zero_nunca_sai_negativo(void) {
+    char texto[Angle::kTextCap];
+    for (int16_t v = -4; v <= 0; ++v) {
+        TEST_ASSERT_TRUE(Angle::fromDeciDegrees(v).format(texto, sizeof(texto),
+                                                          AngleDecimals::Zero));
+        TEST_ASSERT_EQUAL_STRING("+000", texto);
+    }
+}
+
+// Largura fixa: sem ela o numero danca ao cruzar o zero e o 10.
+static void test_D18_sem_casa_largura_constante_na_faixa_inteira(void) {
+    char texto[Angle::kTextCap];
+    for (int16_t v = Angle::kMinDeciDeg; v <= Angle::kMaxDeciDeg; ++v) {
+        TEST_ASSERT_TRUE(Angle::fromDeciDegrees(v).format(texto, sizeof(texto),
+                                                          AngleDecimals::Zero));
+        TEST_ASSERT_EQUAL_UINT(4u, static_cast<unsigned>(strlen(texto)));
+    }
+}
+
+static void test_D18_sem_leitura_sem_casa_e_traco_sem_virgula(void) {
+    char texto[Angle::kTextCap];
+    TEST_ASSERT_TRUE(Angle::invalid().format(texto, sizeof(texto), AngleDecimals::Zero));
+    TEST_ASSERT_EQUAL_STRING("---", texto);
+    TEST_ASSERT_TRUE(Angle::invalid().format(texto, sizeof(texto), AngleDecimals::One));
+    TEST_ASSERT_EQUAL_STRING("---,-", texto);
+}
+
+// O offset de Preset vai a +/-1800 (A9) e usa a mesma funcao. Acima de 999 graus nao cabe em
+// tres digitos e a funcao recusa em vez de imprimir lixo.
+static void test_D18_texto_de_decimos_cobre_o_offset_e_recusa_o_que_nao_cabe(void) {
+    char texto[kDeciTextCap];
+    TEST_ASSERT_TRUE(formatDeciText(1800, AngleDecimals::Zero, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("+180", texto);
+    TEST_ASSERT_TRUE(formatDeciText(-1800, AngleDecimals::One, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("-180,0", texto);
+    TEST_ASSERT_TRUE(formatDeciText(9994, AngleDecimals::Zero, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("+999", texto);
+    TEST_ASSERT_FALSE(formatDeciText(9995, AngleDecimals::Zero, texto, sizeof(texto)));
+    TEST_ASSERT_FALSE(formatDeciText(10000, AngleDecimals::One, texto, sizeof(texto)));
+    TEST_ASSERT_FALSE(formatDeciText(0, AngleDecimals::One, nullptr, kDeciTextCap));
+    TEST_ASSERT_FALSE(formatDeciText(0, AngleDecimals::One, texto, kDeciTextCap - 1));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_MEA_01_aceita_os_dois_extremos_da_faixa);
@@ -170,5 +236,10 @@ int main(int, char**) {
     RUN_TEST(test_A9_clamp_aceita_entrada_de_32_bits_fora_da_faixa);
     RUN_TEST(test_A9_deslocar_angulo_invalido_continua_invalido);
     RUN_TEST(test_REQ_LIM_05_compara_por_valor_e_por_modulo);
+    RUN_TEST(test_D18_sem_casa_arredonda_para_o_inteiro_mais_proximo);
+    RUN_TEST(test_D18_sem_casa_zero_nunca_sai_negativo);
+    RUN_TEST(test_D18_sem_casa_largura_constante_na_faixa_inteira);
+    RUN_TEST(test_D18_sem_leitura_sem_casa_e_traco_sem_virgula);
+    RUN_TEST(test_D18_texto_de_decimos_cobre_o_offset_e_recusa_o_que_nao_cabe);
     return UNITY_END();
 }

@@ -66,7 +66,7 @@ public:
 
     void add(const Angle& angle) {
         char texto[Angle::kTextCap];
-        if (angle.format(texto, Angle::kTextCap)) {
+        if (angle.format(texto, Angle::kTextCap, AngleDecimals::One)) {
             add(texto);
         }
     }
