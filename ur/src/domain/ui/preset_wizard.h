@@ -201,6 +201,12 @@ public:
     // Leitura corrente do eixo, ja com Sentido e Preset aplicados, a partir do agregado vigente.
     static Angle reading(Axis axis, Angle raw, const Parameters& params);
 
+    // Decisao 18, Emenda 1: a MESMA formula em centesimos, so para a indicacao de duas casas.
+    // clamp(dir * brutoCenti + 10 * offset, -9000, +9000). Quem chama garante que o bruto existe
+    // (a leitura em decimo correspondente e valida); aqui nao ha estado invalido.
+    static int16_t readingCenti(int16_t rawCenti, SensorDir dir, int16_t offsetDeci);
+    static int16_t readingCenti(Axis axis, int16_t rawCenti, const Parameters& params);
+
     // --- Submenu D2 (L148) ---
     PresetMenuItem item() const { return item_; }
     void nextItem();

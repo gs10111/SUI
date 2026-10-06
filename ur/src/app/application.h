@@ -186,6 +186,10 @@ public:
 
     struct Snapshot {
         domain::Angle reading[kAppAxisCount];
+        // Decisao 18, Emenda 1: a mesma leitura em CENTESIMOS, tirada do estado do filtro, so para
+        // a indicacao de duas casas. Vale apenas quando reading[i] e valida; nunca vai a rele,
+        // limite ou saida analogica.
+        int16_t readingCenti[kAppAxisCount];
         domain::Angle raw[kAppAxisCount];
         // EMENDA 2 (aprovada 2026-09-01). Leitura passada pela cadeia de medicao mas SEM credito
         // para comandar nada: existe quando o quadro chegou integro e o conteudo foi recusado -
@@ -325,6 +329,7 @@ private:
     domain::AnalogScaler scaler_[kAppAxisCount];
     domain::Angle raw_[kAppAxisCount];
     domain::Angle reading_[kAppAxisCount];
+    int16_t readingCenti_[kAppAxisCount];
     Snapshot pub_;
     SensorSample sample_;
     uint32_t cycleStartMs_;

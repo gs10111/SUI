@@ -1047,6 +1047,36 @@ static void test_D18_tela_de_captura_sem_leitura_e_sem_casa_mostra_traco_curto(v
     TEST_ASSERT_TRUE(t.tela.showsExactly("X:--- Y:---"));
 }
 
+// --- DECISAO 18, EMENDA 1: o centesimo passa pela MESMA formula de A9 -------------------------
+
+static void test_D18E1_centesimo_recebe_sentido_e_preset_como_o_decimo(void) {
+    TEST_ASSERT_EQUAL_INT16(4537, PresetWizard::readingCenti(4537, SensorDir::Clockwise, 0));
+    TEST_ASSERT_EQUAL_INT16(-4537,
+                            PresetWizard::readingCenti(4537, SensorDir::CounterClockwise, 0));
+    TEST_ASSERT_EQUAL_INT16(3337, PresetWizard::readingCenti(4537, SensorDir::Clockwise, -120));
+    // grampeia na faixa de medicao, como o decimo
+    TEST_ASSERT_EQUAL_INT16(9000, PresetWizard::readingCenti(8990, SensorDir::Clockwise, 100));
+    TEST_ASSERT_EQUAL_INT16(-9000,
+                            PresetWizard::readingCenti(8990, SensorDir::CounterClockwise, -100));
+}
+
+// Com centesimo multiplo de 10 o resultado tem de ser exatamente dez vezes o da formula em decimo,
+// em toda a faixa e nos dois sentidos: a indicacao de duas casas nunca contradiz o decimo.
+static void test_D18E1_centesimo_concorda_com_o_decimo_em_toda_a_faixa(void) {
+    const int16_t offsets[] = {0, -120, 1800, -1800, 37};
+    const SensorDir sentidos[] = {SensorDir::Clockwise, SensorDir::CounterClockwise};
+    for (int16_t bruto = -900; bruto <= 900; bruto = static_cast<int16_t>(bruto + 7)) {
+        for (int16_t off : offsets) {
+            for (SensorDir dir : sentidos) {
+                const Angle deci = PresetWizard::reading(Angle::fromDeciDegrees(bruto), dir, off);
+                const int16_t centi =
+                    PresetWizard::readingCenti(static_cast<int16_t>(bruto * 10), dir, off);
+                TEST_ASSERT_EQUAL_INT16(static_cast<int16_t>(deci.deciDegrees() * 10), centi);
+            }
+        }
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_PST_02_o_offset_so_nasce_quando_o_gesto_de_pset_chega);
@@ -1100,5 +1130,7 @@ int main(int, char**) {
     RUN_TEST(test_D18_indicador_de_pset_segue_a_opcao_gravada);
     RUN_TEST(test_D18_tela_de_captura_sem_casa);
     RUN_TEST(test_D18_tela_de_captura_sem_leitura_e_sem_casa_mostra_traco_curto);
+    RUN_TEST(test_D18E1_centesimo_recebe_sentido_e_preset_como_o_decimo);
+    RUN_TEST(test_D18E1_centesimo_concorda_com_o_decimo_em_toda_a_faixa);
     return UNITY_END();
 }

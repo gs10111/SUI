@@ -55,6 +55,23 @@ Angle PresetWizard::reading(Angle raw, SensorDir dir, int16_t offsetDeci) {
     return Angle::clamped(soma);
 }
 
+int16_t PresetWizard::readingCenti(int16_t rawCenti, SensorDir dir, int16_t offsetDeci) {
+    const int32_t dirigido = (dir == SensorDir::CounterClockwise)
+                                 ? -static_cast<int32_t>(rawCenti)
+                                 : static_cast<int32_t>(rawCenti);
+    const int32_t soma = dirigido + static_cast<int32_t>(offsetDeci) * 10;
+    const int32_t teto = static_cast<int32_t>(Angle::kMaxDeciDeg) * 10;
+    const int32_t piso = static_cast<int32_t>(Angle::kMinDeciDeg) * 10;
+    return static_cast<int16_t>((soma > teto) ? teto : (soma < piso) ? piso : soma);
+}
+
+int16_t PresetWizard::readingCenti(Axis axis, int16_t rawCenti, const Parameters& params) {
+    if (!Parameters::axisValid(axis)) {
+        return 0;
+    }
+    return readingCenti(rawCenti, params.sensorDir(axis), params.presetOffsetDeci(axis));
+}
+
 bool PresetWizard::offsetFor(Angle target, Angle raw, SensorDir dir, int16_t& outOffsetDeci) {
     if (!target.valid() || !raw.valid()) {
         return false;

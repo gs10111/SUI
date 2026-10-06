@@ -1474,6 +1474,40 @@ static void test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar(void) {
     TEST_ASSERT_FALSE_MESSAGE(painel.shows(","), "nenhuma casa decimal pode sobrar na tela");
 }
 
+// Decisao 18, Emenda 1: o centesimo da indicacao sai do estado do filtro, passa por sentido e
+// preset, e chega ao snapshot e ao NormalInput. Com o sinal parado ele e o decimo exato; com o
+// sinal oscilando entre dois decimos ele mostra o meio.
+static void test_D18E1_centesimo_parado_e_o_decimo_exato(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_TRUE(snap.reading[0].valid());
+    TEST_ASSERT_EQUAL_INT16(static_cast<int16_t>(snap.reading[0].deciDegrees() * 10),
+                            snap.readingCenti[0]);
+}
+
+static void test_D18E1_centesimo_oscilando_chega_a_tela(void) {
+    Rig rig;
+    rig.power();
+    // 1,3 e 1,4 grau: abaixo dos 5,0 graus de fabrica, para os reles ficarem quietos.
+    settleClear(rig, 13);
+    for (uint16_t i = 0; i < 200u; ++i) {
+        const int16_t v = (i % 2u == 0u) ? 14 : 13;
+        scriptGood(rig.link, v, v, static_cast<uint16_t>(100u + i));
+        cycle(rig.clock, rig.app);
+    }
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_INT16_WITHIN(3, 135, snap.readingCenti[0]);
+
+    domain::Parameters params = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(params.setDisplayDecimals(domain::AngleDecimals::Two).ok());
+    const domain::NormalInput in = app::buildNormalInput(snap, params);
+    TEST_ASSERT_EQUAL_INT16(snap.readingCenti[0], in.readingCenti[0]);
+    TEST_ASSERT_EQUAL_INT16(snap.readingCenti[1], in.readingCenti[1]);
+    TEST_ASSERT_TRUE(in.decimals == domain::AngleDecimals::Two);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1526,5 +1560,7 @@ int main(int, char**) {
     RUN_TEST(test_o_atraso_nao_alcanca_a_falha_de_enlace);
     RUN_TEST(test_o_atraso_vale_para_os_quatro_canais);
     RUN_TEST(test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar);
+    RUN_TEST(test_D18E1_centesimo_parado_e_o_decimo_exato);
+    RUN_TEST(test_D18E1_centesimo_oscilando_chega_a_tela);
     return UNITY_END();
 }

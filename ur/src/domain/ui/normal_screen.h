@@ -162,6 +162,9 @@ struct NormalLimitView {
 // reles, estado do enlace como classificado pelo supervisor.
 struct NormalInput {
     Angle reading[kNormalAxisCount];            // [0] = X, [1] = Y
+    // Decisao 18, Emenda 1: a mesma leitura em centesimos (estado do filtro, ja com Sentido e
+    // Preset). So desenhada com decimals == Two e reading[i] valida.
+    int16_t readingCenti[kNormalAxisCount] = {0, 0};
 
     // EMENDA 2 (aprovada 2026-09-01). Leitura medida e passada pela cadeia, mas SEM credito para
     // comandar rele ou saida analogica: o quadro chegou integro e o conteudo foi recusado. A tela

@@ -36,6 +36,7 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
     for (uint8_t i = 0; i < domain::kNormalAxisCount; ++i) {
         const domain::Axis axis = static_cast<domain::Axis>(i);
         in.reading[i] = snap.reading[i];
+        in.readingCenti[i] = snap.readingCenti[i];
         in.unqualified[i] = snap.unqualified[i];
         in.presetOffsetDeci[i] = params.presetOffsetDeci(axis);
         // Porcentagem do CODIGO escrito no DAC, pela calibracao GRAVADA deste eixo. Se o trio
@@ -87,6 +88,7 @@ Application::Application(const IClock& clockRef, ISensorLink& linkRef, IRelayBan
       scaler_(),
       raw_(),
       reading_(),
+      readingCenti_(),
       pub_(),
       sample_(),
       cycleStartMs_(clockRef.nowMs()),
@@ -546,6 +548,11 @@ void Application::finishCycle() {
         }
         reading_[i] = domain::ui::PresetWizard::reading(static_cast<domain::Axis>(i), filtered,
                                                         active_);
+        int16_t brutoCenti = 0;
+        readingCenti_[i] = filter_[i].centiValue(brutoCenti)
+                               ? domain::ui::PresetWizard::readingCenti(
+                                     static_cast<domain::Axis>(i), brutoCenti, active_)
+                               : static_cast<int16_t>(0);
     }
     if (good && reloadPending_) {
         reloadPending_ = false;
@@ -567,6 +574,7 @@ void Application::latchSnapshot() {
     Snapshot out{};
     for (uint8_t i = 0; i < kAppAxisCount; ++i) {
         out.reading[i] = reading_[i];
+        out.readingCenti[i] = readingCenti_[i];
         out.unqualified[i] = unqualified_[i];
         out.raw[i] = raw_[i];
         out.overriding[i] = overrideActive_[i];
