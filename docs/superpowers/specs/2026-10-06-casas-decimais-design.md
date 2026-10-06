@@ -7,6 +7,10 @@ Data: 2026-10-06. Branch: `feat/casas-decimais`. Escopo: so a UR (`ur/`).
 O cliente quer escolher no menu como os numeros de angulo aparecem. Hoje e fixo em uma casa
 (`+045,0`).
 
+> **EMENDA 1 (2026-10-06, mesmo dia):** a decisao 1 abaixo foi revista a pedido do responsavel. A
+> opcao `2 (+045,00)` existe, com o centesimo tirado do estado do filtro da UR - sem mudar sensora
+> nem protocolo. Detalhes e limites na Decisao 18, Emenda 1, em `DECISIONS.md`.
+
 ## Decisoes tomadas na conversa de 2026-10-06
 
 | # | Pergunta | Decidido | Por que |

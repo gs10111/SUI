@@ -3191,7 +3191,7 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
 
 ## Decisao 18 - Casas decimais da indicacao de angulo, escolhidas no menu
 
-**Status:** IMPLEMENTADA (pedido do cliente, decidido com o responsavel em 2026-10-06)
+**Status:** IMPLEMENTADA (pedido do cliente, decidido com o responsavel em 2026-10-06; Emenda 1 no mesmo dia)
 **Impacto de seguranca:** baixo - so apresentacao; reles, limites, Preset e saida analogica nao mudam
 **Desvio do manual:** secao 5.5 (L130 a L133) diz "uma casa decimal fixa". Entra na errata.
 **Spec:** `docs/superpowers/specs/2026-10-06-casas-decimais-design.md`
@@ -3218,6 +3218,36 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
    offset entre 5,1 e 5,4 graus le `Novo PSET X:+005`, embora o portao seja "acima de 5,0". O
    numero exato continua no editor e no console; abrir excecao de formato so para o Preset
    quebraria o item 3.
+
+### Emenda 1 (2026-10-06): duas casas, com o centesimo do filtro
+
+**Revoga o item 1 na parte "duas casas ficaram de fora".** Pedido do responsavel, para atender um
+cliente especifico. A sensora continua entregando decimo e nada muda no fio nem na sensora.
+
+1. **De onde vem o centesimo.** Do estado interno do filtro da UR (`LowPassFilter`, ponto fixo Q8,
+   1/256 de decimo), que e a media exponencial das ultimas amostras (constante de 0,8 s). Com o
+   sinal oscilando entre dois decimos, essa media carrega informacao real abaixo do decimo -
+   e estatistica, nao invencao. Com o sinal parado num decimo, o centesimo e `0` de verdade.
+   `LowPassFilter::centiValue()` arredonda como `value()` e grampeia na mesma faixa.
+2. **Mesma cadeia de A9.** `PresetWizard::readingCenti()` aplica Sentido e Preset em centesimos;
+   ha teste provando que, em toda a faixa e nos dois sentidos, o resultado e exatamente dez vezes
+   o da formula em decimo.
+3. **So indicacao.** Reles, limites, Preset e saida analogica continuam comandados pelo decimo.
+4. **O que leva o 0 final e o que nao leva.** Limite e offset de Preset so existem em decimo exato,
+   entao `+045,30` e verdade e sai assim. A leitura sem credito (Emenda 2) e a leitura crua da
+   captura do Preset NAO passam pelo filtro e so tem decimo: com duas casas elas saem com UMA, em
+   vez de ganhar um 0 que ninguem mediu.
+5. **Resolucao nao e exatidao.** A exatidao declarada continua +/-0,09 grau (Decisao 11 item 11).
+   O centesimo e resolucao de indicacao e vai oscilar com a estrutura; o manual, se citar a opcao,
+   tem de dizer isso.
+6. **Layout.** Coluna de estado e numero grande do detalhe sao medidos pelo pior caso do modo
+   ativo (`X:-180,00`, `-180,00`); a coluna cai para a fonte pequena quando precisa, pela regra que
+   ja existia. O batimento continua no canto.
+7. **Menu.** Terceira opcao `2 (+045,00)`; UP vai para menos casas, DOWN para mais, sem dar volta.
+   O bloco continua v3 (o campo ja era uint16; 2 passou a ser valido) - nenhuma placa recebeu v3.
+
+**Precisa de bancada:** com a estrutura parada e com vibracao, registrar quanto o centesimo oscila.
+Se ficar "grudado" em `0` com a maquina parada, isso e o comportamento correto, nao defeito.
 
 ### Persistencia
 

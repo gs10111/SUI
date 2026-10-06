@@ -242,7 +242,7 @@ Notas do grupo A:
 
 | ID / Nome | Display | MENU curto | MENU 3 s | ▲ curto | ▲ duplo (PSET) | ▼ curto | Saida automatica | Pendencia |
 |---|---|---|---|---|---|---|---|---|
-| **B1 NORMAL_PRINCIPAL** | leitura dos dois eixos no formato `±XXX,X` (L131), ou `±XXX` se `Casas Decimais` = 0 (Decisao 18), mais estado dos 4 limites, estado do link com a sensora, modo da saida analogica **por eixo** e indicacao de Preset ativo; batimento de dado fresco no canto inferior direito: marca de 4x4 px girando por 4 posicoes na caixa de 8x8 px em (247,55)-(254,62), comandada por **transacao valida** e nao por volta de laco (D12 item 11, DECISIONS.md:2362) | - | abre a tela de login -> C1 (L81, L88) | - (L85: "Não possui função neste modo") | efetiva o Preset -> B4 / B5 / B6 (L152) | alterna a indicacao -> B2 (L83); **mantida 3 s: autoteste sob demanda do display**, sem senha (D12 item 8, aprovada, DECISIONS.md:2323) | eventos de falha -> B7 / B8 | **`[PEND D3]`**: o manual **nunca** publica o layout literal da tela principal. L60 fala em "valores" (plural, simultaneos) e L83 fala em alternar entre X e Y — contradicao. Limites, link, modo de saida e preset ativo sao acrescimos. Batimento e autoteste sob demanda: **aprovados** em D12 |
+| **B1 NORMAL_PRINCIPAL** | leitura dos dois eixos no formato `±XXX,X` (L131), ou `±XXX` / `±XXX,XX` conforme `Casas Decimais` (Decisao 18), mais estado dos 4 limites, estado do link com a sensora, modo da saida analogica **por eixo** e indicacao de Preset ativo; batimento de dado fresco no canto inferior direito: marca de 4x4 px girando por 4 posicoes na caixa de 8x8 px em (247,55)-(254,62), comandada por **transacao valida** e nao por volta de laco (D12 item 11, DECISIONS.md:2362) | - | abre a tela de login -> C1 (L81, L88) | - (L85: "Não possui função neste modo") | efetiva o Preset -> B4 / B5 / B6 (L152) | alterna a indicacao -> B2 (L83); **mantida 3 s: autoteste sob demanda do display**, sem senha (D12 item 8, aprovada, DECISIONS.md:2323) | eventos de falha -> B7 / B8 | **`[PEND D3]`**: o manual **nunca** publica o layout literal da tela principal. L60 fala em "valores" (plural, simultaneos) e L83 fala em alternar entre X e Y — contradicao. Limites, link, modo de saida e preset ativo sao acrescimos. Batimento e autoteste sob demanda: **aprovados** em D12 |
 | **B2 NORMAL_DET_X** | detalhe do eixo X (leitura, limite X1, limite X2, saida analogica X) | - | -> C1 | - | -> B4 | -> B3 | — | `[PEND D3]` (tela inexistente no manual) |
 | **B3 NORMAL_DET_Y** | detalhe do eixo Y (leitura, limite Y1, limite Y2, saida analogica Y) | - | -> C1 | - | -> B4 | -> B1 | — | `[PEND D3]` |
 | **B4 PSET_PISCA** | o campo de medicao pisca 3 ciclos de 200/200 ms (L152: "O display piscará, indicando que o comando foi aceito") | ignorado | ignorado | ignorado | ignorado | ignorado | 1200 ms -> B1 | `[PEND D1]` (frequencia e duracao do pisca; gravacao imediata do offset em NVS) |
@@ -539,11 +539,12 @@ Decisao 18. `Menu > Casas Decimais`, item 13 de 14, antes de `Sair`.
 
 | Campo | Valor |
 |---|---|
-| Tela | rotulo `Casas Decimais:` e a opcao abaixo, `0 (+045)` ou `1 (+045,0)` |
-| Gestos | UP escolhe `0`, DOWN escolhe `1`, hold de MENU grava no rascunho e mostra `Alteracao bem sucedida!` |
+| Tela | rotulo `Casas Decimais:` e a opcao abaixo, `0 (+045)`, `1 (+045,0)` ou `2 (+045,00)` |
+| Gestos | UP vai para menos casas, DOWN para mais, sem dar volta; hold de MENU grava no rascunho e mostra `Alteracao bem sucedida!` |
 | Padrao de fabrica | `1` |
 | Quando vale | na confirmacao da saida (`NOVA CONFIG - CONFIRMA?`), como todo item do menu |
 | Sem casa | `+045`; sem leitura `---`; -0,4 vira `+000` |
+| Duas casas | leitura `+045,37` com o centesimo do filtro (Emenda 1); limite e offset `+045,30`; leitura sem credito e captura do Preset ficam com uma casa; sem leitura `---,--` |
 | Nao muda | campo em edicao (sempre `+045,3`), porcentagem `SAI:`, batimento |
 
 O bloco de parametros passou para a versao 3 (36 bytes). As versoes 1 e 2 continuam sendo aceitas
