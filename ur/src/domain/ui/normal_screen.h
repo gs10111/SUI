@@ -278,12 +278,13 @@ private:
     uint8_t statusRowCapacity() const;
     uint8_t rowCapacity(TextFont font) const;
     // Onde a coluna de estado comeca: logo depois da area de medicao, MEDIDA na fonte grande.
-    int16_t statusColumnX() const;
+    // O pior caso e o do modo de casas ativo: com duas casas o numero cresce um caractere.
+    int16_t statusColumnX(AngleDecimals decimals) const;
     // Fonte da coluna de estado NESTE quadro: Medium quando toda linha necessaria cabe em
     // largura e em altura, Small quando nao cabe. Nunca esconde linha para caber fonte maior.
     TextFont statusFont(const NormalInput& in) const;
     // Tela dedicada ao eixo: onde comeca o numero grande, e a fonte das linhas de texto.
-    int16_t detailValueX() const;
+    int16_t detailValueX(AngleDecimals decimals) const;
     TextFont detailFont(const NormalInput& in, uint8_t eixo) const;
     uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo) const;
 

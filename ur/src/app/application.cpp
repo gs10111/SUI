@@ -770,6 +770,10 @@ void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& pres
     // Leitura AO VIVO dos DOIS eixos: uma captura zera os dois, entao esconder um deles deixaria
     // o operador sem ver metade do que esta prestes a congelar. Sem amostra sai traco, nunca
     // zero - zero seria uma medicao.
+    // A leitura crua nao passa pelo filtro e so tem decimo: com duas casas ela sai com UMA, em vez
+    // de ganhar um 0 que ninguem mediu (Decisao 18, Emenda 1).
+    const domain::AngleDecimals casasDaLeituraCrua =
+        (decimals == domain::AngleDecimals::Two) ? domain::AngleDecimals::One : decimals;
     char linha[40];
     uint8_t n = 0;
     const domain::Axis eixos[2] = {domain::Axis::X, domain::Axis::Y};
@@ -782,7 +786,7 @@ void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& pres
             linha[n++] = ':';
         }
         char campo[domain::Angle::kTextCap];
-        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap, decimals);
+        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap, casasDaLeituraCrua);
         for (uint8_t k = 0; campo[k] != '\0' && (n + 1u) < sizeof(linha); ++k) {
             linha[n++] = campo[k];
         }

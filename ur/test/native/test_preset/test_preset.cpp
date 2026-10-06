@@ -1077,6 +1077,27 @@ static void test_D18E1_centesimo_concorda_com_o_decimo_em_toda_a_faixa(void) {
     }
 }
 
+// A captura mostra a leitura CRUA, que so tem decimo: com duas casas ela fica com uma, em vez de
+// ganhar um 0 que ninguem mediu. O offset (decimo exato) e que leva o 0 final.
+static void test_D18E1_tela_de_captura_com_duas_casas_fica_com_uma(void) {
+    TelaPreset t;
+    TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::X));
+    t.preset.sample(Angle::fromDeciDegrees(37), Angle::fromDeciDegrees(-12));
+    app::renderPresetCapture(t.tela, t.preset, Axis::X, AngleDecimals::Two);
+
+    TEST_ASSERT_TRUE(t.tela.showsExactly("X:+003,7 Y:-001,2"));
+    verificarQuadroPreset(t.tela);
+}
+
+static void test_D18E1_indicador_de_pset_com_duas_casas(void) {
+    Parameters params = Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(params.setPresetOffset(Axis::Y, 1800).ok());
+    TEST_ASSERT_TRUE(params.setDisplayDecimals(AngleDecimals::Two).ok());
+    char tela[PresetWizard::kIndicatorTextCap];
+    TEST_ASSERT_TRUE(PresetWizard::formatIndicator(Axis::Y, params, tela, sizeof(tela)));
+    TEST_ASSERT_EQUAL_STRING("PSET Y:+180,00", tela);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_PST_02_o_offset_so_nasce_quando_o_gesto_de_pset_chega);
@@ -1132,5 +1153,7 @@ int main(int, char**) {
     RUN_TEST(test_D18_tela_de_captura_sem_leitura_e_sem_casa_mostra_traco_curto);
     RUN_TEST(test_D18E1_centesimo_recebe_sentido_e_preset_como_o_decimo);
     RUN_TEST(test_D18E1_centesimo_concorda_com_o_decimo_em_toda_a_faixa);
+    RUN_TEST(test_D18E1_tela_de_captura_com_duas_casas_fica_com_uma);
+    RUN_TEST(test_D18E1_indicador_de_pset_com_duas_casas);
     return UNITY_END();
 }
