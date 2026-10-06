@@ -1938,7 +1938,9 @@ static void test_D18_confirmar_o_mesmo_valor_nao_cria_pendencia(void) {
     TEST_ASSERT_FALSE(b.menu.pendingConfig());
 }
 
-static void test_D18_sair_por_inatividade_descarta_a_troca(void) {
+// Pela regra unica de A13 o timeout NAO aplica a troca e tambem NAO a descarta: o agregado ativo
+// fica como estava e a pendencia continua, para ser revisada na proxima visita ao menu.
+static void test_D18_sair_por_inatividade_nao_aplica_a_troca(void) {
     Bancada b;
     entrarNoMenu(b);
     descerAte(b, MenuItem::CasasDecimais);
@@ -1949,6 +1951,8 @@ static void test_D18_sair_por_inatividade_descarta_a_troca(void) {
     esperar(b, MenuMachine::kTimeoutMs + 1000u);
     TEST_ASSERT_EQUAL_INT(code(MenuState::Normal), code(b.menu.state()));
     TEST_ASSERT_TRUE(b.ativo.displayDecimals() == AngleDecimals::One);
+    TEST_ASSERT_TRUE_MESSAGE(b.menu.pendingConfig(),
+                             "a troca nao aplicada continua pendente, como toda edicao de A13");
 }
 
 // Decisao 18 item 4: o campo em edicao SEMPRE mostra a casa. Ninguem altera o ponto de atuacao de
@@ -2026,7 +2030,7 @@ int main(int, char**) {
     RUN_TEST(test_D18_casas_decimais_abre_no_valor_corrente);
     RUN_TEST(test_D18_trocar_para_sem_casa_so_vale_na_saida_confirmada);
     RUN_TEST(test_D18_confirmar_o_mesmo_valor_nao_cria_pendencia);
-    RUN_TEST(test_D18_sair_por_inatividade_descarta_a_troca);
+    RUN_TEST(test_D18_sair_por_inatividade_nao_aplica_a_troca);
     RUN_TEST(test_D18_editor_de_limite_continua_com_uma_casa_no_modo_sem_casa);
     return UNITY_END();
 }

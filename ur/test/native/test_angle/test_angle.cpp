@@ -215,6 +215,7 @@ static void test_D18_texto_de_decimos_cobre_o_offset_e_recusa_o_que_nao_cabe(voi
     TEST_ASSERT_EQUAL_STRING("+999", texto);
     TEST_ASSERT_FALSE(formatDeciText(9995, AngleDecimals::Zero, texto, sizeof(texto)));
     TEST_ASSERT_FALSE(formatDeciText(10000, AngleDecimals::One, texto, sizeof(texto)));
+    TEST_ASSERT_FALSE(formatDeciText(-32768, AngleDecimals::Zero, texto, sizeof(texto)));
     TEST_ASSERT_FALSE(formatDeciText(0, AngleDecimals::One, nullptr, kDeciTextCap));
     TEST_ASSERT_FALSE(formatDeciText(0, AngleDecimals::One, texto, kDeciTextCap - 1));
 }

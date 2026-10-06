@@ -29,12 +29,16 @@
 // O tempo vem do FakeClock canonico, que comeca em 0xFFFF0000: todo prazo desta suite
 // atravessa o wrap de 2^32 ms, entao um prazo escrito como "a > b" em vez da subtracao
 // unsigned de ports/i_clock.h reprova aqui.
+#include <string.h>
 #include <unity.h>
 
 #include "app/application.h"
+#include "domain/ui/normal_screen.h"
 #include "domain/analog_scaler.h"
 #include "fakes/fake_analog_output.h"
 #include "fakes/fake_clock.h"
+#include "fakes/fake_display.h"
+#include "fakes/fake_keypad.h"
 #include "fakes/fake_relay_bank.h"
 #include "fakes/fake_sensor_link.h"
 
@@ -1435,6 +1439,41 @@ static void test_o_atraso_vale_para_os_quatro_canais(void) {
                                     "o atraso tem de valer para os quatro canais, nao so para X");
 }
 
+// Decisao 18, teste 8 da spec, de ponta a ponta: a opcao gravada sobrevive ao blob, chega ao
+// NormalInput e e o que a tela desenha. Cada elo tem teste proprio; este pega o elo que faltar.
+static void test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    domain::Parameters antes = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(antes.setDisplayDecimals(domain::AngleDecimals::Zero).ok());
+    uint8_t blob[domain::Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    TEST_ASSERT_TRUE(antes.serializeParams(blob, sizeof(blob), n).ok());
+
+    domain::Parameters depois;   // a placa reiniciou: agregado de fabrica, depois o load
+    TEST_ASSERT_TRUE(depois.loadParams(blob, n).ok());
+
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    const domain::NormalInput in = app::buildNormalInput(snap, depois);
+
+    FakeClock relogio;
+    test::FakeKeypad teclado(relogio);
+    domain::KeyGesture gesto(teclado, relogio);
+    test::FakeDisplay painel;
+    domain::NormalScreen tela(painel, gesto);
+    gesto.update();
+    tela.update(in);
+
+    char leitura[domain::Angle::kTextCap];
+    TEST_ASSERT_TRUE(snap.reading[0].format(leitura, sizeof(leitura), domain::AngleDecimals::Zero));
+    char esperado[2 + domain::Angle::kTextCap] = "X:";
+    strcat(esperado, leitura);
+    TEST_ASSERT_TRUE_MESSAGE(painel.showsExactly(esperado), esperado);
+    TEST_ASSERT_FALSE_MESSAGE(painel.shows(","), "nenhuma casa decimal pode sobrar na tela");
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1486,5 +1525,6 @@ int main(int, char**) {
     RUN_TEST(test_inclinacao_sustentada_dispara_quando_o_prazo_vence);
     RUN_TEST(test_o_atraso_nao_alcanca_a_falha_de_enlace);
     RUN_TEST(test_o_atraso_vale_para_os_quatro_canais);
+    RUN_TEST(test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar);
     return UNITY_END();
 }

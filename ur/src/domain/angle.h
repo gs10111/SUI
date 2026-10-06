@@ -38,11 +38,14 @@ constexpr uint8_t kDeciTextCap = 7;
 // Sem casa: inteiro mais proximo com o meio indo para longe do zero, a mesma convencao da
 // conversao da sensora. O sinal acompanha o NUMERO MOSTRADO: -0,4 vira "+000", porque "-000"
 // diria que ha leitura negativa onde a tela mostra zero.
-inline bool formatDeciText(int32_t deci, AngleDecimals decimals, char* out, uint8_t cap) {
+//
+// int16 de proposito: e o tipo de todo decimo do produto (leitura, limite, offset), e o modulo
+// calculado em 32 bits nao tem caso de estouro - nem em -32768.
+inline bool formatDeciText(int16_t deci, AngleDecimals decimals, char* out, uint8_t cap) {
     if (out == nullptr || cap < kDeciTextCap) {
         return false;
     }
-    const int32_t magnitude = (deci < 0) ? -deci : deci;
+    const int32_t magnitude = (deci < 0) ? -static_cast<int32_t>(deci) : deci;
     const bool semCasa = (decimals == AngleDecimals::Zero);
     const int32_t inteiro = semCasa ? (magnitude + 5) / 10 : magnitude / 10;
     if (inteiro > 999) {

@@ -3212,12 +3212,25 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
 5. **Arredondamento sem casa: inteiro mais proximo, meio para longe do zero** - a mesma convencao
    da conversao da sensora (Decisao 11 item 2). Erro maximo de 0,5 grau, simetrico. Zero nunca
    sai `-000`.
+6. **Preset pequeno sem casa aparece como zero - aceito (2026-10-06).** Com 0 casas, um offset de
+   0,1 a 0,4 grau mostra `PSET X:+000`: o indicador existe (ha offset) e o numero arredonda para
+   zero, como a propria leitura de 0,3 grau. Pelo mesmo motivo a confirmacao de magnitude de um
+   offset entre 5,1 e 5,4 graus le `Novo PSET X:+005`, embora o portao seja "acima de 5,0". O
+   numero exato continua no editor e no console; abrir excecao de formato so para o Preset
+   quebraria o item 3.
 
 ### Persistencia
 
 Bloco de parametros v3 (36 bytes, campo em off 32). v1 e v2 continuam carregando com uma casa -
 recusa-los levaria a frota a CONFIG PERDIDA na atualizacao. O `static_assert` em `ur/src/main.cpp`
 reprova o build se o bloco passar da chave da NVS (48 bytes).
+
+**Downgrade de firmware exige Reset Geral.** `ur/src/main.cpp` grava os parametros em toda saida
+do Modo Programacao, mesmo sem alteracao. Depois desta versao, a primeira visita ao menu promove o
+bloco a v3, e um firmware anterior (que so conhece v1/v2) recusa o v3 e entra em CONFIG PERDIDA -
+quatro reles em alarme. Nao e regressao: a v2 ja tinha a mesma propriedade em relacao a v1. Vale
+tambem para o rollback automatico do OTA (`verifyRollbackLater`) se ele disparar depois de uma
+saida do menu. Voltar a um firmware anterior pede Reset Geral ou reprogramacao dos parametros.
 
 ### Precisa de medicao de bancada
 
