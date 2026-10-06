@@ -3188,3 +3188,38 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
   padrao. Uma edicao desatenta daquela constante - um caractere a menos, um acento, um espaco no
   fim - passaria por toda revisao humana e faria o `softAP` subir ABERTO em toda placa da frota na
   proxima gravacao. Ha teste e ha mutante para cada um desses casos.
+
+## Decisao 18 - Casas decimais da indicacao de angulo, escolhidas no menu
+
+**Status:** IMPLEMENTADA (pedido do cliente, decidido com o responsavel em 2026-10-06)
+**Impacto de seguranca:** baixo - so apresentacao; reles, limites, Preset e saida analogica nao mudam
+**Desvio do manual:** secao 5.5 (L130 a L133) diz "uma casa decimal fixa". Entra na errata.
+**Spec:** `docs/superpowers/specs/2026-10-06-casas-decimais-design.md`
+**Codigo:** `ur/src/domain/angle.h`, `ur/src/domain/parameters.*`, `ur/src/domain/ui/menu_machine.*`,
+`ur/src/domain/ui/normal_screen.*`, `ur/src/domain/ui/preset_wizard.*`, `ur/src/app/application.cpp`
+
+### O que foi decidido
+
+1. **Opcoes 0 ou 1 casa.** Duas casas ficaram de fora: a sensora entrega decimo
+   (`docs/protocolo-rs485.md`, tabela de registradores) e a exatidao declarada e +/-0,09 grau
+   (Decisao 11 item 11). A segunda casa seria ruido, ou um zero fixo fingindo precisao.
+2. **O batimento (Decisao 12 item 11) fica.** O pedido original era tira-lo para abrir espaco;
+   com 0 ou 1 casa o texto nao cresce e o motivo sumiu.
+3. **A opcao vale em toda indicacao de angulo**: leitura ao vivo, leitura sem credito (Emenda 2),
+   valor de limite, offset de Preset, leitura do assistente de Preset. Consequencia aceita: com 0
+   casas um limite em 45,3 aparece como `+045`.
+4. **O campo em edicao sempre mostra uma casa.** Ninguem altera ponto de atuacao sem ver o decimo.
+5. **Arredondamento sem casa: inteiro mais proximo, meio para longe do zero** - a mesma convencao
+   da conversao da sensora (Decisao 11 item 2). Erro maximo de 0,5 grau, simetrico. Zero nunca
+   sai `-000`.
+
+### Persistencia
+
+Bloco de parametros v3 (36 bytes, campo em off 32). v1 e v2 continuam carregando com uma casa -
+recusa-los levaria a frota a CONFIG PERDIDA na atualizacao. O `static_assert` em `ur/src/main.cpp`
+reprova o build se o bloco passar da chave da NVS (48 bytes).
+
+### Precisa de medicao de bancada
+
+- Conferir na placa real, nos dois modos, a tela principal, o detalhe de X e Y, a captura e a
+  confirmacao do Preset, e o editor de limite (que tem de continuar com a casa).

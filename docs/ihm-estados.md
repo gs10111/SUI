@@ -532,3 +532,20 @@ sendo aceita na leitura**: uma placa ja instalada carrega a configuracao dela no
 o atraso de fabrica, que e o comportamento que ela ja tinha. Sem isso, a atualizacao de firmware
 levaria toda a frota a `CONFIG PERDIDA` — quatro reles em alarme, em todo equipamento, ao mesmo
 tempo. Ha teste dedicado a isso (`test_bloco_da_versao_1_continua_carregando`).
+
+## Casas decimais da indicacao (item de menu, 2026-10-06)
+
+Decisao 18. `Menu > Casas Decimais`, item 13 de 14, antes de `Sair`.
+
+| Campo | Valor |
+|---|---|
+| Tela | rotulo `Casas Decimais:` e a opcao abaixo, `0 (+045)` ou `1 (+045,0)` |
+| Gestos | UP escolhe `0`, DOWN escolhe `1`, hold de MENU grava no rascunho e mostra `Alteracao bem sucedida!` |
+| Padrao de fabrica | `1` |
+| Quando vale | na confirmacao da saida (`NOVA CONFIG - CONFIRMA?`), como todo item do menu |
+| Sem casa | `+045`; sem leitura `---`; -0,4 vira `+000` |
+| Nao muda | campo em edicao (sempre `+045,3`), porcentagem `SAI:`, batimento |
+
+O bloco de parametros passou para a versao 3 (36 bytes). As versoes 1 e 2 continuam sendo aceitas
+na leitura e herdam uma casa. Testes: `test_bloco_da_versao_1_continua_carregando` e
+`test_D18_bloco_v2_carrega_o_atraso_e_recebe_uma_casa`.
