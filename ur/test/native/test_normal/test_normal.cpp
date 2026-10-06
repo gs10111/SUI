@@ -48,6 +48,7 @@
 #include "fakes/fake_keypad.h"
 
 using domain::Angle;
+using domain::AngleDecimals;
 using domain::KeyGesture;
 using domain::kNormalAxisX;
 using domain::kNormalAxisY;
@@ -1272,6 +1273,70 @@ static void test_coluna_se_espalha_quando_ha_poucas_linhas(void) {
     verificarQuadro(bancada.painel);
 }
 
+// --- DECISAO 18: CASAS DECIMAIS ----------------------------------------------------------------
+
+static void test_D18_tela_principal_sem_casa(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.decimals = AngleDecimals::Zero;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:+046"));   // 45,5: meio vai para longe do zero
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y:-012"));
+    TEST_ASSERT_FALSE(bancada.painel.shows(","));
+    verificarQuadro(bancada.painel);
+}
+
+// A tela de detalhe tem tres caminhos de angulo: a leitura, o valor dos dois limites e o offset
+// de Preset. Os tres seguem a opcao.
+static void test_D18_detalhe_sem_casa_leitura_limites_e_pset(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.decimals = AngleDecimals::Zero;
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = -120;
+
+    tocar(bancada, Key::Down);
+    bancada.ciclo(entrada);
+    TEST_ASSERT_TRUE(bancada.tela.view() == NormalView::DetailX);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("+046"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:-- +050"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X2:-- +050"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET X:-012"));
+    TEST_ASSERT_FALSE(bancada.painel.shows(","));
+    verificarQuadro(bancada.painel);
+}
+
+// Emenda 2: a leitura sem credito tambem e indicacao de angulo.
+static void test_D18_leitura_marcada_sem_casa(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::SensorFault);
+    entrada.decimals = AngleDecimals::Zero;
+    entrada.unqualified[kNormalAxisX] = Angle::fromDeciDegrees(495);
+    entrada.unqualified[kNormalAxisY] = Angle::fromDeciDegrees(9);
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+050"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("+001"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+049,5"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_D18_sem_quadro_e_sem_casa_mostra_traco_curto(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
+    entrada.decimals = AngleDecimals::Zero;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("---"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("---,-"));
+    verificarQuadro(bancada.painel);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
@@ -1327,5 +1392,9 @@ int main(int, char**) {
     RUN_TEST(test_update_drena_todos_os_gestos_sem_pedido_no_mesmo_ciclo);
     RUN_TEST(test_update_deixa_na_fila_o_gesto_posterior_ao_pedido);
     RUN_TEST(test_IKEYPAD_reset_volta_a_principal_e_nao_deixa_gesto_atravessar);
+    RUN_TEST(test_D18_tela_principal_sem_casa);
+    RUN_TEST(test_D18_detalhe_sem_casa_leitura_limites_e_pset);
+    RUN_TEST(test_D18_leitura_marcada_sem_casa);
+    RUN_TEST(test_D18_sem_quadro_e_sem_casa_mostra_traco_curto);
     return UNITY_END();
 }

@@ -67,6 +67,7 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
     in.linkLatched = snap.linkLatched;
     in.heartbeatPhase =
         static_cast<uint8_t>((snap.cycles / 10u) % domain::NormalScreen::kHeartbeatPhases);
+    in.decimals = params.displayDecimals();
     return in;
 }
 

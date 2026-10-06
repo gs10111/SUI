@@ -64,24 +64,25 @@ public:
         buffer_[len_] = '\0';
     }
 
-    void add(const Angle& angle) {
+    void add(const Angle& angle, AngleDecimals decimals) {
         char texto[Angle::kTextCap];
-        if (angle.format(texto, Angle::kTextCap, AngleDecimals::One)) {
+        if (angle.format(texto, Angle::kTextCap, decimals)) {
             add(texto);
         }
     }
 
     // A9: o offset do Preset vai a +/-1800 decimos, o DOBRO da faixa de medicao, e por isso NAO
     // passa por Angle. Fora de +/-1800 nao existe valor legitimo, e o campo cai no traco.
-    void addPresetOffset(int16_t deci) {
+    void addPresetOffset(int16_t deci, AngleDecimals decimals) {
         char texto[ui::PresetWizard::kValueTextCap];
         const bool naFaixa = (deci >= Parameters::kPresetOffsetMinDeci) &&
                              (deci <= Parameters::kPresetOffsetMaxDeci);
-        if (naFaixa && ui::PresetWizard::formatDeci(deci, AngleDecimals::One, texto, ui::PresetWizard::kValueTextCap)) {
+        if (naFaixa &&
+            ui::PresetWizard::formatDeci(deci, decimals, texto, ui::PresetWizard::kValueTextCap)) {
             add(texto);
             return;
         }
-        add(Angle::invalid());
+        add(Angle::invalid(), decimals);
     }
 
     // Porcentagem da saida analogica: sinal SEMPRE presente e tres digitos fixos, para que a
@@ -90,7 +91,9 @@ public:
     // isso o traco cobre o caso impossivel em vez de imprimir numero inventado.
     void addPercent(int16_t percent) {
         if (percent < -100 || percent > 100) {
-            add(Angle::invalid());
+            // Traco de PORCENTAGEM, nao de angulo: fica na largura de hoje, independente da
+            // opcao de casas da indicacao (Decisao 18).
+            add(Angle::invalid(), AngleDecimals::One);
             return;
         }
         char texto[6];
@@ -213,12 +216,12 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // ausente sai como o traco de Angle, nunca como zero - um zero seria uma medicao.
     Line eixoX;
     eixoX.add("X:");
-    eixoX.add(in.reading[kNormalAxisX]);
+    eixoX.add(in.reading[kNormalAxisX], in.decimals);
     drawAt(kMargin, kMargin, eixoX.text(), TextFont::Large);
 
     Line eixoY;
     eixoY.add("Y:");
-    eixoY.add(in.reading[kNormalAxisY]);
+    eixoY.add(in.reading[kNormalAxisY], in.decimals);
     drawAt(kMargin, static_cast<int16_t>(kMargin + alturaGrande + 2), eixoY.text(), TextFont::Large);
 
     const bool mesmoModo = sameAnalogMode(in);
@@ -358,7 +361,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
     drawAt(kMargin, 0, cabecalho.text(), TextFont::Small);
 
     Line valor;
-    valor.add(in.reading[eixo]);
+    valor.add(in.reading[eixo], in.decimals);
     drawAt(detailValueX(), passo, valor.text(), TextFont::Large);
 
     int16_t linha = passo;
@@ -369,7 +372,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
         limite.add(":");
         limite.add(stateToken(in.limit[canal].state));
         limite.add(" ");
-        limite.add(in.limit[canal].value);
+        limite.add(in.limit[canal].value, in.decimals);
         drawAt(kMargin, linha, limite.text(), fonte);
         linha = static_cast<int16_t>(linha + passo);
     }
@@ -392,7 +395,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
         preset.add("PSET ");
         preset.add(nome);
         preset.add(":");
-        preset.addPresetOffset(in.presetOffsetDeci[eixo]);
+        preset.addPresetOffset(in.presetOffsetDeci[eixo], in.decimals);
         drawAt(kMargin, linha, preset.text(), fonte);
     }
 }
@@ -468,12 +471,14 @@ void NormalScreen::renderFault(const NormalInput& in) {
                              in.unqualified[kNormalAxisY].valid());
     Line leitura;
     leitura.add("X:");
-    leitura.add(semCredito ? in.unqualified[kNormalAxisX] : in.reading[kNormalAxisX]);
+    leitura.add(semCredito ? in.unqualified[kNormalAxisX] : in.reading[kNormalAxisX],
+                in.decimals);
     if (semCredito) {
         leitura.add(kMarkUnqualified);
     }
     leitura.add(" Y:");
-    leitura.add(semCredito ? in.unqualified[kNormalAxisY] : in.reading[kNormalAxisY]);
+    leitura.add(semCredito ? in.unqualified[kNormalAxisY] : in.reading[kNormalAxisY],
+                in.decimals);
     if (semCredito) {
         leitura.add(kMarkUnqualified);
     }

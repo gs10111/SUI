@@ -893,6 +893,12 @@ static void test_buildNormalInput_leva_todo_campo_do_snapshot_para_a_tela(void) 
     for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
         TEST_ASSERT_TRUE(in.limit[i].state == snap.limitState[i]);
     }
+
+    // Decisao 18: a opcao gravada tem de atravessar, senao o menu grava e a tela ignora.
+    TEST_ASSERT_TRUE(in.decimals == domain::AngleDecimals::One);
+    domain::Parameters semCasa = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(semCasa.setDisplayDecimals(domain::AngleDecimals::Zero).ok());
+    TEST_ASSERT_TRUE(app::buildNormalInput(snap, semCasa).decimals == domain::AngleDecimals::Zero);
 }
 
 static void test_sensora_respondendo_e_doente_mostra_falha_do_SENSOR_nao_do_cabo(void) {

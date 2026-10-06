@@ -200,6 +200,11 @@ struct NormalInput {
     // preso significa marcador parado, que e exatamente o que o operador tem de ver quando o
     // dado parou de chegar.
     uint8_t heartbeatPhase;
+
+    // Decisao 18: quantas casas a indicacao de angulo mostra. Vem de Parameters por
+    // buildNormalInput. O default e o formato do manual, para que um NormalInput montado a mao
+    // (testes) continue com uma casa.
+    AngleDecimals decimals = AngleDecimals::One;
 };
 
 class NormalScreen {

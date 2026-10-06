@@ -194,7 +194,9 @@ public:
         return deciS >= kAlarmDelayMinDeciS && deciS <= kAlarmDelayMaxDeciS;
     }
 
-    AngleDecimals displayDecimals() const { return static_cast<AngleDecimals>(rel_.displayDecimals); }
+    AngleDecimals displayDecimals() const {
+        return static_cast<AngleDecimals>(rel_.displayDecimals);
+    }
     Status setDisplayDecimals(AngleDecimals decimals);
 
     static constexpr bool displayDecimalsValid(uint16_t raw) {

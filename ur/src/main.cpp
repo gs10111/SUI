@@ -166,6 +166,10 @@ constexpr uint32_t kHmiPeriodMs = 50;
 constexpr uint32_t kLoopSliceMs = 2;
 constexpr uint32_t kMessageMs = 2000;
 constexpr uint16_t kBlobCap = NvsParameterStore::kCapacityBytes;
+// O bloco de parametros cresceu na v3 (Decisao 18). Se um dia passar da chave da NVS, a gravacao
+// falharia em campo; aqui o build reprova antes.
+static_assert(domain::Parameters::kParamBlobSize <= kBlobCap,
+              "bloco de parametros nao cabe na chave da NVS");
 constexpr int16_t kMessageY = 40;
 constexpr int16_t kEditLineY = 40;
 constexpr uint8_t kLineCap = 48;
