@@ -736,9 +736,9 @@ void renderOtaProgresso(IDisplay& display, const char* fase, const char* detalhe
 }
 
 void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& preset,
-                         domain::Axis axis) {
+                         domain::Axis axis, domain::AngleDecimals decimals) {
     char linha[48];
-    if (!preset.formatPendingConfirm(axis, linha, sizeof(linha))) {
+    if (!preset.formatPendingConfirm(axis, decimals, linha, sizeof(linha))) {
         return;
     }
     const int16_t largura = static_cast<int16_t>(display.widthPx());
@@ -754,7 +754,7 @@ void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& pres
 }
 
 void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& preset,
-                         domain::Axis axis) {
+                         domain::Axis axis, domain::AngleDecimals decimals) {
     const int16_t largura = static_cast<int16_t>(display.widthPx());
     const char* titulo = (axis == domain::Axis::Y) ? "Preset Y" : "Preset X";
 
@@ -773,8 +773,7 @@ void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& pres
             linha[n++] = ':';
         }
         char campo[domain::Angle::kTextCap];
-        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap,
-                                        domain::AngleDecimals::One);
+        preset.lastRaw(eixos[i]).format(campo, domain::Angle::kTextCap, decimals);
         for (uint8_t k = 0; campo[k] != '\0' && (n + 1u) < sizeof(linha); ++k) {
             linha[n++] = campo[k];
         }

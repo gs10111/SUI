@@ -44,6 +44,7 @@
 #include "fakes/fake_display.h"
 
 using domain::Angle;
+using domain::AngleDecimals;
 using domain::Axis;
 using domain::ConfirmResult;
 using domain::Parameters;
@@ -494,7 +495,7 @@ static void test_D1_item11_deslocamento_de_51_decimos_exige_hold_de_menu(void) {
     TEST_ASSERT_EQUAL_INT16(51, preset.pendingOffsetDeci(Axis::X));
 
     char tela[PresetWizard::kConfirmTextCap] = {0};
-    TEST_ASSERT_TRUE(preset.formatPendingConfirm(Axis::X, tela, sizeof(tela)));
+    TEST_ASSERT_TRUE(preset.formatPendingConfirm(Axis::X, AngleDecimals::One, tela, sizeof(tela)));
     TEST_ASSERT_EQUAL_STRING("Novo PSET X:+005,1", tela);
     TEST_ASSERT_EQUAL_STRING("Segure MENU 3s", PresetWizard::kConfirmHintText);
 
@@ -518,7 +519,7 @@ static void test_D1_item11_confirmacao_cancela_sozinha_em_10000_ms(void) {
     clock.advanceMs(PresetWizard::kConfirmWindowMs - 1u);
     preset.tick();
     TEST_ASSERT_TRUE(preset.awaitingConfirm());
-    TEST_ASSERT_TRUE(preset.formatPendingConfirm(Axis::X, tela, sizeof(tela)));
+    TEST_ASSERT_TRUE(preset.formatPendingConfirm(Axis::X, AngleDecimals::One, tela, sizeof(tela)));
 
     // "cancela sem aplicar" tem de ACONTECER, nao ser apenas consultavel: a tela de confirmacao
     // SAI do display e o par congelado deixa de existir, senao o operador segura MENU 3 s diante
@@ -526,7 +527,7 @@ static void test_D1_item11_confirmacao_cancela_sozinha_em_10000_ms(void) {
     clock.advanceMs(1u);
     preset.tick();
     TEST_ASSERT_FALSE(preset.awaitingConfirm());
-    TEST_ASSERT_FALSE(preset.formatPendingConfirm(Axis::X, tela, sizeof(tela)));
+    TEST_ASSERT_FALSE(preset.formatPendingConfirm(Axis::X, AngleDecimals::One, tela, sizeof(tela)));
     TEST_ASSERT_EQUAL_INT16(0, preset.pendingOffsetDeci(Axis::X));
     TEST_ASSERT_TRUE(preset.confirmPset(params) == PsetOutcome::Ignored);
     TEST_ASSERT_EQUAL_INT16(0, params.presetOffsetDeci(Axis::X));
@@ -535,7 +536,7 @@ static void test_D1_item11_confirmacao_cancela_sozinha_em_10000_ms(void) {
     clock.advanceMs(0xFFFFFFFFu);
     preset.tick();
     TEST_ASSERT_FALSE(preset.awaitingConfirm());
-    TEST_ASSERT_FALSE(preset.formatPendingConfirm(Axis::X, tela, sizeof(tela)));
+    TEST_ASSERT_FALSE(preset.formatPendingConfirm(Axis::X, AngleDecimals::One, tela, sizeof(tela)));
 }
 
 // A confirmacao recalcula sobre a amostra CORRENTE, nao aplica o par congelado do instante do
@@ -807,7 +808,7 @@ struct TelaPreset {
 
     void abrir(Axis eixo) {
         TEST_ASSERT_TRUE(preset.beginCapture(eixo));
-        app::renderPresetCapture(tela, preset, eixo);
+        app::renderPresetCapture(tela, preset, eixo, AngleDecimals::One);
     }
 };
 
@@ -927,7 +928,7 @@ static void test_tela_de_captura_traz_titulo_leitura_ao_vivo_e_estado(void) {
     TelaPreset t;
     TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::X));
     t.preset.sample(Angle::fromDeciDegrees(37), Angle::fromDeciDegrees(-12));
-    app::renderPresetCapture(t.tela, t.preset, Axis::X);
+    app::renderPresetCapture(t.tela, t.preset, Axis::X, AngleDecimals::One);
 
     TEST_ASSERT_TRUE(t.tela.showsExactly("Preset X"));
     TEST_ASSERT_TRUE(t.tela.fontOf("Preset X") == TextFont::Small);
@@ -943,7 +944,7 @@ static void test_tela_de_captura_anuncia_quando_esta_pronta(void) {
     TelaPreset t;
     TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::Y));
     alimentar(t.relogio, t.preset, 0, 0);
-    app::renderPresetCapture(t.tela, t.preset, Axis::Y);
+    app::renderPresetCapture(t.tela, t.preset, Axis::Y, AngleDecimals::One);
 
     TEST_ASSERT_TRUE(t.tela.showsExactly("Preset Y"));
     TEST_ASSERT_TRUE(t.tela.showsExactly(PresetWizard::kCaptureReadyText));
@@ -955,7 +956,7 @@ static void test_tela_de_captura_sem_leitura_nao_inventa_numero(void) {
     TelaPreset t;
     TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::X));
     t.preset.sample(Angle::invalid(), Angle::invalid());
-    app::renderPresetCapture(t.tela, t.preset, Axis::X);
+    app::renderPresetCapture(t.tela, t.preset, Axis::X, AngleDecimals::One);
 
     // traco, nunca zero: zero seria uma medicao
     TEST_ASSERT_FALSE(t.tela.shows("+000,0"));
@@ -997,6 +998,53 @@ static void test_zerar_nao_depende_de_leitura_nem_de_estabilidade(void) {
     TEST_ASSERT_TRUE(t.preset.clearOffsets(t.params).ok());
     TEST_ASSERT_EQUAL_INT16(0, t.params.presetOffsetDeci(Axis::X));
     TEST_ASSERT_EQUAL_INT16(0, t.params.presetOffsetDeci(Axis::Y));
+}
+
+// --- DECISAO 18 ---------------------------------------------------------------------------------
+
+// A9 deixa o offset ir a +/-1800 decimos. Sem casa, os extremos continuam numero, nao traco.
+static void test_D18_offset_sem_casa_nos_extremos_e_no_meio_grau_negativo(void) {
+    char texto[PresetWizard::kValueTextCap];
+    TEST_ASSERT_TRUE(PresetWizard::formatDeci(1800, AngleDecimals::Zero, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("+180", texto);
+    TEST_ASSERT_TRUE(PresetWizard::formatDeci(-1800, AngleDecimals::Zero, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("-180", texto);
+    TEST_ASSERT_TRUE(PresetWizard::formatDeci(-15, AngleDecimals::Zero, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("-002", texto);
+    TEST_ASSERT_TRUE(PresetWizard::formatDeci(-15, AngleDecimals::One, texto, sizeof(texto)));
+    TEST_ASSERT_EQUAL_STRING("-001,5", texto);
+}
+
+static void test_D18_indicador_de_pset_segue_a_opcao_gravada(void) {
+    Parameters params = Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(params.setPresetOffset(Axis::X, 123).ok());
+    char tela[PresetWizard::kIndicatorTextCap];
+
+    TEST_ASSERT_TRUE(PresetWizard::formatIndicator(Axis::X, params, tela, sizeof(tela)));
+    TEST_ASSERT_EQUAL_STRING("PSET X:+012,3", tela);
+
+    TEST_ASSERT_TRUE(params.setDisplayDecimals(AngleDecimals::Zero).ok());
+    TEST_ASSERT_TRUE(PresetWizard::formatIndicator(Axis::X, params, tela, sizeof(tela)));
+    TEST_ASSERT_EQUAL_STRING("PSET X:+012", tela);
+}
+
+static void test_D18_tela_de_captura_sem_casa(void) {
+    TelaPreset t;
+    TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::X));
+    t.preset.sample(Angle::fromDeciDegrees(37), Angle::fromDeciDegrees(-12));
+    app::renderPresetCapture(t.tela, t.preset, Axis::X, AngleDecimals::Zero);
+
+    TEST_ASSERT_TRUE(t.tela.showsExactly("X:+004 Y:-001"));
+    verificarQuadroPreset(t.tela);
+}
+
+static void test_D18_tela_de_captura_sem_leitura_e_sem_casa_mostra_traco_curto(void) {
+    TelaPreset t;
+    TEST_ASSERT_TRUE(t.preset.beginCapture(Axis::X));
+    t.preset.sample(Angle::invalid(), Angle::invalid());
+    app::renderPresetCapture(t.tela, t.preset, Axis::X, AngleDecimals::Zero);
+
+    TEST_ASSERT_TRUE(t.tela.showsExactly("X:--- Y:---"));
 }
 
 int main(int, char**) {
@@ -1048,5 +1096,9 @@ int main(int, char**) {
     RUN_TEST(test_tela_de_captura_traz_titulo_leitura_ao_vivo_e_estado);
     RUN_TEST(test_tela_de_captura_anuncia_quando_esta_pronta);
     RUN_TEST(test_tela_de_captura_sem_leitura_nao_inventa_numero);
+    RUN_TEST(test_D18_offset_sem_casa_nos_extremos_e_no_meio_grau_negativo);
+    RUN_TEST(test_D18_indicador_de_pset_segue_a_opcao_gravada);
+    RUN_TEST(test_D18_tela_de_captura_sem_casa);
+    RUN_TEST(test_D18_tela_de_captura_sem_leitura_e_sem_casa_mostra_traco_curto);
     return UNITY_END();
 }

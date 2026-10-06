@@ -388,11 +388,11 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
 // leitura AO VIVO dos dois eixos e o estado do portao de quietude. Substituiu o editor numerico:
 // nao ha mais campo de digitos, o alvo e sempre zero e o gesto e posicionar e segurar parado.
 void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& preset,
-                         domain::Axis axis);
+                         domain::Axis axis, domain::AngleDecimals decimals);
 
 // Confirmacao do PSET: o valor pendente mais o gesto que grava. Mesma razao de estar aqui.
 void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& preset,
-                         domain::Axis axis);
+                         domain::Axis axis, domain::AngleDecimals decimals);
 
 // Mensagem temporizada centralizada (PSET aplicado, recusas, fora de faixa). A fonte sai da
 // MEDICAO: as curtas ficam grandes e as longas descem sozinhas. Antes era fonte grande fixa com

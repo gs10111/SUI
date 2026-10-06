@@ -163,6 +163,7 @@ public:
     // "+XXX,X" mais o terminador. O offset vai a +/-1800 decimos (180,0 graus) e por isso NAO e
     // um Angle, mas continua cabendo no formato de tres inteiros e um decimo de L131.
     static constexpr uint8_t kValueTextCap = 7;
+    static_assert(kValueTextCap == kDeciTextCap, "o texto do offset sai de formatDeciText");
     static constexpr uint8_t kIndicatorTextCap = 8 + kValueTextCap;   // "PSET X:" + valor
     static constexpr uint8_t kConfirmTextCap = 13 + kValueTextCap;    // "Novo PSET X:" + valor
 
@@ -302,17 +303,20 @@ public:
 
     // --- Telas ---
 
-    // "+XXX,X" com largura constante, para decimos em [-1800, +1800].
-    static bool formatDeci(int16_t deci, char* out, uint8_t cap);
+    // "+XXX,X" ou "+XXX" (Decisao 18) com largura constante, para decimos em [-1800, +1800].
+    // O texto sai de formatDeciText, o mesmo dono da leitura: offset e leitura nunca arredondam
+    // diferente.
+    static bool formatDeci(int16_t deci, AngleDecimals decimals, char* out, uint8_t cap);
 
     // "PSET X:-012,0" enquanto o offset do eixo for diferente de zero (D1 item 17). false
-    // quando o offset e zero: sem offset nao ha indicador, e essa ausencia e informacao.
+    // quando o offset e zero: sem offset nao ha indicador, e essa ausencia e informacao. As
+    // casas decimais saem da opcao gravada em params.
     static bool formatIndicator(Axis axis, const Parameters& params, char* out, uint8_t cap);
 
     // "Novo PSET X:-012,0", primeira linha da confirmacao de magnitude; a segunda e
     // kConfirmHintText. false assim que a janela de 10000 ms fecha - a tela SAI do display, e
     // nao continua montada anunciando um gesto que ja nao existe.
-    bool formatPendingConfirm(Axis axis, char* out, uint8_t cap) const;
+    bool formatPendingConfirm(Axis axis, AngleDecimals decimals, char* out, uint8_t cap) const;
 
 private:
     static uint8_t idx(Axis axis) { return static_cast<uint8_t>(axis); }

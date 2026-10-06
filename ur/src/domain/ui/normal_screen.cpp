@@ -77,7 +77,7 @@ public:
         char texto[ui::PresetWizard::kValueTextCap];
         const bool naFaixa = (deci >= Parameters::kPresetOffsetMinDeci) &&
                              (deci <= Parameters::kPresetOffsetMaxDeci);
-        if (naFaixa && ui::PresetWizard::formatDeci(deci, texto, ui::PresetWizard::kValueTextCap)) {
+        if (naFaixa && ui::PresetWizard::formatDeci(deci, AngleDecimals::One, texto, ui::PresetWizard::kValueTextCap)) {
             add(texto);
             return;
         }

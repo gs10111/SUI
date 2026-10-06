@@ -685,7 +685,7 @@ void serviceCalibration() {
 }
 
 void renderPresetCapture() {
-    app::renderPresetCapture(g_display, g_preset, g_presetAxis);
+    app::renderPresetCapture(g_display, g_preset, g_presetAxis, g_params.displayDecimals());
 }
 
 // DIAGNOSTICO DO PSET NO CONSOLE. "Aperto duas vezes e nao acontece nada" tem cinco causas
@@ -773,7 +773,7 @@ void servicePsetConfirm() {
             return;
         }
     }
-    app::renderPresetConfirm(g_display, g_preset, g_presetAxis);
+    app::renderPresetConfirm(g_display, g_preset, g_presetAxis, g_params.displayDecimals());
 }
 
 void requestPset() {
