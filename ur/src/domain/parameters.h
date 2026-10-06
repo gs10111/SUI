@@ -200,7 +200,7 @@ public:
     Status setDisplayDecimals(AngleDecimals decimals);
 
     static constexpr bool displayDecimalsValid(uint16_t raw) {
-        return raw <= static_cast<uint16_t>(AngleDecimals::One);
+        return raw <= static_cast<uint16_t>(AngleDecimals::Two);
     }
 
     Angle calFullScale(Axis axis) const {

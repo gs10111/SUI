@@ -1028,16 +1028,18 @@ static void test_D18_padrao_de_fabrica_e_uma_casa(void) {
     TEST_ASSERT_TRUE(Parameters().displayDecimals() == AngleDecimals::One);
 }
 
-static void test_D18_aceita_zero_e_uma_casa_e_recusa_o_resto(void) {
+static void test_D18_aceita_zero_uma_e_duas_casas_e_recusa_o_resto(void) {
     Parameters p;
     TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::Zero).ok());
     TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::Zero);
-    TEST_ASSERT_TRUE(p.setDisplayDecimals(static_cast<AngleDecimals>(2)).failed());
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(static_cast<AngleDecimals>(3)).failed());
     TEST_ASSERT_TRUE(p.setDisplayDecimals(static_cast<AngleDecimals>(255)).failed());
     TEST_ASSERT_TRUE_MESSAGE(p.displayDecimals() == AngleDecimals::Zero,
                              "recusa nao pode mexer no valor que estava");
     TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::One).ok());
     TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::One);
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::Two).ok());
+    TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::Two);
 }
 
 static void test_D18_casas_sobrevivem_a_gravacao_e_a_leitura(void) {
@@ -1089,7 +1091,7 @@ static void test_D18_bloco_v3_com_casas_invalidas_e_recusado_inteiro(void) {
     uint8_t blob[Parameters::kParamBlobSize];
     uint16_t n = 0;
     TEST_ASSERT_TRUE(origem.serializeParams(blob, sizeof(blob), n).ok());
-    blob[32] = 2;
+    blob[32] = 3;
     blob[33] = 0;
     const uint16_t crc = crc16Modbus(blob, 34);
     blob[34] = static_cast<uint8_t>(crc & 0xFFu);
@@ -1145,7 +1147,7 @@ int main(int, char**) {
     RUN_TEST(test_atraso_fora_da_faixa_e_recusado);
     RUN_TEST(test_bloco_com_atraso_fora_da_faixa_nao_entra);
     RUN_TEST(test_D18_padrao_de_fabrica_e_uma_casa);
-    RUN_TEST(test_D18_aceita_zero_e_uma_casa_e_recusa_o_resto);
+    RUN_TEST(test_D18_aceita_zero_uma_e_duas_casas_e_recusa_o_resto);
     RUN_TEST(test_D18_casas_sobrevivem_a_gravacao_e_a_leitura);
     RUN_TEST(test_D18_bloco_v2_carrega_o_atraso_e_recebe_uma_casa);
     RUN_TEST(test_D18_bloco_v3_com_casas_invalidas_e_recusado_inteiro);
