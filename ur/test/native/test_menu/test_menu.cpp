@@ -52,6 +52,7 @@
 #include "fakes/fake_keypad.h"
 
 using domain::Angle;
+using domain::AngleDecimals;
 using domain::Axis;
 using domain::Gesture;
 using domain::KeyGesture;
@@ -80,10 +81,11 @@ namespace {
 // continua sendo "mais um item" e nao "lista reescrita".
 // E o DECIMO TERCEIRO, "Atraso Alarme", entrou em 2026-09-17, tambem antes de "Sair" e pelo
 // mesmo criterio: acrescentar no fim nao reordena nada do que o operador ja decorou.
+// E o DECIMO QUARTO, "Casas Decimais", entrou em 2026-10-06 pelo mesmo criterio.
 const char* const kOrdemDoManual[MenuMachine::kItemCount] = {
     "Voltar",   "Ajusta Preset",  "Auto Calibracao", "Limite 1",  "Limite 2",   "Limite 3",
     "Limite 4", "Sentido Sensor", "Senha",           "Rearmar",   "Atualizar",
-    "Atraso Alarme", "Sair",
+    "Atraso Alarme", "Casas Decimais", "Sair",
 };
 
 // Os quatro limites: item de menu, etiqueta de eixo (L202), tela de submenu, tela do editor
@@ -1629,16 +1631,19 @@ static void test_menu_tem_o_item_rearmar_antes_do_sair(void) {
     Bancada b;
     entrarNoMenu(b);
 
-    TEST_ASSERT_EQUAL_UINT8(13u, MenuMachine::kItemCount);
+    TEST_ASSERT_EQUAL_UINT8(14u, MenuMachine::kItemCount);
     descerAte(b, MenuItem::Rearmar);
     TEST_ASSERT_EQUAL_STRING("Rearmar", selecionado(b));
     TEST_ASSERT_TRUE(b.tela.showsExactly("Rearmar"));
 
-    // "Atualizar" e "Atraso Alarme" entraram depois, nesta ordem, e "Sair" continua sendo o ultimo
+    // "Atualizar", "Atraso Alarme" e "Casas Decimais" entraram depois, nesta ordem, e "Sair"
+    // continua sendo o ultimo
     toque(b, Key::Down);
     TEST_ASSERT_EQUAL_STRING("Atualizar", selecionado(b));
     toque(b, Key::Down);
     TEST_ASSERT_EQUAL_STRING("Atraso Alarme", selecionado(b));
+    toque(b, Key::Down);
+    TEST_ASSERT_EQUAL_STRING("Casas Decimais", selecionado(b));
     toque(b, Key::Down);
     TEST_ASSERT_EQUAL_STRING("Sair", selecionado(b));
 }
@@ -1889,6 +1894,77 @@ static void test_atraso_sem_confirmacao_nao_grava(void) {
                                      "sem confirmar a saida, nada pode ter sido gravado");
 }
 
+// --- CASAS DECIMAIS (Decisao 18, 2026-10-06) ----------------------------------------------------
+
+static void test_D18_casas_decimais_abre_no_valor_corrente(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::CasasDecimais);
+    TEST_ASSERT_EQUAL_STRING("Casas Decimais", selecionado(b));
+
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::EditDecimais), code(b.menu.state()));
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kRotuloDecimais));
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoUmaCasa));
+}
+
+static void test_D18_trocar_para_sem_casa_so_vale_na_saida_confirmada(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::CasasDecimais);
+    toque(b, Key::Menu);
+
+    toque(b, Key::Up);
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoSemCasa));
+    hold(b);
+    esperar(b, MenuMachine::kGravOkMs);
+    TEST_ASSERT_TRUE_MESSAGE(b.menu.pendingConfig(), "trocar tem de marcar configuracao pendente");
+    TEST_ASSERT_TRUE_MESSAGE(b.ativo.displayDecimals() == AngleDecimals::One,
+                             "o agregado ativo so muda na confirmacao da saida");
+
+    descerAte(b, MenuItem::Sair);
+    toque(b, Key::Menu);
+    hold(b);   // NOVA CONFIG - CONFIRMA?
+    TEST_ASSERT_TRUE(b.ativo.displayDecimals() == AngleDecimals::Zero);
+}
+
+static void test_D18_confirmar_o_mesmo_valor_nao_cria_pendencia(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::CasasDecimais);
+    toque(b, Key::Menu);
+    hold(b);
+    esperar(b, MenuMachine::kGravOkMs);
+    TEST_ASSERT_FALSE(b.menu.pendingConfig());
+}
+
+static void test_D18_sair_por_inatividade_descarta_a_troca(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::CasasDecimais);
+    toque(b, Key::Menu);
+    toque(b, Key::Up);
+    hold(b);
+    esperar(b, MenuMachine::kGravOkMs);
+    esperar(b, MenuMachine::kTimeoutMs + 1000u);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::Normal), code(b.menu.state()));
+    TEST_ASSERT_TRUE(b.ativo.displayDecimals() == AngleDecimals::One);
+}
+
+// Decisao 18 item 4: o campo em edicao SEMPRE mostra a casa. Ninguem altera o ponto de atuacao de
+// um rele sem ver o decimo.
+static void test_D18_editor_de_limite_continua_com_uma_casa_no_modo_sem_casa(void) {
+    Bancada b;
+    TEST_ASSERT_TRUE(b.ativo.setDisplayDecimals(AngleDecimals::Zero).ok());
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::Limite1);
+    toque(b, Key::Menu);
+    toque(b, Key::Down);
+    toque(b, Key::Menu);
+    TEST_ASSERT_EQUAL_INT(code(MenuState::EditValor), code(b.menu.state()));
+    TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite X1(graus):+005,0"));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -1947,5 +2023,10 @@ int main(int, char**) {
     RUN_TEST(test_rearmar_pede_a_acao_e_confirma_com_texto_proprio);
     RUN_TEST(test_rearmar_nao_cria_pendencia_de_configuracao);
     RUN_TEST(test_depois_do_rearme_a_gravacao_volta_ao_texto_de_gravacao);
+    RUN_TEST(test_D18_casas_decimais_abre_no_valor_corrente);
+    RUN_TEST(test_D18_trocar_para_sem_casa_so_vale_na_saida_confirmada);
+    RUN_TEST(test_D18_confirmar_o_mesmo_valor_nao_cria_pendencia);
+    RUN_TEST(test_D18_sair_por_inatividade_descarta_a_troca);
+    RUN_TEST(test_D18_editor_de_limite_continua_com_uma_casa_no_modo_sem_casa);
     return UNITY_END();
 }

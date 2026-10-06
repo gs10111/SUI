@@ -174,7 +174,11 @@ enum class MenuItem : uint8_t {
     // dispara rele e sirene, e volta. Alarme falso repetido ensina o operador a ignorar o alarme,
     // que e o oposto do que este equipamento existe para fazer.
     AtrasoAlarme = 11,
-    Sair = 12,
+    // ITEM 13 DE 14, acrescentado em 2026-10-06 (Decisao 18). Quantas casas a INDICACAO de
+    // angulo mostra: 0 ou 1. So apresentacao - reles, limites e Preset continuam em decimo, e o
+    // campo em edicao continua com a casa para ninguem mexer num ponto de atuacao sem ve-lo.
+    CasasDecimais = 12,
+    Sair = 13,
 };
 
 enum class MenuState : uint8_t {
@@ -193,6 +197,7 @@ enum class MenuState : uint8_t {
                         // quatro pontos de atuacao, exatamente como a troca de sentido
     EditSenha,       // E5
     EditAtraso,      // atraso de armamento do alarme, em segundos com uma casa
+    EditDecimais,    // Decisao 18: escolha entre "0 (+045)" e "1 (+045,0)"
     // Codigo de quatro digitos que libera o ponto de acesso de atualizacao. NAO e a senha do Modo
     // Programacao: quem chegou aqui ja atravessou aquela. Sao dois portoes porque sao duas
     // autoridades - mexer na configuracao do equipamento e ligar o radio dele nao sao a mesma
@@ -231,7 +236,7 @@ enum class MenuAction : uint8_t {
 
 class MenuMachine {
 public:
-    static constexpr uint8_t kItemCount = 13;
+    static constexpr uint8_t kItemCount = 14;
     static constexpr uint8_t kSubItemCount = 3;
     // O submenu de Preset tem um item a mais - "Zerar Preset" - desde 2026-09-01. Os de Auto
     // Calibracao e Sentido continuam com tres. E errata do manual 5.6, que lista tres.
@@ -261,6 +266,10 @@ public:
     static constexpr const char* kPrefixoEditaSenha = "Edita senha:";
     static constexpr const char* kPrefixoAtraso = "Atraso Alarme(s):";
     static constexpr const char* kMsgAtrasoForaDaFaixa = "FORA DA FAIXA 00,1 a 10,0";
+    // Decisao 18: as duas opcoes trazem o exemplo, para o operador escolher pelo que vai ver.
+    static constexpr const char* kRotuloDecimais = "Casas Decimais:";
+    static constexpr const char* kOpcaoSemCasa = "0 (+045)";
+    static constexpr const char* kOpcaoUmaCasa = "1 (+045,0)";
     static constexpr const char* kCabecalhoMenu = "Menu>";
     static constexpr const char* kCabecalhoPreset = "Preset>";
     static constexpr const char* kCabecalhoAutoCal = "Auto Cal>";
@@ -373,6 +382,7 @@ private:
     void onEditSentido(const Gesture& gesture);
     void onEditSenha(const Gesture& gesture);
     void onEditAtraso(const Gesture& gesture);
+    void onEditDecimais(const Gesture& gesture);
     void onCodigoOta(const Gesture& gesture);
     void onRevisao(const Gesture& gesture);
 
@@ -387,6 +397,7 @@ private:
     void openSentido(Axis axis);
     void openSenha();
     void openAtraso();
+    void openDecimais();
     void openCodigoOta();
     void requestExit();
     void commitOnExit();
@@ -433,6 +444,7 @@ private:
     uint8_t selSub_;
     uint8_t opSel_;
     uint8_t dirSel_;
+    uint8_t decSel_;
     Axis axis_;
 
     char line_[kLineCap];
