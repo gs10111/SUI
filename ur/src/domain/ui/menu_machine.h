@@ -175,7 +175,7 @@ enum class MenuItem : uint8_t {
     // que e o oposto do que este equipamento existe para fazer.
     AtrasoAlarme = 11,
     // ITEM 13 DE 14, acrescentado em 2026-10-06 (Decisao 18). Quantas casas a INDICACAO de
-    // angulo mostra: 0 ou 1. So apresentacao - reles, limites e Preset continuam em decimo, e o
+    // angulo mostra: 0, 1 ou 2 (Emenda 1). So apresentacao - reles, limites e Preset continuam em decimo, e o
     // campo em edicao continua com a casa para ninguem mexer num ponto de atuacao sem ve-lo.
     CasasDecimais = 12,
     Sair = 13,
@@ -197,7 +197,7 @@ enum class MenuState : uint8_t {
                         // quatro pontos de atuacao, exatamente como a troca de sentido
     EditSenha,       // E5
     EditAtraso,      // atraso de armamento do alarme, em segundos com uma casa
-    EditDecimais,    // Decisao 18: escolha entre "0 (+045)" e "1 (+045,0)"
+    EditDecimais,    // Decisao 18: escolha entre "0 (+045)", "1 (+045,0)" e "2 (+045,00)"
     // Codigo de quatro digitos que libera o ponto de acesso de atualizacao. NAO e a senha do Modo
     // Programacao: quem chegou aqui ja atravessou aquela. Sao dois portoes porque sao duas
     // autoridades - mexer na configuracao do equipamento e ligar o radio dele nao sao a mesma
@@ -270,6 +270,7 @@ public:
     static constexpr const char* kRotuloDecimais = "Casas Decimais:";
     static constexpr const char* kOpcaoSemCasa = "0 (+045)";
     static constexpr const char* kOpcaoUmaCasa = "1 (+045,0)";
+    static constexpr const char* kOpcaoDuasCasas = "2 (+045,00)";
     static constexpr const char* kCabecalhoMenu = "Menu>";
     static constexpr const char* kCabecalhoPreset = "Preset>";
     static constexpr const char* kCabecalhoAutoCal = "Auto Cal>";

@@ -1969,6 +1969,43 @@ static void test_D18_editor_de_limite_continua_com_uma_casa_no_modo_sem_casa(voi
     TEST_ASSERT_TRUE(mostraTelaDeValor(b, "Valor Limite X1(graus):+005,0"));
 }
 
+// Emenda 1: tres opcoes em lista - UP sobe para menos casas, DOWN desce para mais, sem dar volta.
+static void test_D18E1_menu_oferece_duas_casas_e_grava(void) {
+    Bancada b;
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::CasasDecimais);
+    toque(b, Key::Menu);
+
+    toque(b, Key::Down);
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoDuasCasas));
+    toque(b, Key::Down);   // ja no fim: fica
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoDuasCasas));
+    hold(b);
+    esperar(b, MenuMachine::kGravOkMs);
+    TEST_ASSERT_TRUE(b.menu.pendingConfig());
+
+    descerAte(b, MenuItem::Sair);
+    toque(b, Key::Menu);
+    hold(b);
+    TEST_ASSERT_TRUE(b.ativo.displayDecimals() == AngleDecimals::Two);
+}
+
+static void test_D18E1_menu_abre_em_duas_casas_e_sobe_uma_de_cada_vez(void) {
+    Bancada b;
+    TEST_ASSERT_TRUE(b.ativo.setDisplayDecimals(AngleDecimals::Two).ok());
+    entrarNoMenu(b);
+    descerAte(b, MenuItem::CasasDecimais);
+    toque(b, Key::Menu);
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoDuasCasas));
+
+    toque(b, Key::Up);
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoUmaCasa));
+    toque(b, Key::Up);
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoSemCasa));
+    toque(b, Key::Up);   // ja no topo: fica
+    TEST_ASSERT_TRUE(b.tela.showsExactly(MenuMachine::kOpcaoSemCasa));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_REQ_DSP_03_constantes_de_tela_sao_os_literais_do_contrato);
@@ -2032,5 +2069,7 @@ int main(int, char**) {
     RUN_TEST(test_D18_confirmar_o_mesmo_valor_nao_cria_pendencia);
     RUN_TEST(test_D18_sair_por_inatividade_nao_aplica_a_troca);
     RUN_TEST(test_D18_editor_de_limite_continua_com_uma_casa_no_modo_sem_casa);
+    RUN_TEST(test_D18E1_menu_oferece_duas_casas_e_grava);
+    RUN_TEST(test_D18E1_menu_abre_em_duas_casas_e_sobe_uma_de_cada_vez);
     return UNITY_END();
 }

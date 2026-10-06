@@ -590,8 +590,9 @@ void MenuMachine::onEditAtraso(const Gesture& gesture) {
     dirty_ = true;
 }
 
-// Mesmo molde de Sentido do Sensor: duas opcoes, UP e DOWN escolhem, hold de MENU grava no
-// rascunho. Sem aviso temporizado - trocar o formato nao desloca ponto de atuacao nenhum.
+// Mesmo molde de Sentido do Sensor: opcoes em lista, UP sobe para menos casas e DOWN desce para
+// mais, sem dar volta; hold de MENU grava no rascunho. Sem aviso temporizado - trocar o formato
+// nao desloca ponto de atuacao nenhum.
 void MenuMachine::onEditDecimais(const Gesture& gesture) {
     if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
         const AngleDecimals escolhido = static_cast<AngleDecimals>(decSel_);
@@ -607,11 +608,12 @@ void MenuMachine::onEditDecimais(const Gesture& gesture) {
     if (gesture.kind != GestureKind::ShortTap) {
         return;
     }
+    const uint8_t ultima = static_cast<uint8_t>(AngleDecimals::Two);
     if (gesture.key == Key::Up && decSel_ > 0) {
-        decSel_ = 0;
+        --decSel_;
         dirty_ = true;
-    } else if (gesture.key == Key::Down && decSel_ == 0) {
-        decSel_ = 1;
+    } else if (gesture.key == Key::Down && decSel_ < ultima) {
+        ++decSel_;
         dirty_ = true;
     }
 }
@@ -1010,7 +1012,9 @@ void MenuMachine::render() {
         }
 
         case MenuState::EditDecimais: {
-            const char* opcao = (decSel_ == 0u) ? kOpcaoSemCasa : kOpcaoUmaCasa;
+            const char* opcao = (decSel_ == 0u)   ? kOpcaoSemCasa
+                                 : (decSel_ == 1u) ? kOpcaoUmaCasa
+                                                   : kOpcaoDuasCasas;
             drawLine(kRotuloY, kRotuloDecimais, contentFont(kRotuloDecimais));
             drawLine(kConteudoY, opcao, contentFont(opcao));
             break;
