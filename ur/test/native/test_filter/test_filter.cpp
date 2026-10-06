@@ -414,6 +414,64 @@ static void test_reset_apaga_a_leitura_e_a_recarga_recomeca(void) {
     TEST_ASSERT_EQUAL_INT16(-88, valueOf(filter));
 }
 
+// --- DECISAO 18, EMENDA 1: o centesimo da indicacao sai do estado do filtro -------------------
+//
+// O fio traz decimo. O estado do EMA (Q8) e a media das ultimas amostras e, com o sinal oscilando
+// entre dois decimos, carrega o centesimo de verdade. centiValue() e so leitura desse estado.
+
+static void test_D18E1_sem_amostra_nao_ha_centesimo(void) {
+    const LowPassFilter filter(LowPassFilter::kTauDefaultMs, kTs);
+    int16_t centi = 123;
+    TEST_ASSERT_FALSE(filter.centiValue(centi));
+    TEST_ASSERT_EQUAL_INT16(123, centi);
+}
+
+static void test_D18E1_em_regime_o_centesimo_e_o_decimo_exato(void) {
+    LowPassFilter filter(LowPassFilter::kTauDefaultMs, kTs);
+    filter.reload(deg(453));
+    int16_t centi = 0;
+    TEST_ASSERT_TRUE(filter.centiValue(centi));
+    TEST_ASSERT_EQUAL_INT16(4530, centi);
+    for (int i = 0; i < 200; ++i) {
+        filter.update(deg(-123));
+    }
+    TEST_ASSERT_TRUE(filter.centiValue(centi));
+    TEST_ASSERT_EQUAL_INT16(-1230, centi);
+}
+
+// Sinal alternando entre 45,3 e 45,4: o decimo exibido fica preso num dos dois, o centesimo mostra
+// o meio - e e isso que a indicacao de duas casas tem de ter de real.
+static void test_D18E1_sinal_entre_dois_decimos_da_centesimo_do_meio(void) {
+    LowPassFilter filter(LowPassFilter::kTauDefaultMs, kTs);
+    filter.reload(deg(453));
+    for (int i = 0; i < 400; ++i) {
+        filter.update(deg((i % 2 == 0) ? 454 : 453));
+    }
+    int16_t centi = 0;
+    TEST_ASSERT_TRUE(filter.centiValue(centi));
+    TEST_ASSERT_INT16_WITHIN(3, 4535, centi);
+    // E o centesimo arredondado para decimo e o mesmo numero que vai para os reles.
+    TEST_ASSERT_INT16_WITHIN(1, filter.value().deciDegrees(), (centi + 5) / 10);
+}
+
+// Espelho exato, a mesma exigencia de SIMETRIA do valor em decimo (operacao "+" da secao 5.9).
+static void test_D18E1_centesimo_e_espelho_exato_nos_dois_sentidos(void) {
+    LowPassFilter pos(LowPassFilter::kTauDefaultMs, kTs);
+    LowPassFilter neg(LowPassFilter::kTauDefaultMs, kTs);
+    pos.reload(deg(453));
+    neg.reload(deg(-453));
+    for (int i = 0; i < 37; ++i) {
+        const int16_t v = static_cast<int16_t>(453 + (i % 3));
+        pos.update(deg(v));
+        neg.update(deg(static_cast<int16_t>(-v)));
+        int16_t a = 0;
+        int16_t b = 0;
+        TEST_ASSERT_TRUE(pos.centiValue(a));
+        TEST_ASSERT_TRUE(neg.centiValue(b));
+        TEST_ASSERT_EQUAL_INT16(a, static_cast<int16_t>(-b));
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_A6_os_quatro_degraus_dao_os_coeficientes_do_projeto);
@@ -435,5 +493,9 @@ int main(int, char**) {
     RUN_TEST(test_a_constante_de_tempo_em_ms_manda_no_coeficiente);
     RUN_TEST(test_periodo_de_amostragem_zero_deixa_o_filtro_em_passagem_direta);
     RUN_TEST(test_reset_apaga_a_leitura_e_a_recarga_recomeca);
+    RUN_TEST(test_D18E1_sem_amostra_nao_ha_centesimo);
+    RUN_TEST(test_D18E1_em_regime_o_centesimo_e_o_decimo_exato);
+    RUN_TEST(test_D18E1_sinal_entre_dois_decimos_da_centesimo_do_meio);
+    RUN_TEST(test_D18E1_centesimo_e_espelho_exato_nos_dois_sentidos);
     return UNITY_END();
 }
