@@ -544,7 +544,7 @@ Decisao 18. `Menu > Casas Decimais`, item 13 de 14, antes de `Sair`.
 | Padrao de fabrica | `1` |
 | Quando vale | na confirmacao da saida (`NOVA CONFIG - CONFIRMA?`), como todo item do menu |
 | Sem casa | `+045`; sem leitura `---`; -0,4 vira `+000` |
-| Duas casas | leitura `+045,37` com o centesimo do filtro (Emenda 1); limite e offset `+045,30`; leitura sem credito e captura do Preset ficam com uma casa; sem leitura `---,--` |
+| Duas casas | leitura `+045,37` com o centesimo do filtro (Emenda 1); limite e offset `+045,30`; tela de falha (leitura sem credito ou retida) e captura do Preset ficam com uma casa; sem leitura `---,--` |
 | Nao muda | campo em edicao (sempre `+045,3`), porcentagem `SAI:`, batimento |
 
 O bloco de parametros passou para a versao 3 (36 bytes). As versoes 1 e 2 continuam sendo aceitas

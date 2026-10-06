@@ -23,9 +23,10 @@ namespace domain {
 // analogica continuam em decimo inteiro.
 //
 // DUAS CASAS (Emenda 1 da Decisao 18): a sensora entrega decimo, entao o centesimo da leitura NAO
-// vem do fio - vem do estado interno do filtro da UR (LowPassFilter, ponto fixo Q8), que e a
-// media das ultimas amostras e por isso carrega informacao abaixo do decimo quando o sinal
-// oscila. E resolucao de indicacao, nao exatidao: a exatidao declarada continua +/-0,09 grau.
+// vem do fio - vem do estado interno do filtro da UR (LowPassFilter, ponto fixo Q8), a media das
+// ultimas amostras. Ele so tem conteudo abaixo do decimo quando o sinal varia entre decimos; com
+// o sinal parado o 0 final diz apenas que a sensora nao mudou de decimo, e num degrau ele mostra a
+// resposta do filtro. E resolucao de indicacao, nao exatidao (+/-0,09 grau continua valendo).
 // Valor que so existe em decimo exato (limite, offset) sai com o 0 final, que e verdade.
 enum class AngleDecimals : uint8_t {
     Zero = 0,  // "+045"

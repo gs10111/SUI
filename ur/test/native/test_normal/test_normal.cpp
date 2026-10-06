@@ -1412,14 +1412,17 @@ static void test_D18E1_leitura_marcada_com_duas_casas_fica_com_uma(void) {
     verificarQuadro(bancada.painel);
 }
 
-static void test_D18E1_sem_quadro_com_duas_casas_mostra_traco_largo(void) {
+// A tela de falha com duas casas fala em UMA (nenhum numero ali tem centesimo medido), e o traco
+// acompanha: "---,-".
+static void test_D18E1_sem_quadro_com_duas_casas_mostra_o_traco_de_uma(void) {
     Bancada bancada;
     NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
     entrada.decimals = AngleDecimals::Two;
 
     bancada.ciclo(entrada);
 
-    TEST_ASSERT_TRUE(bancada.painel.shows("---,--"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("---,-"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("---,--"));
     verificarQuadro(bancada.painel);
 }
 
@@ -1442,6 +1445,87 @@ static void test_D18E1_detalhe_com_duas_casas_cabe_no_pior_caso(void) {
 
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("-089,99"));
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET X:-180,00"));
+    verificarQuadro(bancada.painel);
+}
+
+// --- O QUADRO NAS LARGURAS DO ALVO ------------------------------------------------------------
+//
+// O FakeDisplay arredonda a largura de glifo PARA CIMA (Large 15 px contra 14,125 medidos), o que
+// e conservador para "cabe na tela" mas pode levar a decisao de fonte para um ramo que a placa
+// nunca percorre: com duas casas o fake escolhia Small e o alvo escolhia Medium, e a linha SAI:
+// do alvo entrava na caixa do batimento. Este painel usa as larguras medidas no u8g2 real
+// (Small 6, Medium 9, Large 14) para que a suite exercite o ramo que a placa desenha.
+class PainelAlvo : public Painel {
+public:
+    uint16_t textWidthPx(TextFont font, const char* text) const override {
+        uint16_t porGlifo = 6u;
+        if (font == TextFont::Large) {
+            porGlifo = 14u;
+        } else if (font == TextFont::Medium) {
+            porGlifo = 9u;
+        }
+        uint16_t n = 0;
+        while (text != nullptr && text[n] != '\0') {
+            ++n;
+        }
+        return static_cast<uint16_t>(porGlifo * n);
+    }
+};
+
+struct BancadaAlvo {
+    FakeClock clock;
+    FakeKeypad keypad;
+    KeyGesture gesto;
+    PainelAlvo painel;
+    NormalScreen tela;
+
+    BancadaAlvo() : clock(), keypad(clock), gesto(keypad, clock), painel(), tela(painel, gesto) {}
+
+    void ciclo(const NormalInput& entrada) {
+        gesto.update();
+        tela.update(entrada);
+    }
+};
+
+static void test_D12_batimento_livre_nas_larguras_do_alvo_em_todo_modo_de_casas(void) {
+    const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
+    for (AngleDecimals modo : modos) {
+        BancadaAlvo bancada;
+        NormalInput entrada = duasCasas(-8999, -8999);
+        entrada.decimals = modo;
+        entrada.analogPercent[kNormalAxisX] = -100;
+        entrada.analogPercent[kNormalAxisY] = -100;
+        bancada.ciclo(entrada);
+        verificarQuadro(bancada.painel);
+
+        // e com Preset nos dois eixos, que acrescenta a linha mais baixa da coluna
+        BancadaAlvo comPreset;
+        entrada.presetActive[kNormalAxisX] = true;
+        entrada.presetActive[kNormalAxisY] = true;
+        entrada.presetOffsetDeci[kNormalAxisX] = -1800;
+        entrada.presetOffsetDeci[kNormalAxisY] = 1800;
+        comPreset.ciclo(entrada);
+        verificarQuadro(comPreset.painel);
+    }
+}
+
+// Em falha de enlace a aplicacao RETEM a ultima leitura filtrada (o filtro alimentado com
+// invalido devolve o estado). Esse numero nao e medicao nova: com duas casas ele nao pode exibir
+// um centesimo que ainda se move por conta do filtro sem dado nenhum. Sai com uma casa.
+static void test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
+    entrada.decimals = AngleDecimals::Two;
+    entrada.reading[kNormalAxisX] = Angle::fromDeciDegrees(13);   // retida, como no produto
+    entrada.reading[kNormalAxisY] = Angle::fromDeciDegrees(-7);
+    entrada.readingCenti[kNormalAxisX] = 127;
+    entrada.readingCenti[kNormalAxisY] = -68;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+001,3"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+001,27"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+001,30"));
     verificarQuadro(bancada.painel);
 }
 
@@ -1508,7 +1592,9 @@ int main(int, char**) {
     RUN_TEST(test_D18E1_tela_principal_com_duas_casas_cabe_no_pior_caso_da_coluna);
     RUN_TEST(test_D18E1_detalhe_com_duas_casas);
     RUN_TEST(test_D18E1_leitura_marcada_com_duas_casas_fica_com_uma);
-    RUN_TEST(test_D18E1_sem_quadro_com_duas_casas_mostra_traco_largo);
+    RUN_TEST(test_D18E1_sem_quadro_com_duas_casas_mostra_o_traco_de_uma);
     RUN_TEST(test_D18E1_detalhe_com_duas_casas_cabe_no_pior_caso);
+    RUN_TEST(test_D12_batimento_livre_nas_larguras_do_alvo_em_todo_modo_de_casas);
+    RUN_TEST(test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo);
     return UNITY_END();
 }

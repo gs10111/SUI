@@ -3224,30 +3224,43 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
 **Revoga o item 1 na parte "duas casas ficaram de fora".** Pedido do responsavel, para atender um
 cliente especifico. A sensora continua entregando decimo e nada muda no fio nem na sensora.
 
-1. **De onde vem o centesimo.** Do estado interno do filtro da UR (`LowPassFilter`, ponto fixo Q8,
-   1/256 de decimo), que e a media exponencial das ultimas amostras (constante de 0,8 s). Com o
-   sinal oscilando entre dois decimos, essa media carrega informacao real abaixo do decimo -
-   e estatistica, nao invencao. Com o sinal parado num decimo, o centesimo e `0` de verdade.
-   `LowPassFilter::centiValue()` arredonda como `value()` e grampeia na mesma faixa.
-2. **Mesma cadeia de A9.** `PresetWizard::readingCenti()` aplica Sentido e Preset em centesimos;
-   ha teste provando que, em toda a faixa e nos dois sentidos, o resultado e exatamente dez vezes
-   o da formula em decimo.
+1. **De onde vem o centesimo, e o que ele vale.** Do estado interno do filtro da UR
+   (`LowPassFilter`, ponto fixo Q8, 1/256 de decimo), a media exponencial das ultimas amostras
+   (constante de 0,8 s). Ele so tem conteudo abaixo do decimo quando o sinal VARIA entre decimos
+   (ruido ou vibracao da ordem de 0,1 grau pico a pico). Com o sinal parado, o `0` final diz apenas
+   que a sensora nao mudou de decimo - nao que o angulo e exato ao centesimo. Num degrau de 0,1
+   grau sem ruido, o centesimo mostra a rampa do filtro (0,01 ... 0,09 em cerca de 2 s) e volta a
+   `x0`: e a resposta do filtro, nao medicao.
+2. **Mesma formula de A9.** `PresetWizard::readingCenti()` aplica Sentido e Preset em centesimos;
+   ha teste provando que, com centesimo multiplo de 10, o resultado e exatamente dez vezes o da
+   formula em decimo, e teste de aplicacao com anti-horario e offset ligados.
 3. **So indicacao.** Reles, limites, Preset e saida analogica continuam comandados pelo decimo.
-4. **O que leva o 0 final e o que nao leva.** Limite e offset de Preset so existem em decimo exato,
-   entao `+045,30` e verdade e sai assim. A leitura sem credito (Emenda 2) e a leitura crua da
-   captura do Preset NAO passam pelo filtro e so tem decimo: com duas casas elas saem com UMA, em
-   vez de ganhar um 0 que ninguem mediu.
-5. **Resolucao nao e exatidao.** A exatidao declarada continua +/-0,09 grau (Decisao 11 item 11).
-   O centesimo e resolucao de indicacao e vai oscilar com a estrutura; o manual, se citar a opcao,
-   tem de dizer isso.
-6. **Layout.** Coluna de estado e numero grande do detalhe sao medidos pelo pior caso do modo
-   ativo (`X:-180,00`, `-180,00`); a coluna cai para a fonte pequena quando precisa, pela regra que
-   ja existia. O batimento continua no canto.
-7. **Menu.** Terceira opcao `2 (+045,00)`; UP vai para menos casas, DOWN para mais, sem dar volta.
+4. **A ATUACAO PODE APARECER ATE 0,05 GRAU ALEM OU AQUEM DO VALOR EXIBIDO.** O rele compara o
+   decimo arredondado do mesmo estado; a tela mostra o centesimo, que fica ate 0,05 em volta. Com
+   limite `>=` em 45,30 e a estrutura subindo de 45,2 para 45,3, o rele atua enquanto a tela ainda
+   le `+045,25` ... `+045,29` por cerca de 2 s (medido no filtro real); com `<=` acontece o espelho.
+   Nenhum mapeamento do centesimo satisfaz `>=` e `<=` ao mesmo tempo. Isso CONTRARIA, no modo de
+   duas casas, a promessa do manual (L142/L223) de atuar "exatamente no angulo exibido", e tem de
+   entrar na errata: **com duas casas, a atuacao pode ocorrer ate 0,05 grau antes ou depois do
+   valor exibido.** Com 0 ou 1 casa nada muda.
+5. **O que leva o 0 final e o que nao leva.** Limite e offset de Preset so existem em decimo exato,
+   entao `+045,30` e verdade e sai assim. A leitura da TELA DE FALHA (sem credito, Emenda 2, ou a
+   retida pelo filtro alimentado com invalido) e a leitura crua da captura do Preset nao tem
+   centesimo medido: com duas casas elas saem com UMA, e o traco da tela de falha e `---,-`.
+6. **Resolucao nao e exatidao.** A exatidao declarada continua +/-0,09 grau (Decisao 11 item 11).
+7. **Layout.** Coluna de estado e numero grande do detalhe sao medidos pelo pior caso do modo
+   ativo (`X:-180,00`, `-180,00`), e a coluna desconta a faixa do batimento ao escolher a fonte.
+   Nas larguras do alvo (u8g2 medido) isso poe a coluna em Small no modo de duas casas; sem a
+   reserva, a linha `SAI:` em Medium entrava na caixa do batimento. Ha teste com um painel nas
+   larguras do alvo, nos tres modos.
+8. **Menu.** Terceira opcao `2 (+045,00)`; UP vai para menos casas, DOWN para mais, sem dar volta.
    O bloco continua v3 (o campo ja era uint16; 2 passou a ser valido) - nenhuma placa recebeu v3.
+   Restricao de rollout: um firmware da Decisao 18 SEM esta emenda recusaria um bloco com 2.
 
-**Precisa de bancada:** com a estrutura parada e com vibracao, registrar quanto o centesimo oscila.
-Se ficar "grudado" em `0` com a maquina parada, isso e o comportamento correto, nao defeito.
+**Precisa de bancada (criterio, nao impressao):** com a estrutura parada, medir o desvio-padrao da
+leitura (mesmo protocolo da MEDICAO 8). Se o ruido pico a pico ficar abaixo de ~0,1 grau, o
+centesimo nao tem dither para carregar informacao e a opcao de duas casas NAO entrega o que
+promete - o responsavel decide se mantem. Com vibracao, registrar quanto o centesimo oscila.
 
 ### Persistencia
 

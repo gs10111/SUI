@@ -114,8 +114,9 @@ public:
     Angle value() const;
     // Decisao 18, Emenda 1: o mesmo estado em CENTESIMOS de grau, so para a indicacao de duas
     // casas. Arredonda como value() (meio para longe do zero) e grampeia na mesma faixa de
-    // Angle, entao o centesimo nunca aponta para fora do decimo que comanda os reles. false - e
-    // `out` intocado - enquanto o filtro nao recebeu amostra.
+    // Angle. O centesimo fica a no maximo 0,05 grau do decimo que comanda os reles, mas PODE estar
+    // do outro lado de um limite: rele atuado em 45,3 com a tela lendo 45,27 e possivel e esta
+    // declarado na Emenda 1. false - e `out` intocado - enquanto o filtro nao recebeu amostra.
     bool centiValue(int16_t& out) const;
 
     void reload(const Angle& sample);

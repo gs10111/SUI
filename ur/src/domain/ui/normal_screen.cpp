@@ -33,15 +33,16 @@ namespace domain {
 
 namespace {
 
-// Coluna direita da tela principal. A maior linha da coluna ("SAIDA X:MEDICAO", 15 glifos)
-// cabe nos 106 px que sobram, e a maior linha da coluna esquerda ("X:+045,0" em fonte grande,
-// 144 px) termina antes daqui.
+// Coluna direita da tela principal: comeca depois do pior caso do numero grande no modo de casas
+// ativo (statusColumnX) e termina antes da faixa do batimento (statusFont). As larguras saem da
+// medicao, nao de numeros escritos aqui - eles mudam com o modo de casas e com a fonte.
 // Folga entre o fim da area de medicao e o comeco da coluna de estado.
 constexpr int16_t kStatusGapPx = 6;
 // Folga extra maxima entre linhas da coluna de estado.
 constexpr int16_t kMaxExtraGapPx = 6;
 
-// Coluna do valor no detalhe: "+045,0" em fonte grande ocupa 108 px e fecha em 248.
+// Coluna do valor no detalhe: encostada na borda direita, medida pelo pior caso do modo de
+// casas ativo (detailValueX).
 
 constexpr int16_t kMargin = 1;
 
@@ -486,24 +487,20 @@ void NormalScreen::renderFault(const NormalInput& in) {
     const bool semCredito = !in.reading[kNormalAxisX].valid() &&
                             (in.unqualified[kNormalAxisX].valid() ||
                              in.unqualified[kNormalAxisY].valid());
-    // A leitura sem credito nao passa pelo filtro e so tem decimo: com duas casas ela sai com
-    // UMA, em vez de ganhar um 0 que ninguem mediu (Decisao 18, Emenda 1).
-    const AngleDecimals casasSemCredito =
+    // Nesta tela nenhum numero e medicao nova com centesimo: a leitura sem credito nao passa pelo
+    // filtro e so tem decimo, e a leitura boa e a RETIDA pelo filtro alimentado com invalido - um
+    // centesimo ali ainda se moveria sem dado nenhum. Com duas casas, as duas saem com UMA
+    // (Decisao 18, Emenda 1).
+    const AngleDecimals casas =
         (in.decimals == AngleDecimals::Two) ? AngleDecimals::One : in.decimals;
     Line leitura;
     leitura.add("X:");
+    leitura.add(semCredito ? in.unqualified[kNormalAxisX] : in.reading[kNormalAxisX], casas);
     if (semCredito) {
-        leitura.add(in.unqualified[kNormalAxisX], casasSemCredito);
         leitura.add(kMarkUnqualified);
-    } else {
-        leitura.addReading(in, kNormalAxisX);
     }
     leitura.add(" Y:");
-    if (semCredito) {
-        leitura.add(in.unqualified[kNormalAxisY], casasSemCredito);
-    } else {
-        leitura.addReading(in, kNormalAxisY);
-    }
+    leitura.add(semCredito ? in.unqualified[kNormalAxisY] : in.reading[kNormalAxisY], casas);
     if (semCredito) {
         leitura.add(kMarkUnqualified);
     }
@@ -625,7 +622,11 @@ int16_t NormalScreen::statusColumnX(AngleDecimals decimals) const {
 }
 
 TextFont NormalScreen::statusFont(const NormalInput& in) const {
-    const int16_t largura = static_cast<int16_t>(display_.widthPx() - statusColumnX(in.decimals));
+    // A faixa do batimento (D12 item 11) sai da largura util: a ultima linha da coluna pode
+    // descer ate a altura da caixa, e nenhuma linha pode invadi-la. Sem esta reserva, com duas
+    // casas e as larguras do alvo, a linha SAI: em Medium terminava em cima da caixa.
+    const int16_t largura = static_cast<int16_t>(display_.widthPx() - statusColumnX(in.decimals) -
+                                                 kHeartbeatBoxPx - kMargin);
     if (largura <= 0) {
         return TextFont::Small;
     }

@@ -1061,8 +1061,10 @@ static void test_D18E1_centesimo_recebe_sentido_e_preset_como_o_decimo(void) {
 }
 
 // Com centesimo multiplo de 10 o resultado tem de ser exatamente dez vezes o da formula em decimo,
-// em toda a faixa e nos dois sentidos: a indicacao de duas casas nunca contradiz o decimo.
-static void test_D18E1_centesimo_concorda_com_o_decimo_em_toda_a_faixa(void) {
+// em toda a faixa e nos dois sentidos: a formula em centesimos e a MESMA formula de A9. Isto NAO
+// prova que o centesimo exibido concorda com o rele - fora dos multiplos de 10 ele pode ficar ate
+// 0,05 grau do outro lado de um limite (Decisao 18, Emenda 1, item 4).
+static void test_D18E1_centesimo_multiplo_de_dez_reproduz_a_formula_em_decimo(void) {
     const int16_t offsets[] = {0, -120, 1800, -1800, 37};
     const SensorDir sentidos[] = {SensorDir::Clockwise, SensorDir::CounterClockwise};
     for (int16_t bruto = -900; bruto <= 900; bruto = static_cast<int16_t>(bruto + 7)) {
@@ -1152,7 +1154,7 @@ int main(int, char**) {
     RUN_TEST(test_D18_tela_de_captura_sem_casa);
     RUN_TEST(test_D18_tela_de_captura_sem_leitura_e_sem_casa_mostra_traco_curto);
     RUN_TEST(test_D18E1_centesimo_recebe_sentido_e_preset_como_o_decimo);
-    RUN_TEST(test_D18E1_centesimo_concorda_com_o_decimo_em_toda_a_faixa);
+    RUN_TEST(test_D18E1_centesimo_multiplo_de_dez_reproduz_a_formula_em_decimo);
     RUN_TEST(test_D18E1_tela_de_captura_com_duas_casas_fica_com_uma);
     RUN_TEST(test_D18E1_indicador_de_pset_com_duas_casas);
     return UNITY_END();

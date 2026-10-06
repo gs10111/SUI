@@ -1508,6 +1508,23 @@ static void test_D18E1_centesimo_oscilando_chega_a_tela(void) {
     TEST_ASSERT_TRUE(in.decimals == domain::AngleDecimals::Two);
 }
 
+// O centesimo passa por Sentido e Preset na aplicacao, nao so na formula: com anti-horario e
+// offset ligados, o centesimo do snapshot tem de ser dez vezes o decimo do snapshot (sinal parado
+// num decimo, filtro em regime).
+static void test_D18E1_centesimo_da_aplicacao_recebe_sentido_e_preset(void) {
+    Rig rig;
+    rig.power();
+    domain::Parameters novo = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(novo.setSensorDir(Axis::X, domain::SensorDir::CounterClockwise).ok());
+    TEST_ASSERT_TRUE(novo.setPresetOffset(Axis::X, 25).ok());
+    rig.app.publishParameters(novo);
+    settleClear(rig, 13);
+
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_EQUAL_INT16(12, snap.reading[0].deciDegrees());   // -1,3 + 2,5
+    TEST_ASSERT_EQUAL_INT16(120, snap.readingCenti[0]);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1562,5 +1579,6 @@ int main(int, char**) {
     RUN_TEST(test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar);
     RUN_TEST(test_D18E1_centesimo_parado_e_o_decimo_exato);
     RUN_TEST(test_D18E1_centesimo_oscilando_chega_a_tela);
+    RUN_TEST(test_D18E1_centesimo_da_aplicacao_recebe_sentido_e_preset);
     return UNITY_END();
 }
