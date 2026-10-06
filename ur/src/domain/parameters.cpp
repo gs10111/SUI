@@ -6,12 +6,16 @@
 // blobs sao a CARGA UTIL que o ParamStoreLogic grava no slot; a escolha do slot e o contador de
 // geracao do banco duplo nao moram aqui (ver o cabecalho de parameters.h):
 //
-//   Registro de parametros - 32 bytes, gravado em ParamSlot::BankA / ParamSlot::BankB
+//   Registro de parametros - 36 bytes (v3), gravado em ParamSlot::BankA / ParamSlot::BankB
 //     off  0  uint32 magic = 0x44505231      off 14  int16  limitDeci[4]
-//     off  4  uint16 version = 1             off 22  uint8  limitOp[4]
+//     off  4  uint16 version = 3             off 22  uint8  limitOp[4]
 //     off  6  int16  presetDeci[2]           off 26  uint8  sensorDir[2]
 //     off 10  int16  presetOffsetDeci[2]     off 28  uint16 password
-//                                            off 30  uint16 crc sobre 0..29
+//                                            off 30  uint16 alarmDelayDeciS   (desde a v2)
+//                                            off 32  uint16 displayDecimals   (desde a v3)
+//                                            off 34  uint16 crc sobre 0..33
+//   A v1 (32 bytes) terminava no CRC em off 30 e a v2 (34 bytes) no CRC em off 32; as duas
+//   continuam sendo lidas.
 //
 //   Registro de calibracao - 20 bytes, gravado em ParamSlot::FactoryCal
 //     off  0  uint32 magic = 0x44435231      off 10  uint16 zeroCode[2]
@@ -41,6 +45,8 @@ constexpr uint16_t kOffPassword = 28;
 // Campo da versao 2. Fica onde ficava o CRC da versao 1, e por isso o bloco cresceu
 // dois bytes: o CRC anda para o fim.
 constexpr uint16_t kOffAlarmDelay = 30;
+// Campo da versao 3. Mesmo movimento da v2: ocupa o lugar do CRC antigo e o CRC anda dois bytes.
+constexpr uint16_t kOffDisplayDecimals = 32;
 
 constexpr uint16_t kOffCalFullScale = 6;
 constexpr uint16_t kOffCalZeroCode = 10;
@@ -110,6 +116,7 @@ Parameters::Parameters() : rel_(), cal_() {
     rel_.limitOp[idx(LimitId::Y2)] = static_cast<uint8_t>(LimitOp::Off);
     rel_.password = kDefaultPassword;
     rel_.alarmDelayDeciS = kDefaultAlarmDelayDeciS;
+    rel_.displayDecimals = static_cast<uint16_t>(kDefaultDisplayDecimals);
 }
 
 Parameters Parameters::factoryDefaults() { return Parameters(); }
@@ -272,6 +279,7 @@ Status Parameters::serializeParams(uint8_t* dst, uint16_t cap, uint16_t& outLen)
     }
     put16(dst + kOffPassword, rel_.password);
     put16(dst + kOffAlarmDelay, rel_.alarmDelayDeciS);
+    put16(dst + kOffDisplayDecimals, rel_.displayDecimals);
     sign(dst, kParamBlobSize);
     outLen = kParamBlobSize;
     return kOk;
@@ -294,19 +302,25 @@ Status Parameters::serializeCal(uint8_t* dst, uint16_t cap, uint16_t& outLen) co
     return kOk;
 }
 
-// ACEITA OS DOIS FORMATOS, e isso nao e conveniencia: toda placa ja instalada tem um bloco da
-// versao 1 gravado, com 32 bytes. Recusa-lo na atualizacao de firmware levaria a frota inteira a
-// CONFIG PERDIDA - quatro reles em alarme, em todo equipamento, ao mesmo tempo, por causa de um
-// campo novo. O bloco v1 e carregado com o atraso de alarme no valor de fabrica, que e
-// exatamente o que aquela placa ja fazia; a proxima gravacao o promove a v2, sem pressa e sem
-// escrita de boot.
+// ACEITA OS TRES FORMATOS, e isso nao e conveniencia: toda placa ja instalada tem um bloco da
+// versao 1 (32 bytes) ou da 2 (34 bytes) gravado. Recusa-lo na atualizacao de firmware levaria a
+// frota inteira a CONFIG PERDIDA - quatro reles em alarme, em todo equipamento, ao mesmo tempo,
+// por causa de um campo novo. O campo que o bloco antigo nao tem e carregado no valor de
+// fabrica, que e exatamente o que aquela placa ja fazia; a proxima gravacao o promove a v3, sem
+// pressa e sem escrita de boot.
 Status Parameters::loadParams(const uint8_t* src, uint16_t len) {
     if (src == nullptr || len < kParamBlobSizeLegado) {
         return Err::Param;
     }
-    const bool legado = (get16(src + kOffVersion) == kParamVersionLegado);
-    const uint16_t tamanho = legado ? kParamBlobSizeLegado : kParamBlobSize;
-    const uint16_t versao = legado ? kParamVersionLegado : kParamVersion;
+    const uint16_t versaoLida = get16(src + kOffVersion);
+    uint16_t tamanho = kParamBlobSize;
+    if (versaoLida == kParamVersionLegado) {
+        tamanho = kParamBlobSizeLegado;
+    } else if (versaoLida == kParamVersionV2) {
+        tamanho = kParamBlobSizeV2;
+    }
+    // Versao desconhecida cai no envelope da atual e e recusada la (Crc ou Unsupported).
+    const uint16_t versao = (tamanho == kParamBlobSize) ? kParamVersion : versaoLida;
 
     const Status envelope = checkEnvelope(src, len, tamanho, kParamMagic, versao);
     if (envelope.failed()) {
@@ -340,10 +354,17 @@ Status Parameters::loadParams(const uint8_t* src, uint16_t len) {
         return Err::Range;
     }
 
-    // O bloco v1 nao tem o campo: assume o valor de fabrica, que e o comportamento que aquela
-    // placa ja tinha (100 ms de confirmacao de ataque).
-    lido.alarmDelayDeciS = legado ? kDefaultAlarmDelayDeciS : get16(src + kOffAlarmDelay);
+    // Campo que o bloco nao tem assume o valor de fabrica - o comportamento que aquela placa ja
+    // tinha (100 ms de confirmacao de ataque, uma casa decimal na indicacao).
+    lido.alarmDelayDeciS = (versaoLida == kParamVersionLegado) ? kDefaultAlarmDelayDeciS
+                                                               : get16(src + kOffAlarmDelay);
     if (!alarmDelayValid(lido.alarmDelayDeciS)) {
+        return Err::Range;
+    }
+    lido.displayDecimals = (tamanho == kParamBlobSize)
+                               ? get16(src + kOffDisplayDecimals)
+                               : static_cast<uint16_t>(kDefaultDisplayDecimals);
+    if (!displayDecimalsValid(lido.displayDecimals)) {
         return Err::Range;
     }
 
@@ -356,6 +377,15 @@ Status Parameters::setAlarmDelayDeciS(uint16_t deciS) {
         return Err::Range;
     }
     rel_.alarmDelayDeciS = deciS;
+    return kOk;
+}
+
+Status Parameters::setDisplayDecimals(AngleDecimals decimals) {
+    const uint16_t raw = static_cast<uint16_t>(decimals);
+    if (!displayDecimalsValid(raw)) {
+        return Err::Range;
+    }
+    rel_.displayDecimals = raw;
     return kOk;
 }
 
