@@ -340,8 +340,13 @@ static void test_DSP_01_leitura_invalida_mostra_o_traco_do_Angle_e_nunca_um_zero
     // positivo.
     TEST_ASSERT_FALSE(bancada.painel.shows("000,0"));
     TEST_ASSERT_FALSE(bancada.painel.shows("+000,0"));
-    TEST_ASSERT_FALSE(bancada.painel.shows("X:+"));
-    TEST_ASSERT_FALSE(bancada.painel.shows("Y:+"));
+    // So as linhas de LEITURA ("X:" e "Y:" no comeco); "SAI X:+000%" e porcentagem, outro campo.
+    for (uint8_t i = 0; i < bancada.painel.drawCount(); ++i) {
+        const char* t = bancada.painel.draw(i).text;
+        if ((t[0] == 'X' || t[0] == 'Y') && t[1] == ':') {
+            TEST_ASSERT_EQUAL_STRING(t[0] == 'X' ? "X:---,-" : "Y:---,-", t);
+        }
+    }
     verificarQuadro(bancada.painel);
 }
 
@@ -1163,7 +1168,7 @@ static void test_saida_simulada_de_um_eixo_continua_visivel(void) {
 
 // Com duas linhas a menos, a coluna passa a caber em Medium mesmo com o PSET no ar - que era o
 // caso em que ela tinha de encolher antes.
-static void test_limpeza_deixa_a_coluna_grande_mesmo_com_preset(void) {
+static void test_com_preset_e_porcentagem_por_eixo_a_coluna_vai_para_small(void) {
     // Nas larguras do ALVO: com o simbolo % (Decisao 19) a linha SAI: tem 15 glifos, e so o
     // fake arredondado para cima deixa de caber em Medium; a placa cabe.
     BancadaAlvo bancada;
@@ -1173,8 +1178,11 @@ static void test_limpeza_deixa_a_coluna_grande_mesmo_com_preset(void) {
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
+    // Desde 2026-10-07 a porcentagem ocupa uma linha por eixo: com o PSET sao cinco linhas, que
+    // nao cabem em Medium na altura, e a coluna volta inteira para Small - a regra de sempre, a
+    // fonte maior nunca custa informacao.
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET:XY"));
-    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Medium);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Small);
     verificarQuadro(bancada.painel);
 }
 
@@ -1232,7 +1240,8 @@ static void test_saida_rastreando_mostra_porcentagem(void) {
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
-    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAI:+100% -050%"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAI X:+100%"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAI Y:-050%"));
     verificarQuadro(bancada.painel);
 }
 
@@ -1271,6 +1280,9 @@ static void test_porcentagem_extrema_cabe_na_coluna(void) {
 static void test_coluna_se_espalha_quando_ha_poucas_linhas(void) {
     Bancada bancada;
     NormalInput entrada = enlaceSaudavel(450, -225);
+    // Tres linhas: saida em falha nos dois eixos vira uma linha so ("SAIDA:FALHA").
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Fault;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Fault;
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
@@ -1529,6 +1541,24 @@ static void test_D19_coluna_de_estado_encosta_na_borda_direita(void) {
     }
 }
 
+// Pedido de 2026-10-07: a coluna da direita em fonte MAIOR tambem com duas casas. A porcentagem
+// vai em duas linhas curtas, e a coluna inteira cabe em Medium nas larguras do alvo.
+static void test_D19_coluna_em_fonte_media_tambem_com_duas_casas_no_alvo(void) {
+    const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
+    for (AngleDecimals modo : modos) {
+        BancadaAlvo bancada;
+        NormalInput entrada = duasCasas(-8999, -8999);
+        entrada.decimals = modo;
+        entrada.analogPercent[kNormalAxisX] = -100;
+        entrada.analogPercent[kNormalAxisY] = -100;
+        bancada.ciclo(entrada);
+        TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Medium);
+        TEST_ASSERT_TRUE(bancada.painel.fontOf("SAI X:-100%") == TextFont::Medium);
+        TEST_ASSERT_TRUE(bancada.painel.fontOf("SAI Y:-100%") == TextFont::Medium);
+        verificarQuadro(bancada.painel);
+    }
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_EMENDA2_falha_do_sensor_mostra_a_leitura_marcada);
@@ -1557,7 +1587,7 @@ int main(int, char**) {
     RUN_TEST(test_limpeza_saida_some_quando_esta_rastreando);
     RUN_TEST(test_saida_em_falha_continua_visivel_na_tela_principal);
     RUN_TEST(test_saida_simulada_de_um_eixo_continua_visivel);
-    RUN_TEST(test_limpeza_deixa_a_coluna_grande_mesmo_com_preset);
+    RUN_TEST(test_com_preset_e_porcentagem_por_eixo_a_coluna_vai_para_small);
     RUN_TEST(test_saida_em_falha_so_no_eixo_y_ainda_aparece);
     RUN_TEST(test_coluna_encolhe_no_pior_caso_de_cinco_linhas);
     RUN_TEST(test_saida_rastreando_mostra_porcentagem);
@@ -1597,5 +1627,6 @@ int main(int, char**) {
     RUN_TEST(test_D19_quadro_cabe_nas_larguras_do_alvo_em_todo_modo_de_casas);
     RUN_TEST(test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo);
     RUN_TEST(test_D19_coluna_de_estado_encosta_na_borda_direita);
+    RUN_TEST(test_D19_coluna_em_fonte_media_tambem_com_duas_casas_no_alvo);
     return UNITY_END();
 }

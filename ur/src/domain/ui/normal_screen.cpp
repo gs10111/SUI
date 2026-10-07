@@ -228,7 +228,7 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // escolhida, e assim fica o mais longe possivel da leitura principal. Nunca a esquerda do
     // fim da area de medicao.
     const int16_t encostada = static_cast<int16_t>(
-        display_.widthPx() - kMargin - maiorLarguraDaColuna(fonteEstado, sameAnalogMode(in)));
+        display_.widthPx() - kMargin - maiorLarguraDaColuna(fonteEstado, sameAnalogMode(in), allTracking(in)));
     const int16_t minimo = statusColumnX(in.decimals);
     const int16_t colunaX = (encostada > minimo) ? encostada : minimo;
     const int16_t passo = spacedRowHeight(fonteEstado, statusRows(in));
@@ -288,13 +288,16 @@ void NormalScreen::renderMain(const NormalInput& in) {
         // recebendo. O numero vem do CODIGO escrito no DAC (AnalogScaler::percentFor), entao
         // reflete o grampeamento no teto da faixa util - mostrar a porcentagem do angulo
         // desejado seria dizer algo que a saida nao esta fazendo.
-        Line saida;
-        saida.add("SAI:");
-        saida.addPercent(in.analogPercent[kNormalAxisX]);
-        saida.add(" ");
-        saida.addPercent(in.analogPercent[kNormalAxisY]);
-        drawAt(colunaX, linha, saida.text(), fonteEstado);
-        linha = static_cast<int16_t>(linha + passo);
+        // Uma linha por eixo (2026-10-07): "SAI X:+100%" tem 11 glifos e cabe em Medium mesmo
+        // com duas casas; "SAI:+100% -050%" em uma linha so (15 glifos) derrubava a coluna para
+        // a fonte pequena.
+        for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
+            Line saida;
+            saida.add((eixo == kNormalAxisY) ? "SAI Y:" : "SAI X:");
+            saida.addPercent(in.analogPercent[eixo]);
+            drawAt(colunaX, linha, saida.text(), fonteEstado);
+            linha = static_cast<int16_t>(linha + passo);
+        }
     } else if (mesmoModo) {
         Line saida;
         saida.add("SAIDA:");
@@ -602,7 +605,7 @@ int16_t NormalScreen::spacedRowHeight(TextFont font, uint8_t rows) const {
 
 // Quantas linhas a coluna de estado desenha neste quadro.
 uint8_t NormalScreen::statusRows(const NormalInput& in) {
-    const uint8_t saida = allTracking(in) ? 1u : (sameAnalogMode(in) ? 1u : 2u);
+    const uint8_t saida = allTracking(in) ? 2u : (sameAnalogMode(in) ? 1u : 2u);
     const uint8_t preset =
         (in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u;
     return static_cast<uint8_t>(2u + saida + preset);
@@ -628,7 +631,7 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     // PIOR CASO literal de cada campo. "MEDICAO" e o texto mais longo de analogText(), "AL" o
     // mais longo de stateToken() e "PSET:XY" o preset dos dois eixos.
     const bool mesmoModo = sameAnalogMode(in);
-    const uint16_t maior = maiorLarguraDaColuna(TextFont::Medium, mesmoModo);
+    const uint16_t maior = maiorLarguraDaColuna(TextFont::Medium, mesmoModo, allTracking(in));
     if (maior > static_cast<uint16_t>(largura)) {
         return TextFont::Small;
     }
@@ -642,7 +645,7 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     // Depois da limpeza de 2026-09-01 a coluna tem: dois limites, a linha de SAIDA SO quando ela
     // nao esta rastreando, e o indicador de PSET quando ha offset. "ENLACE OK" deixou de existir.
     const uint8_t linhasSaida =
-        allTracking(in) ? 0u : static_cast<uint8_t>(mesmoModo ? 1u : 2u);
+        allTracking(in) ? 2u : static_cast<uint8_t>(mesmoModo ? 1u : 2u);
     const uint8_t necessarias = static_cast<uint8_t>(
         2u + linhasSaida +
         ((in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u));
@@ -659,17 +662,16 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     return TextFont::Medium;
 }
 
-uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo) const {
+uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo,
+                                             bool rastreando) const {
     uint16_t maior = display_.textWidthPx(font, "X1:AL X2:AL");
-    const uint16_t saida = mesmoModo ? display_.textWidthPx(font, "SAIDA:MEDICAO")
-                                     : display_.textWidthPx(font, "SAIDA X:MEDICAO");
+    // Rastreando, a saida e a porcentagem por eixo; fora disso, a palavra. O pior caso e o do
+    // estado deste quadro, para a coluna encostar de verdade na borda.
+    const uint16_t saida = rastreando  ? display_.textWidthPx(font, "SAI X:-100%")
+                           : mesmoModo ? display_.textWidthPx(font, "SAIDA:MEDICAO")
+                                       : display_.textWidthPx(font, "SAIDA X:MEDICAO");
     if (saida > maior) {
         maior = saida;
-    }
-    // Com o simbolo de porcentagem (Decisao 19) a linha SAI: e a mais larga do caso rastreando.
-    const uint16_t porcentagem = display_.textWidthPx(font, "SAI:-100% -100%");
-    if (porcentagem > maior) {
-        maior = porcentagem;
     }
     const uint16_t preset = display_.textWidthPx(font, "PSET:XY");
     if (preset > maior) {

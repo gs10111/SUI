@@ -285,7 +285,7 @@ private:
     // Tela dedicada ao eixo: onde comeca o numero grande, e a fonte das linhas de texto.
     int16_t detailValueX(AngleDecimals decimals) const;
     TextFont detailFont(const NormalInput& in, uint8_t eixo) const;
-    uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo) const;
+    uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo, bool rastreando) const;
 
     void keep(Status status);
 

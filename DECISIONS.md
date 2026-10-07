@@ -3297,9 +3297,11 @@ saida do menu. Voltar a um firmware anterior pede Reset Geral ou reprogramacao d
 2. **A coluna de estado (X1 X2 / Y1 Y2, SAI, PSET) encosta na borda direita**, medida pelo pior
    caso de cada linha na fonte escolhida, e assim fica o mais longe possivel da leitura principal.
    Nunca a esquerda do fim da area de medicao.
-3. **A porcentagem da saida leva o simbolo**: `SAI:+100% -050%`. A linha passa a 15 glifos; no
-   alvo (larguras medidas do u8g2) ainda cabe em Medium com uma casa; com duas casas a coluna vai
-   para Small, pela regra que ja existia.
+3. **A porcentagem da saida leva o simbolo, uma linha por eixo**: `SAI X:+100%` e `SAI Y:-050%`
+   (11 glifos cada). Em uma linha so (`SAI:+100% -050%`, 15 glifos) a coluna caia para a fonte
+   pequena com duas casas; em duas, a coluna fica em Medium nos tres modos, nas larguras do alvo.
+   Custo: com PSET no ar sao cinco linhas, que nao cabem em Medium na altura, e a coluna vai
+   inteira para Small - a regra de sempre, a fonte maior nunca custa informacao.
 
 ### Testes
 
