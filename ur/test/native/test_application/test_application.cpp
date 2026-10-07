@@ -29,12 +29,16 @@
 // O tempo vem do FakeClock canonico, que comeca em 0xFFFF0000: todo prazo desta suite
 // atravessa o wrap de 2^32 ms, entao um prazo escrito como "a > b" em vez da subtracao
 // unsigned de ports/i_clock.h reprova aqui.
+#include <string.h>
 #include <unity.h>
 
 #include "app/application.h"
+#include "domain/ui/normal_screen.h"
 #include "domain/analog_scaler.h"
 #include "fakes/fake_analog_output.h"
 #include "fakes/fake_clock.h"
+#include "fakes/fake_display.h"
+#include "fakes/fake_keypad.h"
 #include "fakes/fake_relay_bank.h"
 #include "fakes/fake_sensor_link.h"
 
@@ -893,6 +897,12 @@ static void test_buildNormalInput_leva_todo_campo_do_snapshot_para_a_tela(void) 
     for (uint8_t i = 0; i < kLimitChannelCount; ++i) {
         TEST_ASSERT_TRUE(in.limit[i].state == snap.limitState[i]);
     }
+
+    // Decisao 18: a opcao gravada tem de atravessar, senao o menu grava e a tela ignora.
+    TEST_ASSERT_TRUE(in.decimals == domain::AngleDecimals::One);
+    domain::Parameters semCasa = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(semCasa.setDisplayDecimals(domain::AngleDecimals::Zero).ok());
+    TEST_ASSERT_TRUE(app::buildNormalInput(snap, semCasa).decimals == domain::AngleDecimals::Zero);
 }
 
 static void test_sensora_respondendo_e_doente_mostra_falha_do_SENSOR_nao_do_cabo(void) {
@@ -1429,6 +1439,92 @@ static void test_o_atraso_vale_para_os_quatro_canais(void) {
                                     "o atraso tem de valer para os quatro canais, nao so para X");
 }
 
+// Decisao 18, teste 8 da spec, de ponta a ponta: a opcao gravada sobrevive ao blob, chega ao
+// NormalInput e e o que a tela desenha. Cada elo tem teste proprio; este pega o elo que faltar.
+static void test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+
+    domain::Parameters antes = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(antes.setDisplayDecimals(domain::AngleDecimals::Zero).ok());
+    uint8_t blob[domain::Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    TEST_ASSERT_TRUE(antes.serializeParams(blob, sizeof(blob), n).ok());
+
+    domain::Parameters depois;   // a placa reiniciou: agregado de fabrica, depois o load
+    TEST_ASSERT_TRUE(depois.loadParams(blob, n).ok());
+
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    const domain::NormalInput in = app::buildNormalInput(snap, depois);
+
+    FakeClock relogio;
+    test::FakeKeypad teclado(relogio);
+    domain::KeyGesture gesto(teclado, relogio);
+    test::FakeDisplay painel;
+    domain::NormalScreen tela(painel, gesto);
+    gesto.update();
+    tela.update(in);
+
+    char leitura[domain::Angle::kTextCap];
+    TEST_ASSERT_TRUE(snap.reading[0].format(leitura, sizeof(leitura), domain::AngleDecimals::Zero));
+    char esperado[2 + domain::Angle::kTextCap] = "X:";
+    strcat(esperado, leitura);
+    TEST_ASSERT_TRUE_MESSAGE(painel.showsExactly(esperado), esperado);
+    TEST_ASSERT_FALSE_MESSAGE(painel.shows(","), "nenhuma casa decimal pode sobrar na tela");
+}
+
+// Decisao 18, Emenda 1: o centesimo da indicacao sai do estado do filtro, passa por sentido e
+// preset, e chega ao snapshot e ao NormalInput. Com o sinal parado ele e o decimo exato; com o
+// sinal oscilando entre dois decimos ele mostra o meio.
+static void test_D18E1_centesimo_parado_e_o_decimo_exato(void) {
+    Rig rig;
+    rig.power();
+    settleClear(rig);
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_TRUE(snap.reading[0].valid());
+    TEST_ASSERT_EQUAL_INT16(static_cast<int16_t>(snap.reading[0].deciDegrees() * 10),
+                            snap.readingCenti[0]);
+}
+
+static void test_D18E1_centesimo_oscilando_chega_a_tela(void) {
+    Rig rig;
+    rig.power();
+    // 1,3 e 1,4 grau: abaixo dos 5,0 graus de fabrica, para os reles ficarem quietos.
+    settleClear(rig, 13);
+    for (uint16_t i = 0; i < 200u; ++i) {
+        const int16_t v = (i % 2u == 0u) ? 14 : 13;
+        scriptGood(rig.link, v, v, static_cast<uint16_t>(100u + i));
+        cycle(rig.clock, rig.app);
+    }
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_INT16_WITHIN(3, 135, snap.readingCenti[0]);
+
+    domain::Parameters params = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(params.setDisplayDecimals(domain::AngleDecimals::Two).ok());
+    const domain::NormalInput in = app::buildNormalInput(snap, params);
+    TEST_ASSERT_EQUAL_INT16(snap.readingCenti[0], in.readingCenti[0]);
+    TEST_ASSERT_EQUAL_INT16(snap.readingCenti[1], in.readingCenti[1]);
+    TEST_ASSERT_TRUE(in.decimals == domain::AngleDecimals::Two);
+}
+
+// O centesimo passa por Sentido e Preset na aplicacao, nao so na formula: com anti-horario e
+// offset ligados, o centesimo do snapshot tem de ser dez vezes o decimo do snapshot (sinal parado
+// num decimo, filtro em regime).
+static void test_D18E1_centesimo_da_aplicacao_recebe_sentido_e_preset(void) {
+    Rig rig;
+    rig.power();
+    domain::Parameters novo = domain::Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(novo.setSensorDir(Axis::X, domain::SensorDir::CounterClockwise).ok());
+    TEST_ASSERT_TRUE(novo.setPresetOffset(Axis::X, 25).ok());
+    rig.app.publishParameters(novo);
+    settleClear(rig, 13);
+
+    const app::Application::Snapshot snap = rig.app.snapshot();
+    TEST_ASSERT_EQUAL_INT16(12, snap.reading[0].deciDegrees());   // -1,3 + 2,5
+    TEST_ASSERT_EQUAL_INT16(120, snap.readingCenti[0]);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_boot_nasce_aguardando_com_reles_em_alarme_e_saidas_em_3932);
@@ -1480,5 +1576,9 @@ int main(int, char**) {
     RUN_TEST(test_inclinacao_sustentada_dispara_quando_o_prazo_vence);
     RUN_TEST(test_o_atraso_nao_alcanca_a_falha_de_enlace);
     RUN_TEST(test_o_atraso_vale_para_os_quatro_canais);
+    RUN_TEST(test_D18_casas_gravadas_chegam_a_tela_depois_de_reiniciar);
+    RUN_TEST(test_D18E1_centesimo_parado_e_o_decimo_exato);
+    RUN_TEST(test_D18E1_centesimo_oscilando_chega_a_tela);
+    RUN_TEST(test_D18E1_centesimo_da_aplicacao_recebe_sentido_e_preset);
     return UNITY_END();
 }

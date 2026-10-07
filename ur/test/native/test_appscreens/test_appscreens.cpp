@@ -118,7 +118,7 @@ static void test_confirmacao_de_pset_mostra_valor_e_gesto(void) {
     TEST_ASSERT_TRUE(preset.requestPset(params) == domain::ui::PsetOutcome::NeedsConfirm);
     TEST_ASSERT_TRUE(preset.awaitingConfirm());
 
-    app::renderPresetConfirm(tela, preset, Axis::X);
+    app::renderPresetConfirm(tela, preset, Axis::X, domain::AngleDecimals::One);
 
     TEST_ASSERT_TRUE(tela.showsExactly(PresetWizard::kConfirmHintText));
     conferirQuadro(tela);
@@ -190,6 +190,32 @@ static void test_desfecho_de_ota_mostra_o_motivo_no_lugar_da_barra(void) {
     TEST_ASSERT_FALSE_MESSAGE(barra, "progresso parado nao pode continuar desenhando barra");
 }
 
+static void test_D18_confirmacao_de_pset_sem_casa_nao_tem_virgula(void) {
+    FakeClock relogio;
+    FakeDisplay tela;
+    PresetWizard preset(relogio);
+    Parameters params = Parameters::factoryDefaults();
+    TEST_ASSERT_TRUE(preset.beginCapture(Axis::X));
+    preset.cancelCapture();
+    preset.onProgrammingExit();
+    const uint32_t passo = 50;
+    for (uint32_t t = 0; t <= PresetWizard::kStaticHoldMs + passo; t += passo) {
+        preset.sample(domain::Angle::fromDeciDegrees(300), domain::Angle::fromDeciDegrees(0));
+        relogio.advanceMs(passo);
+    }
+    TEST_ASSERT_TRUE(preset.requestPset(params) == domain::ui::PsetOutcome::NeedsConfirm);
+
+    char linha[PresetWizard::kConfirmTextCap];
+    TEST_ASSERT_TRUE(preset.formatPendingConfirm(Axis::X, domain::AngleDecimals::Zero, linha,
+                                                 sizeof(linha)));
+    TEST_ASSERT_NULL(strchr(linha, ','));
+    TEST_ASSERT_TRUE(strstr(linha, "030") != nullptr);
+
+    app::renderPresetConfirm(tela, preset, Axis::X, domain::AngleDecimals::Zero);
+    TEST_ASSERT_TRUE(tela.showsExactly(linha));
+    conferirQuadro(tela);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_mensagem_curta_usa_a_fonte_grande);
@@ -200,5 +226,6 @@ int main(int, char**) {
     RUN_TEST(test_confirmacao_de_ota_avisa_das_saidas_e_cabe);
     RUN_TEST(test_progresso_de_ota_anda_e_cabe_em_todos_os_pontos);
     RUN_TEST(test_desfecho_de_ota_mostra_o_motivo_no_lugar_da_barra);
+    RUN_TEST(test_D18_confirmacao_de_pset_sem_casa_nao_tem_virgula);
     return UNITY_END();
 }

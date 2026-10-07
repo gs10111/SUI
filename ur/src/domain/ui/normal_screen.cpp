@@ -33,15 +33,16 @@ namespace domain {
 
 namespace {
 
-// Coluna direita da tela principal. A maior linha da coluna ("SAIDA X:MEDICAO", 15 glifos)
-// cabe nos 106 px que sobram, e a maior linha da coluna esquerda ("X:+045,0" em fonte grande,
-// 144 px) termina antes daqui.
+// Coluna direita da tela principal: comeca depois do pior caso do numero grande no modo de casas
+// ativo (statusColumnX) e termina antes da faixa do batimento (statusFont). As larguras saem da
+// medicao, nao de numeros escritos aqui - eles mudam com o modo de casas e com a fonte.
 // Folga entre o fim da area de medicao e o comeco da coluna de estado.
 constexpr int16_t kStatusGapPx = 6;
 // Folga extra maxima entre linhas da coluna de estado.
 constexpr int16_t kMaxExtraGapPx = 6;
 
-// Coluna do valor no detalhe: "+045,0" em fonte grande ocupa 108 px e fecha em 248.
+// Coluna do valor no detalhe: encostada na borda direita, medida pelo pior caso do modo de
+// casas ativo (detailValueX).
 
 constexpr int16_t kMargin = 1;
 
@@ -64,24 +65,38 @@ public:
         buffer_[len_] = '\0';
     }
 
-    void add(const Angle& angle) {
+    void add(const Angle& angle, AngleDecimals decimals) {
         char texto[Angle::kTextCap];
-        if (angle.format(texto, Angle::kTextCap)) {
+        if (angle.format(texto, Angle::kTextCap, decimals)) {
             add(texto);
         }
     }
 
+    // A leitura FILTRADA do eixo. Com duas casas o centesimo vem do estado do filtro
+    // (NormalInput::readingCenti, Decisao 18 Emenda 1); sem leitura, o traco de duas casas.
+    void addReading(const NormalInput& in, uint8_t eixo) {
+        if (in.decimals == AngleDecimals::Two && in.reading[eixo].valid()) {
+            char texto[kDeciTextCap];
+            if (formatCentiText(in.readingCenti[eixo], texto, sizeof(texto))) {
+                add(texto);
+            }
+            return;
+        }
+        add(in.reading[eixo], in.decimals);
+    }
+
     // A9: o offset do Preset vai a +/-1800 decimos, o DOBRO da faixa de medicao, e por isso NAO
     // passa por Angle. Fora de +/-1800 nao existe valor legitimo, e o campo cai no traco.
-    void addPresetOffset(int16_t deci) {
+    void addPresetOffset(int16_t deci, AngleDecimals decimals) {
         char texto[ui::PresetWizard::kValueTextCap];
         const bool naFaixa = (deci >= Parameters::kPresetOffsetMinDeci) &&
                              (deci <= Parameters::kPresetOffsetMaxDeci);
-        if (naFaixa && ui::PresetWizard::formatDeci(deci, texto, ui::PresetWizard::kValueTextCap)) {
+        if (naFaixa &&
+            ui::PresetWizard::formatDeci(deci, decimals, texto, ui::PresetWizard::kValueTextCap)) {
             add(texto);
             return;
         }
-        add(Angle::invalid());
+        add(Angle::invalid(), decimals);
     }
 
     // Porcentagem da saida analogica: sinal SEMPRE presente e tres digitos fixos, para que a
@@ -90,16 +105,20 @@ public:
     // isso o traco cobre o caso impossivel em vez de imprimir numero inventado.
     void addPercent(int16_t percent) {
         if (percent < -100 || percent > 100) {
-            add(Angle::invalid());
+            // Traco de PORCENTAGEM, nao de angulo: fica na largura de hoje, independente da
+            // opcao de casas da indicacao (Decisao 18).
+            add(Angle::invalid(), AngleDecimals::One);
             return;
         }
-        char texto[6];
+        // O simbolo vai junto (Decisao 19): "+050%" nao deixa duvida de que e porcentagem.
+        char texto[7];
         const int16_t modulo = (percent < 0) ? static_cast<int16_t>(-percent) : percent;
         texto[0] = (percent < 0) ? '-' : '+';
         texto[1] = static_cast<char>('0' + (modulo / 100));
         texto[2] = static_cast<char>('0' + ((modulo / 10) % 10));
         texto[3] = static_cast<char>('0' + (modulo % 10));
-        texto[4] = '\0';
+        texto[4] = '%';
+        texto[5] = '\0';
         add(texto);
     }
 
@@ -197,7 +216,6 @@ void NormalScreen::render(const NormalInput& in) {
         renderDetail(in, (view_ == NormalView::DetailX) ? kNormalAxisX : kNormalAxisY);
     }
 
-    renderHeartbeat(in);
     keep(display_.present());
 }
 
@@ -206,19 +224,25 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // A coluna da direita sobe para a fonte maior quando cabe; o passo e a capacidade seguem a
     // fonte escolhida, senao a coluna cresce e vaza pelo pe da tela.
     const TextFont fonteEstado = statusFont(in);
-    const int16_t colunaX = statusColumnX();
+    // DECISAO 19: a coluna encosta na borda direita, medida pelo pior caso de cada linha na fonte
+    // escolhida, e assim fica o mais longe possivel da leitura principal. Nunca a esquerda do
+    // fim da area de medicao.
+    const int16_t encostada = static_cast<int16_t>(
+        display_.widthPx() - kMargin - maiorLarguraDaColuna(fonteEstado, sameAnalogMode(in), allTracking(in)));
+    const int16_t minimo = statusColumnX(in.decimals);
+    const int16_t colunaX = (encostada > minimo) ? encostada : minimo;
     const int16_t passo = spacedRowHeight(fonteEstado, statusRows(in));
 
     // DSP-01 e NRM-01: os DOIS eixos ao mesmo tempo, cada um com a sua identificacao. Leitura
     // ausente sai como o traco de Angle, nunca como zero - um zero seria uma medicao.
     Line eixoX;
     eixoX.add("X:");
-    eixoX.add(in.reading[kNormalAxisX]);
+    eixoX.addReading(in, kNormalAxisX);
     drawAt(kMargin, kMargin, eixoX.text(), TextFont::Large);
 
     Line eixoY;
     eixoY.add("Y:");
-    eixoY.add(in.reading[kNormalAxisY]);
+    eixoY.addReading(in, kNormalAxisY);
     drawAt(kMargin, static_cast<int16_t>(kMargin + alturaGrande + 2), eixoY.text(), TextFont::Large);
 
     const bool mesmoModo = sameAnalogMode(in);
@@ -264,13 +288,16 @@ void NormalScreen::renderMain(const NormalInput& in) {
         // recebendo. O numero vem do CODIGO escrito no DAC (AnalogScaler::percentFor), entao
         // reflete o grampeamento no teto da faixa util - mostrar a porcentagem do angulo
         // desejado seria dizer algo que a saida nao esta fazendo.
-        Line saida;
-        saida.add("SAI:");
-        saida.addPercent(in.analogPercent[kNormalAxisX]);
-        saida.add(" ");
-        saida.addPercent(in.analogPercent[kNormalAxisY]);
-        drawAt(colunaX, linha, saida.text(), fonteEstado);
-        linha = static_cast<int16_t>(linha + passo);
+        // Uma linha por eixo (2026-10-07): "SAI X:+100%" tem 11 glifos e cabe em Medium mesmo
+        // com duas casas; "SAI:+100% -050%" em uma linha so (15 glifos) derrubava a coluna para
+        // a fonte pequena.
+        for (uint8_t eixo = 0; eixo < kNormalAxisCount; ++eixo) {
+            Line saida;
+            saida.add((eixo == kNormalAxisY) ? "SAI Y:" : "SAI X:");
+            saida.addPercent(in.analogPercent[eixo]);
+            drawAt(colunaX, linha, saida.text(), fonteEstado);
+            linha = static_cast<int16_t>(linha + passo);
+        }
     } else if (mesmoModo) {
         Line saida;
         saida.add("SAIDA:");
@@ -300,8 +327,9 @@ void NormalScreen::renderMain(const NormalInput& in) {
 // Onde o numero grande do eixo comeca: encostado na borda direita, medido na propria fonte
 // grande. Deixa para as linhas de texto toda a largura que sobra, e acompanha a fonte se ela
 // mudar - com um X fixo, as duas se encontrariam no meio da tela.
-int16_t NormalScreen::detailValueX() const {
-    const int16_t largura = static_cast<int16_t>(display_.textWidthPx(TextFont::Large, "-180,0"));
+int16_t NormalScreen::detailValueX(AngleDecimals decimals) const {
+    const char* pior = (decimals == AngleDecimals::Two) ? "-180,00" : "-180,0";
+    const int16_t largura = static_cast<int16_t>(display_.textWidthPx(TextFont::Large, pior));
     return static_cast<int16_t>(display_.widthPx() - largura - kMargin);
 }
 
@@ -312,15 +340,18 @@ int16_t NormalScreen::detailValueX() const {
 // em vez de esconder justamente a prova visivel de que a leitura e relativa.
 TextFont NormalScreen::detailFont(const NormalInput& in, uint8_t eixo) const {
     const int16_t largura =
-        static_cast<int16_t>(detailValueX() - kMargin - kStatusGapPx);
+        static_cast<int16_t>(detailValueX(in.decimals) - kMargin - kStatusGapPx);
     if (largura <= 0) {
         return TextFont::Small;
     }
     // Pior caso literal de cada linha, pelo mesmo motivo de statusFont(): as linhas ainda nao
     // existem quando a fonte precisa ser escolhida.
-    const uint16_t maiorLimite = display_.textWidthPx(TextFont::Medium, "X1:AL +090,0");
+    const bool duasCasas = (in.decimals == AngleDecimals::Two);
+    const uint16_t maiorLimite =
+        display_.textWidthPx(TextFont::Medium, duasCasas ? "X1:AL +090,00" : "X1:AL +090,0");
     const uint16_t maiorSaida = display_.textWidthPx(TextFont::Medium, "SAIDA X:MEDICAO");
-    const uint16_t maiorPreset = display_.textWidthPx(TextFont::Medium, "PSET X:+180,0");
+    const uint16_t maiorPreset =
+        display_.textWidthPx(TextFont::Medium, duasCasas ? "PSET X:+180,00" : "PSET X:+180,0");
     uint16_t maior = maiorLimite;
     if (maiorSaida > maior) {
         maior = maiorSaida;
@@ -358,8 +389,8 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
     drawAt(kMargin, 0, cabecalho.text(), TextFont::Small);
 
     Line valor;
-    valor.add(in.reading[eixo]);
-    drawAt(detailValueX(), passo, valor.text(), TextFont::Large);
+    valor.addReading(in, eixo);
+    drawAt(detailValueX(in.decimals), passo, valor.text(), TextFont::Large);
 
     int16_t linha = passo;
     for (uint8_t i = 0; i < 2u; ++i) {
@@ -369,7 +400,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
         limite.add(":");
         limite.add(stateToken(in.limit[canal].state));
         limite.add(" ");
-        limite.add(in.limit[canal].value);
+        limite.add(in.limit[canal].value, in.decimals);
         drawAt(kMargin, linha, limite.text(), fonte);
         linha = static_cast<int16_t>(linha + passo);
     }
@@ -392,7 +423,7 @@ void NormalScreen::renderDetail(const NormalInput& in, uint8_t axis) {
         preset.add("PSET ");
         preset.add(nome);
         preset.add(":");
-        preset.addPresetOffset(in.presetOffsetDeci[eixo]);
+        preset.addPresetOffset(in.presetOffsetDeci[eixo], in.decimals);
         drawAt(kMargin, linha, preset.text(), fonte);
     }
 }
@@ -466,14 +497,20 @@ void NormalScreen::renderFault(const NormalInput& in) {
     const bool semCredito = !in.reading[kNormalAxisX].valid() &&
                             (in.unqualified[kNormalAxisX].valid() ||
                              in.unqualified[kNormalAxisY].valid());
+    // Nesta tela nenhum numero e medicao nova com centesimo: a leitura sem credito nao passa pelo
+    // filtro e so tem decimo, e a leitura boa e a RETIDA pelo filtro alimentado com invalido - um
+    // centesimo ali ainda se moveria sem dado nenhum. Com duas casas, as duas saem com UMA
+    // (Decisao 18, Emenda 1).
+    const AngleDecimals casas =
+        (in.decimals == AngleDecimals::Two) ? AngleDecimals::One : in.decimals;
     Line leitura;
     leitura.add("X:");
-    leitura.add(semCredito ? in.unqualified[kNormalAxisX] : in.reading[kNormalAxisX]);
+    leitura.add(semCredito ? in.unqualified[kNormalAxisX] : in.reading[kNormalAxisX], casas);
     if (semCredito) {
         leitura.add(kMarkUnqualified);
     }
     leitura.add(" Y:");
-    leitura.add(semCredito ? in.unqualified[kNormalAxisY] : in.reading[kNormalAxisY]);
+    leitura.add(semCredito ? in.unqualified[kNormalAxisY] : in.reading[kNormalAxisY], casas);
     if (semCredito) {
         leitura.add(kMarkUnqualified);
     }
@@ -488,7 +525,7 @@ void NormalScreen::renderFault(const NormalInput& in) {
     // AGUARDANDO, COMUNICACAO e SENSOR): ali a leitura continua valendo e continua sendo
     // relativa ao Preset. Some da tela de falha e o operador perde a unica prova visivel disso.
     if (in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) {
-        renderPresetMark(in, statusColumnX(), linha, TextFont::Small);
+        renderPresetMark(in, statusColumnX(in.decimals), linha, TextFont::Small);
     }
 
     Line limites;
@@ -520,17 +557,6 @@ void NormalScreen::renderFault(const NormalInput& in) {
 // D12 item 11: marca de 4x4 px girando por quatro posicoes dentro da caixa de 8x8 px do canto
 // inferior direito, na ordem horaria. Quem conta transacao valida e a camada de aplicacao; aqui
 // so mora a geometria.
-void NormalScreen::renderHeartbeat(const NormalInput& in) {
-    const int16_t caixaX =
-        static_cast<int16_t>(display_.widthPx() - kHeartbeatBoxPx - kMargin);
-    const int16_t caixaY =
-        static_cast<int16_t>(display_.heightPx() - kHeartbeatBoxPx - kMargin);
-    const uint8_t fase = static_cast<uint8_t>(in.heartbeatPhase % kHeartbeatPhases);
-    const int16_t dx = (fase == 1u || fase == 2u) ? kHeartbeatMarkPx : 0;
-    const int16_t dy = (fase >= 2u) ? kHeartbeatMarkPx : 0;
-    keep(display_.fillRect(static_cast<int16_t>(caixaX + dx), static_cast<int16_t>(caixaY + dy),
-                           kHeartbeatMarkPx, kHeartbeatMarkPx, true));
-}
 
 void NormalScreen::renderPresetMark(const NormalInput& in, int16_t x, int16_t y,
                                     TextFont font) {
@@ -579,7 +605,7 @@ int16_t NormalScreen::spacedRowHeight(TextFont font, uint8_t rows) const {
 
 // Quantas linhas a coluna de estado desenha neste quadro.
 uint8_t NormalScreen::statusRows(const NormalInput& in) {
-    const uint8_t saida = allTracking(in) ? 1u : (sameAnalogMode(in) ? 1u : 2u);
+    const uint8_t saida = allTracking(in) ? 2u : (sameAnalogMode(in) ? 1u : 2u);
     const uint8_t preset =
         (in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u;
     return static_cast<uint8_t>(2u + saida + preset);
@@ -588,13 +614,15 @@ uint8_t NormalScreen::statusRows(const NormalInput& in) {
 // A coluna de estado comeca onde a area de medicao termina. O X sai da largura REAL da maior
 // leitura possivel na fonte grande ("X:-180,0"), e nao de um numero escrito a mao: trocar a
 // fonte grande passa a mover a coluna junto, em vez de deixar as duas montadas uma na outra.
-int16_t NormalScreen::statusColumnX() const {
-    return static_cast<int16_t>(kMargin + display_.textWidthPx(TextFont::Large, "X:-180,0") +
+int16_t NormalScreen::statusColumnX(AngleDecimals decimals) const {
+    const char* pior = (decimals == AngleDecimals::Two) ? "X:-180,00" : "X:-180,0";
+    return static_cast<int16_t>(kMargin + display_.textWidthPx(TextFont::Large, pior) +
                                 kStatusGapPx);
 }
 
 TextFont NormalScreen::statusFont(const NormalInput& in) const {
-    const int16_t largura = static_cast<int16_t>(display_.widthPx() - statusColumnX());
+    const int16_t largura =
+        static_cast<int16_t>(display_.widthPx() - statusColumnX(in.decimals) - kMargin);
     if (largura <= 0) {
         return TextFont::Small;
     }
@@ -603,7 +631,7 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     // PIOR CASO literal de cada campo. "MEDICAO" e o texto mais longo de analogText(), "AL" o
     // mais longo de stateToken() e "PSET:XY" o preset dos dois eixos.
     const bool mesmoModo = sameAnalogMode(in);
-    const uint16_t maior = maiorLarguraDaColuna(TextFont::Medium, mesmoModo);
+    const uint16_t maior = maiorLarguraDaColuna(TextFont::Medium, mesmoModo, allTracking(in));
     if (maior > static_cast<uint16_t>(largura)) {
         return TextFont::Small;
     }
@@ -617,7 +645,7 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     // Depois da limpeza de 2026-09-01 a coluna tem: dois limites, a linha de SAIDA SO quando ela
     // nao esta rastreando, e o indicador de PSET quando ha offset. "ENLACE OK" deixou de existir.
     const uint8_t linhasSaida =
-        allTracking(in) ? 0u : static_cast<uint8_t>(mesmoModo ? 1u : 2u);
+        allTracking(in) ? 2u : static_cast<uint8_t>(mesmoModo ? 1u : 2u);
     const uint8_t necessarias = static_cast<uint8_t>(
         2u + linhasSaida +
         ((in.presetActive[kNormalAxisX] || in.presetActive[kNormalAxisY]) ? 1u : 0u));
@@ -634,10 +662,14 @@ TextFont NormalScreen::statusFont(const NormalInput& in) const {
     return TextFont::Medium;
 }
 
-uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo) const {
+uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo,
+                                             bool rastreando) const {
     uint16_t maior = display_.textWidthPx(font, "X1:AL X2:AL");
-    const uint16_t saida = mesmoModo ? display_.textWidthPx(font, "SAIDA:MEDICAO")
-                                     : display_.textWidthPx(font, "SAIDA X:MEDICAO");
+    // Rastreando, a saida e a porcentagem por eixo; fora disso, a palavra. O pior caso e o do
+    // estado deste quadro, para a coluna encostar de verdade na borda.
+    const uint16_t saida = rastreando  ? display_.textWidthPx(font, "SAI X:-100%")
+                           : mesmoModo ? display_.textWidthPx(font, "SAIDA:MEDICAO")
+                                       : display_.textWidthPx(font, "SAIDA X:MEDICAO");
     if (saida > maior) {
         maior = saida;
     }

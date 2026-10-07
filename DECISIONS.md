@@ -3188,3 +3188,123 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
   padrao. Uma edicao desatenta daquela constante - um caractere a menos, um acento, um espaco no
   fim - passaria por toda revisao humana e faria o `softAP` subir ABERTO em toda placa da frota na
   proxima gravacao. Ha teste e ha mutante para cada um desses casos.
+
+## Decisao 18 - Casas decimais da indicacao de angulo, escolhidas no menu
+
+**Status:** IMPLEMENTADA (pedido do cliente, decidido com o responsavel em 2026-10-06; Emenda 1 no mesmo dia)
+**Impacto de seguranca:** baixo - so apresentacao; reles, limites, Preset e saida analogica nao mudam
+**Desvio do manual:** secao 5.5 (L130 a L133) diz "uma casa decimal fixa". Entra na errata.
+**Spec:** `docs/superpowers/specs/2026-10-06-casas-decimais-design.md`
+**Codigo:** `ur/src/domain/angle.h`, `ur/src/domain/parameters.*`, `ur/src/domain/ui/menu_machine.*`,
+`ur/src/domain/ui/normal_screen.*`, `ur/src/domain/ui/preset_wizard.*`, `ur/src/app/application.cpp`
+
+### O que foi decidido
+
+1. **Opcoes 0 ou 1 casa.** Duas casas ficaram de fora: a sensora entrega decimo
+   (`docs/protocolo-rs485.md`, tabela de registradores) e a exatidao declarada e +/-0,09 grau
+   (Decisao 11 item 11). A segunda casa seria ruido, ou um zero fixo fingindo precisao.
+2. **O batimento (Decisao 12 item 11) fica.** O pedido original era tira-lo para abrir espaco;
+   com 0 ou 1 casa o texto nao cresce e o motivo sumiu.
+3. **A opcao vale em toda indicacao de angulo**: leitura ao vivo, leitura sem credito (Emenda 2),
+   valor de limite, offset de Preset, leitura do assistente de Preset. Consequencia aceita: com 0
+   casas um limite em 45,3 aparece como `+045`.
+4. **O campo em edicao sempre mostra uma casa.** Ninguem altera ponto de atuacao sem ver o decimo.
+5. **Arredondamento sem casa: inteiro mais proximo, meio para longe do zero** - a mesma convencao
+   da conversao da sensora (Decisao 11 item 2). Erro maximo de 0,5 grau, simetrico. Zero nunca
+   sai `-000`.
+6. **Preset pequeno sem casa aparece como zero - aceito (2026-10-06).** Com 0 casas, um offset de
+   0,1 a 0,4 grau mostra `PSET X:+000`: o indicador existe (ha offset) e o numero arredonda para
+   zero, como a propria leitura de 0,3 grau. Pelo mesmo motivo a confirmacao de magnitude de um
+   offset entre 5,1 e 5,4 graus le `Novo PSET X:+005`, embora o portao seja "acima de 5,0". O
+   numero exato continua no editor e no console; abrir excecao de formato so para o Preset
+   quebraria o item 3.
+
+### Emenda 1 (2026-10-06): duas casas, com o centesimo do filtro
+
+**Revoga o item 1 na parte "duas casas ficaram de fora".** Pedido do responsavel, para atender um
+cliente especifico. A sensora continua entregando decimo e nada muda no fio nem na sensora.
+
+1. **De onde vem o centesimo, e o que ele vale.** Do estado interno do filtro da UR
+   (`LowPassFilter`, ponto fixo Q8, 1/256 de decimo), a media exponencial das ultimas amostras
+   (constante de 0,8 s). Ele so tem conteudo abaixo do decimo quando o sinal VARIA entre decimos
+   (ruido ou vibracao da ordem de 0,1 grau pico a pico). Com o sinal parado, o `0` final diz apenas
+   que a sensora nao mudou de decimo - nao que o angulo e exato ao centesimo. Num degrau de 0,1
+   grau sem ruido, o centesimo mostra a rampa do filtro (0,01 ... 0,09 em cerca de 2 s) e volta a
+   `x0`: e a resposta do filtro, nao medicao.
+2. **Mesma formula de A9.** `PresetWizard::readingCenti()` aplica Sentido e Preset em centesimos;
+   ha teste provando que, com centesimo multiplo de 10, o resultado e exatamente dez vezes o da
+   formula em decimo, e teste de aplicacao com anti-horario e offset ligados.
+3. **So indicacao.** Reles, limites, Preset e saida analogica continuam comandados pelo decimo.
+4. **A ATUACAO PODE APARECER ATE 0,05 GRAU ALEM OU AQUEM DO VALOR EXIBIDO.** O rele compara o
+   decimo arredondado do mesmo estado; a tela mostra o centesimo, que fica ate 0,05 em volta. Com
+   limite `>=` em 45,30 e a estrutura subindo de 45,2 para 45,3, o rele atua enquanto a tela ainda
+   le `+045,25` ... `+045,29` por cerca de 2 s (medido no filtro real); com `<=` acontece o espelho.
+   Nenhum mapeamento do centesimo satisfaz `>=` e `<=` ao mesmo tempo. Isso CONTRARIA, no modo de
+   duas casas, a promessa do manual (L142/L223) de atuar "exatamente no angulo exibido", e tem de
+   entrar na errata: **com duas casas, a atuacao pode ocorrer ate 0,05 grau antes ou depois do
+   valor exibido.** Com 0 ou 1 casa nada muda.
+5. **O que leva o 0 final e o que nao leva.** Limite e offset de Preset so existem em decimo exato,
+   entao `+045,30` e verdade e sai assim. A leitura da TELA DE FALHA (sem credito, Emenda 2, ou a
+   retida pelo filtro alimentado com invalido) e a leitura crua da captura do Preset nao tem
+   centesimo medido: com duas casas elas saem com UMA, e o traco da tela de falha e `---,-`.
+6. **Resolucao nao e exatidao.** A exatidao declarada continua +/-0,09 grau (Decisao 11 item 11).
+7. **Layout.** Coluna de estado e numero grande do detalhe sao medidos pelo pior caso do modo
+   ativo (`X:-180,00`, `-180,00`), e a coluna desconta a faixa do batimento ao escolher a fonte.
+   Nas larguras do alvo (u8g2 medido) isso poe a coluna em Small no modo de duas casas; sem a
+   reserva, a linha `SAI:` em Medium entrava na caixa do batimento. Ha teste com um painel nas
+   larguras do alvo, nos tres modos.
+8. **Menu.** Terceira opcao `2 (+045,00)`; UP vai para menos casas, DOWN para mais, sem dar volta.
+   O bloco continua v3 (o campo ja era uint16; 2 passou a ser valido) - nenhuma placa recebeu v3.
+   Restricao de rollout: um firmware da Decisao 18 SEM esta emenda recusaria um bloco com 2.
+
+**Precisa de bancada (criterio, nao impressao):** com a estrutura parada, medir o desvio-padrao da
+leitura (mesmo protocolo da MEDICAO 8). Se o ruido pico a pico ficar abaixo de ~0,1 grau, o
+centesimo nao tem dither para carregar informacao e a opcao de duas casas NAO entrega o que
+promete - o responsavel decide se mantem. Com vibracao, registrar quanto o centesimo oscila.
+
+### Persistencia
+
+Bloco de parametros v3 (36 bytes, campo em off 32). v1 e v2 continuam carregando com uma casa -
+recusa-los levaria a frota a CONFIG PERDIDA na atualizacao. O `static_assert` em `ur/src/main.cpp`
+reprova o build se o bloco passar da chave da NVS (48 bytes).
+
+**Downgrade de firmware exige Reset Geral.** `ur/src/main.cpp` grava os parametros em toda saida
+do Modo Programacao, mesmo sem alteracao. Depois desta versao, a primeira visita ao menu promove o
+bloco a v3, e um firmware anterior (que so conhece v1/v2) recusa o v3 e entra em CONFIG PERDIDA -
+quatro reles em alarme. Nao e regressao: a v2 ja tinha a mesma propriedade em relacao a v1. Vale
+tambem para o rollback automatico do OTA (`verifyRollbackLater`) se ele disparar depois de uma
+saida do menu. Voltar a um firmware anterior pede Reset Geral ou reprogramacao dos parametros.
+
+### Precisa de medicao de bancada
+
+- Conferir na placa real, nos dois modos, a tela principal, o detalhe de X e Y, a captura e a
+  confirmacao do Preset, e o editor de limite (que tem de continuar com a casa).
+
+## Decisao 19 - Tela principal sem batimento, coluna de estado na borda e simbolo de porcentagem
+
+**Status:** IMPLEMENTADA (pedido do responsavel em 2026-10-07, para atender o mesmo cliente da Decisao 18)
+**Impacto de seguranca:** MEDIO - revoga a Decisao 12 item 11
+**Codigo:** `ur/src/domain/ui/normal_screen.*`
+
+### O que foi decidido
+
+1. **O marcador de batimento sai das tres telas (revoga D12 item 11).** Ele era o unico campo que
+   denunciava painel CONGELADO exibindo dado plausivel - firmware travado com a ultima imagem na
+   tela. Sem ele, esse modo de falha deixa de ser visivel no painel. Os reles, a saida analogica e
+   o STWD100 continuam iguais: o watchdog ainda reinicia a placa se o laco de controle parar; o
+   que se perde e so a prova VISUAL de que o display esta sendo redesenhado. `heartbeatPhase`
+   continua sendo calculado em `buildNormalInput`, sem uso, para a volta ser de uma linha.
+2. **A coluna de estado (X1 X2 / Y1 Y2, SAI, PSET) encosta na borda direita**, medida pelo pior
+   caso de cada linha na fonte escolhida, e assim fica o mais longe possivel da leitura principal.
+   Nunca a esquerda do fim da area de medicao.
+3. **A porcentagem da saida leva o simbolo, uma linha por eixo**: `SAI X:+100%` e `SAI Y:-050%`
+   (11 glifos cada). Em uma linha so (`SAI:+100% -050%`, 15 glifos) a coluna caia para a fonte
+   pequena com duas casas; em duas, a coluna fica em Medium nos tres modos, nas larguras do alvo.
+   Custo: com PSET no ar sao cinco linhas, que nao cabem em Medium na altura, e a coluna vai
+   inteira para Small - a regra de sempre, a fonte maior nunca custa informacao.
+
+### Testes
+
+`test_D19_sem_batimento_em_nenhuma_das_tres_telas`, `test_D19_coluna_de_estado_encosta_na_borda_direita`,
+`test_saida_rastreando_mostra_porcentagem`, e os testes de fonte da coluna passaram a rodar num
+painel com as larguras do alvo (o fake arredonda para cima e cairia em Small sem a placa cair).

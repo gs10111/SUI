@@ -92,6 +92,7 @@
 #include "adapters/stwd100_watchdog.h"
 #include "adapters/xtr300_analog_output.h"
 #include "app/application.h"
+#include "app/demo_sensor_link.h"
 #include "esp_firmware_store.h"
 #include "ota_credentials.h"
 #include "ota_gate.h"
@@ -166,6 +167,10 @@ constexpr uint32_t kHmiPeriodMs = 50;
 constexpr uint32_t kLoopSliceMs = 2;
 constexpr uint32_t kMessageMs = 2000;
 constexpr uint16_t kBlobCap = NvsParameterStore::kCapacityBytes;
+// O bloco de parametros cresceu na v3 (Decisao 18). Se um dia passar da chave da NVS, a gravacao
+// falharia em campo; aqui o build reprova antes.
+static_assert(domain::Parameters::kParamBlobSize <= kBlobCap,
+              "bloco de parametros nao cabe na chave da NVS");
 constexpr int16_t kMessageY = 40;
 constexpr int16_t kEditLineY = 40;
 constexpr uint8_t kLineCap = 48;
@@ -214,8 +219,17 @@ domain::MenuMachine g_menu(g_display, g_clock, g_password, g_params, kRequirePas
 domain::CalibrationWizard g_calWizard(g_calibration, g_clock);
 domain::ui::PresetWizard g_preset(g_clock);
 
+#if defined(UR_DEMO_SENSOR) && UR_DEMO_SENSOR
+// SO env:esp32dev-demo: a aplicacao le a sensora SIMULADA (app/demo_sensor_link.h). g_link
+// continua existindo para o resto do composition root; nao gera .ota e o splash diz DEMO.
+app::DemoSensorLink g_demoLink(g_clock);
+app::Application g_app(g_clock, g_demoLink, g_relays, g_analog, g_wdt);
+#define UR_FW_LABEL FW_VERSION " DEMO"
+#else
 app::Application g_app(g_clock, g_link, g_relays, g_analog, g_wdt);
-app::BootSequence g_boot(g_display, g_keypad, g_clock, FW_VERSION);
+#define UR_FW_LABEL FW_VERSION
+#endif
+app::BootSequence g_boot(g_display, g_keypad, g_clock, UR_FW_LABEL);
 
 // ================================ ATUALIZACAO DE FIRMWARE (decisao 17) ======================
 // O ponto de acesso nasce DESLIGADO e sobe pelo item "Atualizar" do menu, atras do codigo fixo
@@ -685,7 +699,7 @@ void serviceCalibration() {
 }
 
 void renderPresetCapture() {
-    app::renderPresetCapture(g_display, g_preset, g_presetAxis);
+    app::renderPresetCapture(g_display, g_preset, g_presetAxis, g_params.displayDecimals());
 }
 
 // DIAGNOSTICO DO PSET NO CONSOLE. "Aperto duas vezes e nao acontece nada" tem cinco causas
@@ -773,7 +787,7 @@ void servicePsetConfirm() {
             return;
         }
     }
-    app::renderPresetConfirm(g_display, g_preset, g_presetAxis);
+    app::renderPresetConfirm(g_display, g_preset, g_presetAxis, g_params.displayDecimals());
 }
 
 void requestPset() {
@@ -1232,7 +1246,7 @@ void setup() {
     Serial.print(F("DE-PURI-DI261924 REV "));
     Serial.print(F(BOARD_REV));
     Serial.print(F(" FW "));
-    Serial.println(F(FW_VERSION));
+    Serial.println(F(UR_FW_LABEL));
     Serial.print(F("reset="));
     Serial.print(static_cast<int>(resetReason));
     Serial.print(F(" wdt="));

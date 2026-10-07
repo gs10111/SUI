@@ -48,6 +48,7 @@
 #include "fakes/fake_keypad.h"
 
 using domain::Angle;
+using domain::AngleDecimals;
 using domain::KeyGesture;
 using domain::kNormalAxisX;
 using domain::kNormalAxisY;
@@ -133,6 +134,45 @@ struct Bancada {
     }
 };
 
+// --- O QUADRO NAS LARGURAS DO ALVO ------------------------------------------------------------
+//
+// O FakeDisplay arredonda a largura de glifo PARA CIMA (Large 15 px contra 14,125 medidos), o que
+// e conservador para "cabe na tela" mas pode levar a decisao de fonte para um ramo que a placa
+// nunca percorre: com duas casas o fake escolhia Small e o alvo escolhia Medium, e a linha SAI:
+// do alvo entrava na caixa do batimento. Este painel usa as larguras medidas no u8g2 real
+// (Small 6, Medium 9, Large 14) para que a suite exercite o ramo que a placa desenha.
+class PainelAlvo : public Painel {
+public:
+    uint16_t textWidthPx(TextFont font, const char* text) const override {
+        uint16_t porGlifo = 6u;
+        if (font == TextFont::Large) {
+            porGlifo = 14u;
+        } else if (font == TextFont::Medium) {
+            porGlifo = 9u;
+        }
+        uint16_t n = 0;
+        while (text != nullptr && text[n] != '\0') {
+            ++n;
+        }
+        return static_cast<uint16_t>(porGlifo * n);
+    }
+};
+
+struct BancadaAlvo {
+    FakeClock clock;
+    FakeKeypad keypad;
+    KeyGesture gesto;
+    PainelAlvo painel;
+    NormalScreen tela;
+
+    BancadaAlvo() : clock(), keypad(clock), gesto(keypad, clock), painel(), tela(painel, gesto) {}
+
+    NormalRequest ciclo(const NormalInput& entrada) {
+        gesto.update();
+        return tela.update(entrada);
+    }
+};
+
 NormalInput enlaceSaudavel(int16_t xDeci, int16_t yDeci) {
     NormalInput entrada{};
     entrada.reading[kNormalAxisX] = Angle::fromDeciDegrees(xDeci);
@@ -173,10 +213,6 @@ void tocar(Bancada& bancada, Key tecla) { bancada.keypad.tap(tecla, 60u); }
 constexpr int16_t kPainelW = 256;
 constexpr int16_t kPainelH = 64;
 
-// D12 item 11: caixa de 8x8 px em (247,55)-(254,62). Nenhum texto pode invadi-la.
-constexpr int16_t kBatimentoX = 247;
-constexpr int16_t kBatimentoY = 55;
-constexpr int16_t kBatimentoPx = 8;
 
 struct Caixa {
     int16_t x0;
@@ -198,9 +234,6 @@ bool intersecta(const Caixa& a, const Caixa& b) {
 }
 
 void verificarQuadro(const Painel& painel) {
-    const Caixa batimento{kBatimentoX, kBatimentoY,
-                          static_cast<int16_t>(kBatimentoX + kBatimentoPx),
-                          static_cast<int16_t>(kBatimentoY + kBatimentoPx)};
     TEST_ASSERT_TRUE(painel.drawCount() > 0u);
     for (uint8_t i = 0; i < painel.drawCount(); ++i) {
         const Caixa a = caixaDoTexto(painel, i);
@@ -209,7 +242,6 @@ void verificarQuadro(const Painel& painel) {
         TEST_ASSERT_TRUE_MESSAGE(a.y0 >= 0, texto);
         TEST_ASSERT_TRUE_MESSAGE(a.x1 <= kPainelW, texto);
         TEST_ASSERT_TRUE_MESSAGE(a.y1 <= kPainelH, texto);
-        TEST_ASSERT_FALSE_MESSAGE(intersecta(a, batimento), texto);
         for (uint8_t j = static_cast<uint8_t>(i + 1u); j < painel.drawCount(); ++j) {
             TEST_ASSERT_FALSE_MESSAGE(intersecta(a, caixaDoTexto(painel, j)), texto);
         }
@@ -308,8 +340,13 @@ static void test_DSP_01_leitura_invalida_mostra_o_traco_do_Angle_e_nunca_um_zero
     // positivo.
     TEST_ASSERT_FALSE(bancada.painel.shows("000,0"));
     TEST_ASSERT_FALSE(bancada.painel.shows("+000,0"));
-    TEST_ASSERT_FALSE(bancada.painel.shows("X:+"));
-    TEST_ASSERT_FALSE(bancada.painel.shows("Y:+"));
+    // So as linhas de LEITURA ("X:" e "Y:" no comeco); "SAI X:+000%" e porcentagem, outro campo.
+    for (uint8_t i = 0; i < bancada.painel.drawCount(); ++i) {
+        const char* t = bancada.painel.draw(i).text;
+        if ((t[0] == 'X' || t[0] == 'Y') && t[1] == ':') {
+            TEST_ASSERT_EQUAL_STRING(t[0] == 'X' ? "X:---,-" : "Y:---,-", t);
+        }
+    }
     verificarQuadro(bancada.painel);
 }
 
@@ -839,40 +876,17 @@ static void test_D1_item17_indicador_de_preset_tem_prioridade_sobre_enlace_ok(vo
 // (247,55)-(254,62), comandada por TRANSACAO VALIDA (DECISIONS.md:2362). Marcador parado e o
 // unico sinal de painel congelado exibindo dado plausivel, que e o modo de falha mais perigoso
 // de uma IHM de seguranca.
-static void test_D12_item11_batimento_gira_por_transacao_valida(void) {
+static void test_D19_sem_batimento_em_nenhuma_das_tres_telas(void) {
     Bancada bancada;
     NormalInput entrada = enlaceSaudavel(455, -123);
-
-    const int16_t xEsperado[4] = {247, 251, 251, 247};
-    const int16_t yEsperado[4] = {55, 55, 59, 59};
-
-    for (uint8_t fase = 0; fase < 8u; ++fase) {
+    for (uint8_t fase = 0; fase < 4u; ++fase) {
         entrada.heartbeatPhase = fase;
         bancada.ciclo(entrada);
-        TEST_ASSERT_EQUAL_UINT32(fase + 1u, bancada.painel.rectCount());
-        TEST_ASSERT_EQUAL_INT16(xEsperado[fase % 4u], bancada.painel.rectX());
-        TEST_ASSERT_EQUAL_INT16(yEsperado[fase % 4u], bancada.painel.rectY());
-        TEST_ASSERT_EQUAL_UINT16(4u, bancada.painel.rectW());
-        TEST_ASSERT_EQUAL_UINT16(4u, bancada.painel.rectH());
-        TEST_ASSERT_TRUE(bancada.painel.rectOn());
-        verificarQuadro(bancada.painel);
     }
-
-    // Duas fases consecutivas nunca desenham no mesmo lugar: um contador preso salta aos olhos.
-    for (uint8_t fase = 0; fase < 4u; ++fase) {
-        const uint8_t proxima = static_cast<uint8_t>((fase + 1u) % 4u);
-        TEST_ASSERT_FALSE(xEsperado[fase] == xEsperado[proxima] &&
-                          yEsperado[fase] == yEsperado[proxima]);
-    }
-
-    // E o batimento esta nas TRES telas, inclusive na de falha - painel congelado durante a
-    // falha e exatamente o caso em que o operador precisa saber que o firmware parou.
-    const uint32_t antesDoDetalhe = bancada.painel.rectCount();
     tocar(bancada, Key::Down);
     bancada.ciclo(entrada);
-    TEST_ASSERT_EQUAL_UINT32(antesDoDetalhe + 1u, bancada.painel.rectCount());
     bancada.ciclo(enlaceEmFalha(NormalLinkState::CommFault));
-    TEST_ASSERT_EQUAL_UINT32(antesDoDetalhe + 2u, bancada.painel.rectCount());
+    TEST_ASSERT_EQUAL_UINT32(0u, bancada.painel.rectCount());
 }
 
 // O painel nao e canal de seguranca (invariante 5): a falha de desenho e RETIDA em lastStatus()
@@ -972,7 +986,9 @@ static void test_IKEYPAD_reset_volta_a_principal_e_nao_deixa_gesto_atravessar(vo
 // operador precisa num supervisor de seguranca.
 
 static void test_layout_coluna_de_estado_sobe_de_fonte_com_os_dois_eixos_no_mesmo_modo(void) {
-    Bancada bancada;
+    // Nas larguras do ALVO: com o simbolo % (Decisao 19) a linha SAI: tem 15 glifos, e so o
+    // fake arredondado para cima deixa de caber em Medium; a placa cabe.
+    BancadaAlvo bancada;
 
     TEST_ASSERT_TRUE(bancada.ciclo(enlaceSaudavel(455, -123)) == NormalRequest::None);
 
@@ -1152,16 +1168,21 @@ static void test_saida_simulada_de_um_eixo_continua_visivel(void) {
 
 // Com duas linhas a menos, a coluna passa a caber em Medium mesmo com o PSET no ar - que era o
 // caso em que ela tinha de encolher antes.
-static void test_limpeza_deixa_a_coluna_grande_mesmo_com_preset(void) {
-    Bancada bancada;
+static void test_com_preset_e_porcentagem_por_eixo_a_coluna_vai_para_small(void) {
+    // Nas larguras do ALVO: com o simbolo % (Decisao 19) a linha SAI: tem 15 glifos, e so o
+    // fake arredondado para cima deixa de caber em Medium; a placa cabe.
+    BancadaAlvo bancada;
     NormalInput entrada = enlaceSaudavel(455, -123);
     entrada.presetActive[kNormalAxisX] = true;
     entrada.presetActive[kNormalAxisY] = true;
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
+    // Desde 2026-10-07 a porcentagem ocupa uma linha por eixo: com o PSET sao cinco linhas, que
+    // nao cabem em Medium na altura, e a coluna volta inteira para Small - a regra de sempre, a
+    // fonte maior nunca custa informacao.
     TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET:XY"));
-    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Medium);
+    TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Small);
     verificarQuadro(bancada.painel);
 }
 
@@ -1219,9 +1240,8 @@ static void test_saida_rastreando_mostra_porcentagem(void) {
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
-    TEST_ASSERT_TRUE(bancada.painel.shows("SAI:"));
-    TEST_ASSERT_TRUE(bancada.painel.shows("+100"));
-    TEST_ASSERT_TRUE(bancada.painel.shows("-050"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAI X:+100%"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAI Y:-050%"));
     verificarQuadro(bancada.painel);
 }
 
@@ -1260,6 +1280,9 @@ static void test_porcentagem_extrema_cabe_na_coluna(void) {
 static void test_coluna_se_espalha_quando_ha_poucas_linhas(void) {
     Bancada bancada;
     NormalInput entrada = enlaceSaudavel(450, -225);
+    // Tres linhas: saida em falha nos dois eixos vira uma linha so ("SAIDA:FALHA").
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Fault;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Fault;
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
@@ -1270,6 +1293,270 @@ static void test_coluna_se_espalha_quando_ha_poucas_linhas(void) {
         static_cast<int16_t>(bancada.painel.lineHeightPx(bancada.painel.fontOf("X1:")));
     TEST_ASSERT_TRUE(passo > alturaLinha + 1);
     verificarQuadro(bancada.painel);
+}
+
+// --- DECISAO 18: CASAS DECIMAIS ----------------------------------------------------------------
+
+static void test_D18_tela_principal_sem_casa(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.decimals = AngleDecimals::Zero;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:+046"));   // 45,5: meio vai para longe do zero
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y:-012"));
+    TEST_ASSERT_FALSE(bancada.painel.shows(","));
+    verificarQuadro(bancada.painel);
+}
+
+// A tela de detalhe tem tres caminhos de angulo: a leitura, o valor dos dois limites e o offset
+// de Preset. Os tres seguem a opcao.
+static void test_D18_detalhe_sem_casa_leitura_limites_e_pset(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceSaudavel(455, -123);
+    entrada.decimals = AngleDecimals::Zero;
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = -120;
+
+    tocar(bancada, Key::Down);
+    bancada.ciclo(entrada);
+    TEST_ASSERT_TRUE(bancada.tela.view() == NormalView::DetailX);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("+046"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:-- +050"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X2:-- +050"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET X:-012"));
+    TEST_ASSERT_FALSE(bancada.painel.shows(","));
+    verificarQuadro(bancada.painel);
+}
+
+// Emenda 2: a leitura sem credito tambem e indicacao de angulo.
+static void test_D18_leitura_marcada_sem_casa(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::SensorFault);
+    entrada.decimals = AngleDecimals::Zero;
+    entrada.unqualified[kNormalAxisX] = Angle::fromDeciDegrees(495);
+    entrada.unqualified[kNormalAxisY] = Angle::fromDeciDegrees(9);
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+050"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("+001"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+049,5"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_D18_sem_quadro_e_sem_casa_mostra_traco_curto(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
+    entrada.decimals = AngleDecimals::Zero;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("---"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("---,-"));
+    verificarQuadro(bancada.painel);
+}
+
+// --- DECISAO 18, EMENDA 1: DUAS CASAS ----------------------------------------------------------
+
+NormalInput duasCasas(int16_t xCenti, int16_t yCenti) {
+    NormalInput entrada = enlaceSaudavel(static_cast<int16_t>((xCenti + 5) / 10),
+                                         static_cast<int16_t>((yCenti - 5) / 10));
+    entrada.decimals = AngleDecimals::Two;
+    entrada.readingCenti[kNormalAxisX] = xCenti;
+    entrada.readingCenti[kNormalAxisY] = yCenti;
+    return entrada;
+}
+
+static void test_D18E1_tela_principal_com_duas_casas_mostra_o_centesimo(void) {
+    Bancada bancada;
+    bancada.ciclo(duasCasas(4537, -1234));
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:+045,37"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("Y:-012,34"));
+    verificarQuadro(bancada.painel);
+}
+
+// O pior caso de coluna: Preset nos dois eixos e saidas em modos diferentes. Com o numero grande
+// um caractere mais largo, a coluna de estado encolhe - e tem de continuar cabendo sem encostar
+// no numero nem no batimento.
+static void test_D18E1_tela_principal_com_duas_casas_cabe_no_pior_caso_da_coluna(void) {
+    Bancada bancada;
+    NormalInput entrada = duasCasas(-8999, -8999);
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetActive[kNormalAxisY] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = -1800;
+    entrada.presetOffsetDeci[kNormalAxisY] = 1800;
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Fault;
+    entrada.analog[kNormalAxisY] = NormalAnalogMode::Calibrating;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X:-089,99"));
+    TEST_ASSERT_TRUE(bancada.painel.shows("PSET"));
+    verificarQuadro(bancada.painel);
+}
+
+// Detalhe: a leitura com o centesimo do filtro; limite e offset, que so existem em decimo exato,
+// com o 0 final - que e verdade.
+static void test_D18E1_detalhe_com_duas_casas(void) {
+    Bancada bancada;
+    NormalInput entrada = duasCasas(4537, -1234);
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = -120;
+
+    tocar(bancada, Key::Down);
+    bancada.ciclo(entrada);
+    TEST_ASSERT_TRUE(bancada.tela.view() == NormalView::DetailX);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("+045,37"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X1:-- +050,00"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("X2:-- +050,10"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET X:-012,00"));
+    verificarQuadro(bancada.painel);
+}
+
+// Leitura sem credito nao passa pelo filtro e so tem decimo: com duas casas ela sai com UMA, e nao
+// com um 0 inventado.
+static void test_D18E1_leitura_marcada_com_duas_casas_fica_com_uma(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::SensorFault);
+    entrada.decimals = AngleDecimals::Two;
+    entrada.unqualified[kNormalAxisX] = Angle::fromDeciDegrees(495);
+    entrada.unqualified[kNormalAxisY] = Angle::fromDeciDegrees(9);
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+049,5"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+049,50"));
+    verificarQuadro(bancada.painel);
+}
+
+// A tela de falha com duas casas fala em UMA (nenhum numero ali tem centesimo medido), e o traco
+// acompanha: "---,-".
+static void test_D18E1_sem_quadro_com_duas_casas_mostra_o_traco_de_uma(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
+    entrada.decimals = AngleDecimals::Two;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("---,-"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("---,--"));
+    verificarQuadro(bancada.painel);
+}
+
+// Pior caso da tela de detalhe com duas casas: os dois limites em alarme no extremo negativo e o
+// offset no extremo de A9. As linhas crescem um caractere e tem de caber ao lado do numero grande.
+static void test_D18E1_detalhe_com_duas_casas_cabe_no_pior_caso(void) {
+    Bancada bancada;
+    NormalInput entrada = duasCasas(-8999, -8999);
+    for (uint8_t canal = 0; canal < kLimitChannelCount; ++canal) {
+        entrada.limit[canal].state = RelayState::Signalled;
+        entrada.limit[canal].value = Angle::fromDeciDegrees(-900);
+    }
+    entrada.presetActive[kNormalAxisX] = true;
+    entrada.presetOffsetDeci[kNormalAxisX] = -1800;
+    entrada.analog[kNormalAxisX] = NormalAnalogMode::Calibrating;
+
+    tocar(bancada, Key::Down);
+    bancada.ciclo(entrada);
+    TEST_ASSERT_TRUE(bancada.tela.view() == NormalView::DetailX);
+
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("-089,99"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("PSET X:-180,00"));
+    verificarQuadro(bancada.painel);
+}
+
+static void test_D19_quadro_cabe_nas_larguras_do_alvo_em_todo_modo_de_casas(void) {
+    const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
+    for (AngleDecimals modo : modos) {
+        BancadaAlvo bancada;
+        NormalInput entrada = duasCasas(-8999, -8999);
+        entrada.decimals = modo;
+        entrada.analogPercent[kNormalAxisX] = -100;
+        entrada.analogPercent[kNormalAxisY] = -100;
+        bancada.ciclo(entrada);
+        verificarQuadro(bancada.painel);
+
+        // e com Preset nos dois eixos, que acrescenta a linha mais baixa da coluna
+        BancadaAlvo comPreset;
+        entrada.presetActive[kNormalAxisX] = true;
+        entrada.presetActive[kNormalAxisY] = true;
+        entrada.presetOffsetDeci[kNormalAxisX] = -1800;
+        entrada.presetOffsetDeci[kNormalAxisY] = 1800;
+        comPreset.ciclo(entrada);
+        verificarQuadro(comPreset.painel);
+    }
+}
+
+// Em falha de enlace a aplicacao RETEM a ultima leitura filtrada (o filtro alimentado com
+// invalido devolve o estado). Esse numero nao e medicao nova: com duas casas ele nao pode exibir
+// um centesimo que ainda se move por conta do filtro sem dado nenhum. Sai com uma casa.
+static void test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo(void) {
+    Bancada bancada;
+    NormalInput entrada = enlaceEmFalha(NormalLinkState::CommFault);
+    entrada.decimals = AngleDecimals::Two;
+    entrada.reading[kNormalAxisX] = Angle::fromDeciDegrees(13);   // retida, como no produto
+    entrada.reading[kNormalAxisY] = Angle::fromDeciDegrees(-7);
+    entrada.readingCenti[kNormalAxisX] = 127;
+    entrada.readingCenti[kNormalAxisY] = -68;
+
+    bancada.ciclo(entrada);
+
+    TEST_ASSERT_TRUE(bancada.painel.shows("+001,3"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+001,27"));
+    TEST_ASSERT_FALSE(bancada.painel.shows("+001,30"));
+    verificarQuadro(bancada.painel);
+}
+
+// Decisao 19: a coluna de estado encosta na borda direita, longe da leitura principal.
+static void test_D19_coluna_de_estado_encosta_na_borda_direita(void) {
+    const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
+    for (AngleDecimals modo : modos) {
+        Bancada bancada;
+        NormalInput entrada = duasCasas(4537, -1234);
+        entrada.decimals = modo;
+        bancada.ciclo(entrada);
+
+        int16_t fimDaLeitura = 0;
+        int16_t inicioDaColuna = kPainelW;
+        int16_t fimDaColuna = 0;
+        for (uint8_t i = 0; i < bancada.painel.drawCount(); ++i) {
+            const Caixa c = caixaDoTexto(bancada.painel, i);
+            const char* t = bancada.painel.draw(i).text;
+            if (t[0] == 'X' && t[1] == ':') {
+                fimDaLeitura = c.x1;
+            } else if (t[0] != 'Y') {
+                inicioDaColuna = (c.x0 < inicioDaColuna) ? c.x0 : inicioDaColuna;
+                fimDaColuna = (c.x1 > fimDaColuna) ? c.x1 : fimDaColuna;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(fimDaColuna >= kPainelW - 2, "a coluna encosta na borda");
+        TEST_ASSERT_TRUE_MESSAGE(inicioDaColuna - fimDaLeitura >= 14,
+                                 "e fica bem separada da leitura");
+        verificarQuadro(bancada.painel);
+    }
+}
+
+// Pedido de 2026-10-07: a coluna da direita em fonte MAIOR tambem com duas casas. A porcentagem
+// vai em duas linhas curtas, e a coluna inteira cabe em Medium nas larguras do alvo.
+static void test_D19_coluna_em_fonte_media_tambem_com_duas_casas_no_alvo(void) {
+    const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
+    for (AngleDecimals modo : modos) {
+        BancadaAlvo bancada;
+        NormalInput entrada = duasCasas(-8999, -8999);
+        entrada.decimals = modo;
+        entrada.analogPercent[kNormalAxisX] = -100;
+        entrada.analogPercent[kNormalAxisY] = -100;
+        bancada.ciclo(entrada);
+        TEST_ASSERT_TRUE(bancada.painel.fontOf("X1:-- X2:--") == TextFont::Medium);
+        TEST_ASSERT_TRUE(bancada.painel.fontOf("SAI X:-100%") == TextFont::Medium);
+        TEST_ASSERT_TRUE(bancada.painel.fontOf("SAI Y:-100%") == TextFont::Medium);
+        verificarQuadro(bancada.painel);
+    }
 }
 
 int main(int, char**) {
@@ -1300,7 +1587,7 @@ int main(int, char**) {
     RUN_TEST(test_limpeza_saida_some_quando_esta_rastreando);
     RUN_TEST(test_saida_em_falha_continua_visivel_na_tela_principal);
     RUN_TEST(test_saida_simulada_de_um_eixo_continua_visivel);
-    RUN_TEST(test_limpeza_deixa_a_coluna_grande_mesmo_com_preset);
+    RUN_TEST(test_com_preset_e_porcentagem_por_eixo_a_coluna_vai_para_small);
     RUN_TEST(test_saida_em_falha_so_no_eixo_y_ainda_aparece);
     RUN_TEST(test_coluna_encolhe_no_pior_caso_de_cinco_linhas);
     RUN_TEST(test_saida_rastreando_mostra_porcentagem);
@@ -1321,11 +1608,25 @@ int main(int, char**) {
     RUN_TEST(test_D1_item17_indicador_de_preset_permanece_na_tela_de_falha);
     RUN_TEST(test_invariante2_modo_da_saida_analogica_e_por_eixo);
     RUN_TEST(test_D1_item17_indicador_de_preset_tem_prioridade_sobre_enlace_ok);
-    RUN_TEST(test_D12_item11_batimento_gira_por_transacao_valida);
+    RUN_TEST(test_D19_sem_batimento_em_nenhuma_das_tres_telas);
     RUN_TEST(test_IDISPLAY_lastStatus_retem_a_primeira_falha_de_desenho);
     RUN_TEST(test_IDISPLAY_falha_de_desenho_nao_engole_o_pedido_da_tecla);
     RUN_TEST(test_update_drena_todos_os_gestos_sem_pedido_no_mesmo_ciclo);
     RUN_TEST(test_update_deixa_na_fila_o_gesto_posterior_ao_pedido);
     RUN_TEST(test_IKEYPAD_reset_volta_a_principal_e_nao_deixa_gesto_atravessar);
+    RUN_TEST(test_D18_tela_principal_sem_casa);
+    RUN_TEST(test_D18_detalhe_sem_casa_leitura_limites_e_pset);
+    RUN_TEST(test_D18_leitura_marcada_sem_casa);
+    RUN_TEST(test_D18_sem_quadro_e_sem_casa_mostra_traco_curto);
+    RUN_TEST(test_D18E1_tela_principal_com_duas_casas_mostra_o_centesimo);
+    RUN_TEST(test_D18E1_tela_principal_com_duas_casas_cabe_no_pior_caso_da_coluna);
+    RUN_TEST(test_D18E1_detalhe_com_duas_casas);
+    RUN_TEST(test_D18E1_leitura_marcada_com_duas_casas_fica_com_uma);
+    RUN_TEST(test_D18E1_sem_quadro_com_duas_casas_mostra_o_traco_de_uma);
+    RUN_TEST(test_D18E1_detalhe_com_duas_casas_cabe_no_pior_caso);
+    RUN_TEST(test_D19_quadro_cabe_nas_larguras_do_alvo_em_todo_modo_de_casas);
+    RUN_TEST(test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo);
+    RUN_TEST(test_D19_coluna_de_estado_encosta_na_borda_direita);
+    RUN_TEST(test_D19_coluna_em_fonte_media_tambem_com_duas_casas_no_alvo);
     return UNITY_END();
 }

@@ -162,6 +162,9 @@ struct NormalLimitView {
 // reles, estado do enlace como classificado pelo supervisor.
 struct NormalInput {
     Angle reading[kNormalAxisCount];            // [0] = X, [1] = Y
+    // Decisao 18, Emenda 1: a mesma leitura em centesimos (estado do filtro, ja com Sentido e
+    // Preset). So desenhada com decimals == Two e reading[i] valida.
+    int16_t readingCenti[kNormalAxisCount] = {0, 0};
 
     // EMENDA 2 (aprovada 2026-09-01). Leitura medida e passada pela cadeia, mas SEM credito para
     // comandar rele ou saida analogica: o quadro chegou integro e o conteudo foi recusado. A tela
@@ -200,6 +203,11 @@ struct NormalInput {
     // preso significa marcador parado, que e exatamente o que o operador tem de ver quando o
     // dado parou de chegar.
     uint8_t heartbeatPhase;
+
+    // Decisao 18: quantas casas a indicacao de angulo mostra. Vem de Parameters por
+    // buildNormalInput. O default e o formato do manual, para que um NormalInput montado a mao
+    // (testes) continue com uma casa.
+    AngleDecimals decimals = AngleDecimals::One;
 };
 
 class NormalScreen {
@@ -258,7 +266,6 @@ private:
     void renderMain(const NormalInput& in);
     void renderDetail(const NormalInput& in, uint8_t axis);
     void renderFault(const NormalInput& in);
-    void renderHeartbeat(const NormalInput& in);
     void renderPresetMark(const NormalInput& in, int16_t x, int16_t y, TextFont font);
 
     void drawAt(int16_t x, int16_t y, const char* text, TextFont font);
@@ -270,14 +277,15 @@ private:
     uint8_t statusRowCapacity() const;
     uint8_t rowCapacity(TextFont font) const;
     // Onde a coluna de estado comeca: logo depois da area de medicao, MEDIDA na fonte grande.
-    int16_t statusColumnX() const;
+    // O pior caso e o do modo de casas ativo: com duas casas o numero cresce um caractere.
+    int16_t statusColumnX(AngleDecimals decimals) const;
     // Fonte da coluna de estado NESTE quadro: Medium quando toda linha necessaria cabe em
     // largura e em altura, Small quando nao cabe. Nunca esconde linha para caber fonte maior.
     TextFont statusFont(const NormalInput& in) const;
     // Tela dedicada ao eixo: onde comeca o numero grande, e a fonte das linhas de texto.
-    int16_t detailValueX() const;
+    int16_t detailValueX(AngleDecimals decimals) const;
     TextFont detailFont(const NormalInput& in, uint8_t eixo) const;
-    uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo) const;
+    uint16_t maiorLarguraDaColuna(TextFont font, bool mesmoModo, bool rastreando) const;
 
     void keep(Status status);
 

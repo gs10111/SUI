@@ -88,6 +88,20 @@ Angle LowPassFilter::value() const {
     return Angle::clamped(deci);
 }
 
+bool LowPassFilter::centiValue(int16_t& out) const {
+    if (!primed_) {
+        return false;
+    }
+    const int32_t escalado = state_ * 10;
+    int32_t centi = (escalado >= 0) ? ((escalado + kScale / 2) / kScale)
+                                    : -((-escalado + kScale / 2) / kScale);
+    const int32_t teto = static_cast<int32_t>(Angle::kMaxDeciDeg) * 10;
+    const int32_t piso = static_cast<int32_t>(Angle::kMinDeciDeg) * 10;
+    centi = (centi > teto) ? teto : (centi < piso) ? piso : centi;
+    out = static_cast<int16_t>(centi);
+    return true;
+}
+
 Angle LowPassFilter::update(const Angle& sample) {
     reloaded_ = false;
     held_ = !sample.valid();

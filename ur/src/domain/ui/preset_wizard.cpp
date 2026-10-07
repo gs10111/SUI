@@ -55,6 +55,23 @@ Angle PresetWizard::reading(Angle raw, SensorDir dir, int16_t offsetDeci) {
     return Angle::clamped(soma);
 }
 
+int16_t PresetWizard::readingCenti(int16_t rawCenti, SensorDir dir, int16_t offsetDeci) {
+    const int32_t dirigido = (dir == SensorDir::CounterClockwise)
+                                 ? -static_cast<int32_t>(rawCenti)
+                                 : static_cast<int32_t>(rawCenti);
+    const int32_t soma = dirigido + static_cast<int32_t>(offsetDeci) * 10;
+    const int32_t teto = static_cast<int32_t>(Angle::kMaxDeciDeg) * 10;
+    const int32_t piso = static_cast<int32_t>(Angle::kMinDeciDeg) * 10;
+    return static_cast<int16_t>((soma > teto) ? teto : (soma < piso) ? piso : soma);
+}
+
+int16_t PresetWizard::readingCenti(Axis axis, int16_t rawCenti, const Parameters& params) {
+    if (!Parameters::axisValid(axis)) {
+        return 0;
+    }
+    return readingCenti(rawCenti, params.sensorDir(axis), params.presetOffsetDeci(axis));
+}
+
 bool PresetWizard::offsetFor(Angle target, Angle raw, SensorDir dir, int16_t& outOffsetDeci) {
     if (!target.valid() || !raw.valid()) {
         return false;
@@ -408,23 +425,11 @@ Status PresetWizard::applySensorDir(Axis axis, SensorDir dir, Parameters& params
 
 bool PresetWizard::warningActive() const { return warning_; }
 
-bool PresetWizard::formatDeci(int16_t deci, char* out, uint8_t cap) {
+bool PresetWizard::formatDeci(int16_t deci, AngleDecimals decimals, char* out, uint8_t cap) {
     if (out == nullptr || cap < kValueTextCap) {
         return false;
     }
-    const int16_t magnitude = absDeci(deci);
-    const int16_t inteiro = static_cast<int16_t>(magnitude / 10);
-    if (inteiro > 999) {
-        return false;
-    }
-    out[0] = (deci < 0) ? '-' : '+';
-    out[1] = static_cast<char>('0' + (inteiro / 100));
-    out[2] = static_cast<char>('0' + ((inteiro / 10) % 10));
-    out[3] = static_cast<char>('0' + (inteiro % 10));
-    out[4] = ',';
-    out[5] = static_cast<char>('0' + (magnitude % 10));
-    out[6] = '\0';
-    return true;
+    return formatDeciText(deci, decimals, out, cap);
 }
 
 namespace {
@@ -459,7 +464,8 @@ bool PresetWizard::formatIndicator(Axis axis, const Parameters& params, char* ou
     if (!escrever(out, cap, pos, ":")) {
         return false;
     }
-    if (!formatDeci(offset, out + pos, static_cast<uint8_t>(cap - pos))) {
+    if (!formatDeci(offset, params.displayDecimals(), out + pos,
+                    static_cast<uint8_t>(cap - pos))) {
         return false;
     }
     return true;
@@ -505,7 +511,8 @@ bool PresetWizard::formatDirWarningLine2(Axis axis, char* out, uint8_t cap) {
     return true;
 }
 
-bool PresetWizard::formatPendingConfirm(Axis axis, char* out, uint8_t cap) const {
+bool PresetWizard::formatPendingConfirm(Axis axis, AngleDecimals decimals, char* out,
+                                        uint8_t cap) const {
     if (out == nullptr || cap < kConfirmTextCap || !Parameters::axisValid(axis) ||
         !awaitingConfirm()) {
         return false;
@@ -519,7 +526,8 @@ bool PresetWizard::formatPendingConfirm(Axis axis, char* out, uint8_t cap) const
     if (!escrever(out, cap, pos, ":")) {
         return false;
     }
-    if (!formatDeci(pendingOffsetDeci_[idx(axis)], out + pos, static_cast<uint8_t>(cap - pos))) {
+    if (!formatDeci(pendingOffsetDeci_[idx(axis)], decimals, out + pos,
+                    static_cast<uint8_t>(cap - pos))) {
         return false;
     }
     return true;

@@ -65,7 +65,7 @@ const DigitFieldSpec kCampoAngular = {4, 1, true, Angle::kMinDeciDeg, Angle::kMa
 const char* const kNomeItem[MenuMachine::kItemCount] = {
     "Voltar",   "Ajusta Preset", "Auto Calibracao", "Limite 1", "Limite 2", "Limite 3",
     "Limite 4", "Sentido Sensor", "Senha",          "Rearmar",  "Atualizar",
-    "Atraso Alarme", "Sair",
+    "Atraso Alarme", "Casas Decimais", "Sair",
 };
 
 // docs/ihm-estados.md 3.4: "Limite 1>Voltar   Valor Limite X1   Operacao Limite X1".
@@ -129,6 +129,7 @@ MenuMachine::MenuMachine(IDisplay& display, const IClock& clock, Password& passw
       selSub_(0),
       opSel_(0),
       dirSel_(0),
+      decSel_(0),
       axis_(Axis::X),
       line_(),
       recusaMsg_(""),
@@ -239,6 +240,7 @@ void MenuMachine::onGesture(const Gesture& gesture) {
         case MenuState::EditSenha: onEditSenha(gesture); break;
         case MenuState::CodigoOta: onCodigoOta(gesture); break;
         case MenuState::EditAtraso: onEditAtraso(gesture); break;
+        case MenuState::EditDecimais: onEditDecimais(gesture); break;
         case MenuState::Revisao: onRevisao(gesture); break;
         // Telas temporizadas, bloqueio e assistente: gesto IGNORADO, nunca reinterpretado
         // (invariante 6 de docs/ihm-estados.md secao 6; o aviso de A9 e obrigatorio e nao
@@ -588,6 +590,34 @@ void MenuMachine::onEditAtraso(const Gesture& gesture) {
     dirty_ = true;
 }
 
+// Mesmo molde de Sentido do Sensor: opcoes em lista, UP sobe para menos casas e DOWN desce para
+// mais, sem dar volta; hold de MENU grava no rascunho. Sem aviso temporizado - trocar o formato
+// nao desloca ponto de atuacao nenhum.
+void MenuMachine::onEditDecimais(const Gesture& gesture) {
+    if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
+        const AngleDecimals escolhido = static_cast<AngleDecimals>(decSel_);
+        if (escolhido != draft_.displayDecimals()) {
+            if (!gravacaoAceita(draft_.setDisplayDecimals(escolhido))) {
+                return;
+            }
+            pending_ = true;
+        }
+        gravado();
+        return;
+    }
+    if (gesture.kind != GestureKind::ShortTap) {
+        return;
+    }
+    const uint8_t ultima = static_cast<uint8_t>(AngleDecimals::Two);
+    if (gesture.key == Key::Up && decSel_ > 0) {
+        --decSel_;
+        dirty_ = true;
+    } else if (gesture.key == Key::Down && decSel_ < ultima) {
+        ++decSel_;
+        dirty_ = true;
+    }
+}
+
 void MenuMachine::onRevisao(const Gesture& gesture) {
     if (gesture.key == Key::Menu && gesture.kind == GestureKind::Hold) {
         commitOnExit();
@@ -657,6 +687,7 @@ void MenuMachine::openItem() {
         // autoridade, e a senha do Modo Programacao o cliente troca.
         case MenuItem::Atualizar: openCodigoOta(); break;
         case MenuItem::AtrasoAlarme: openAtraso(); break;
+        case MenuItem::CasasDecimais: openDecimais(); break;
     }
 }
 
@@ -717,6 +748,13 @@ void MenuMachine::openAtraso() {
     editReturn_ = MenuState::Menu;
     editor_.open(kCampoAtraso, static_cast<int16_t>(draft_.alarmDelayDeciS()));
     state_ = MenuState::EditAtraso;
+    dirty_ = true;
+}
+
+void MenuMachine::openDecimais() {
+    editReturn_ = MenuState::Menu;
+    decSel_ = static_cast<uint8_t>(draft_.displayDecimals());
+    state_ = MenuState::EditDecimais;
     dirty_ = true;
 }
 
@@ -970,6 +1008,15 @@ void MenuMachine::render() {
             drawEditLine(kConteudoY, line_,
                          static_cast<uint8_t>(prefixo + editor_.cursorTextIndex()),
                          contentFont(line_));
+            break;
+        }
+
+        case MenuState::EditDecimais: {
+            const char* opcao = (decSel_ == 0u)   ? kOpcaoSemCasa
+                                 : (decSel_ == 1u) ? kOpcaoUmaCasa
+                                                   : kOpcaoDuasCasas;
+            drawLine(kRotuloY, kRotuloDecimais, contentFont(kRotuloDecimais));
+            drawLine(kConteudoY, opcao, contentFont(opcao));
             break;
         }
 

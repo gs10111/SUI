@@ -24,6 +24,7 @@
 #include "proto/crc16.h"
 
 using domain::Angle;
+using domain::AngleDecimals;
 using domain::Axis;
 using domain::LimitId;
 using domain::LimitOp;
@@ -965,6 +966,8 @@ static void test_bloco_da_versao_1_continua_carregando(void) {
     TEST_ASSERT_EQUAL_UINT16_MESSAGE(Parameters::kDefaultAlarmDelayDeciS, p.alarmDelayDeciS(),
                                      "bloco v1 tem de herdar o atraso de fabrica");
     TEST_ASSERT_EQUAL_UINT32(100u, p.alarmDelayMs());
+    TEST_ASSERT_TRUE_MESSAGE(p.displayDecimals() == AngleDecimals::One,
+                             "bloco v1 tem de herdar uma casa, o formato que a placa sempre teve");
 }
 
 // E o bloco v2 tem de sobreviver a uma ida e volta completa, com o campo novo preservado.
@@ -1018,6 +1021,89 @@ static void test_bloco_com_atraso_fora_da_faixa_nao_entra(void) {
     TEST_ASSERT_EQUAL_UINT16(antes, destino.alarmDelayDeciS());
 }
 
+// --- DECISAO 18: CASAS DECIMAIS (2026-10-06) ---------------------------------------------------
+
+static void test_D18_padrao_de_fabrica_e_uma_casa(void) {
+    TEST_ASSERT_TRUE(Parameters::factoryDefaults().displayDecimals() == AngleDecimals::One);
+    TEST_ASSERT_TRUE(Parameters().displayDecimals() == AngleDecimals::One);
+}
+
+static void test_D18_aceita_zero_uma_e_duas_casas_e_recusa_o_resto(void) {
+    Parameters p;
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::Zero).ok());
+    TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::Zero);
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(static_cast<AngleDecimals>(3)).failed());
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(static_cast<AngleDecimals>(255)).failed());
+    TEST_ASSERT_TRUE_MESSAGE(p.displayDecimals() == AngleDecimals::Zero,
+                             "recusa nao pode mexer no valor que estava");
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::One).ok());
+    TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::One);
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::Two).ok());
+    TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::Two);
+}
+
+static void test_D18_casas_sobrevivem_a_gravacao_e_a_leitura(void) {
+    Parameters origem;
+    TEST_ASSERT_TRUE(origem.setDisplayDecimals(AngleDecimals::Zero).ok());
+    TEST_ASSERT_TRUE(origem.setAlarmDelayDeciS(35).ok());
+
+    uint8_t blob[Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    TEST_ASSERT_TRUE(origem.serializeParams(blob, sizeof(blob), n).ok());
+    TEST_ASSERT_EQUAL_UINT16(36u, n);
+    TEST_ASSERT_EQUAL_UINT8(3u, blob[4]);
+
+    Parameters destino;
+    TEST_ASSERT_TRUE(destino.loadParams(blob, n).ok());
+    TEST_ASSERT_TRUE(destino.displayDecimals() == AngleDecimals::Zero);
+    TEST_ASSERT_EQUAL_UINT16(35u, destino.alarmDelayDeciS());
+}
+
+// Toda placa gravada pelo firmware de 2026-09-17 tem um bloco v2 de 34 bytes. Recusa-lo levaria a
+// frota a CONFIG PERDIDA. O atraso diferente do padrao pega erro de offset entre os dois campos.
+static void test_D18_bloco_v2_carrega_o_atraso_e_recebe_uma_casa(void) {
+    Parameters origem;
+    TEST_ASSERT_TRUE(origem.setAlarmDelayDeciS(35).ok());
+    uint8_t v3[Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    TEST_ASSERT_TRUE(origem.serializeParams(v3, sizeof(v3), n).ok());
+
+    // v2 = os mesmos 32 primeiros bytes, versao 2, CRC sobre 0..31 nos bytes 32..33.
+    uint8_t v2[34];
+    memcpy(v2, v3, 32);
+    v2[4] = 2;
+    v2[5] = 0;
+    const uint16_t crc = crc16Modbus(v2, 32);
+    v2[32] = static_cast<uint8_t>(crc & 0xFFu);
+    v2[33] = static_cast<uint8_t>((crc >> 8) & 0xFFu);
+
+    Parameters p;
+    TEST_ASSERT_TRUE(p.setDisplayDecimals(AngleDecimals::Zero).ok());   // prova que o load escreve
+    TEST_ASSERT_TRUE_MESSAGE(p.loadParams(v2, sizeof(v2)).ok(), "bloco v2 recusado");
+    TEST_ASSERT_EQUAL_UINT16(35u, p.alarmDelayDeciS());
+    TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::One);
+}
+
+// v3 com o campo fora de 0/1 e defeito de gravacao, nao formato novo: recusa sem carga parcial.
+static void test_D18_bloco_v3_com_casas_invalidas_e_recusado_inteiro(void) {
+    Parameters origem;
+    TEST_ASSERT_TRUE(origem.setAlarmDelayDeciS(35).ok());
+    uint8_t blob[Parameters::kParamBlobSize];
+    uint16_t n = 0;
+    TEST_ASSERT_TRUE(origem.serializeParams(blob, sizeof(blob), n).ok());
+    blob[32] = 3;
+    blob[33] = 0;
+    const uint16_t crc = crc16Modbus(blob, 34);
+    blob[34] = static_cast<uint8_t>(crc & 0xFFu);
+    blob[35] = static_cast<uint8_t>((crc >> 8) & 0xFFu);
+
+    Parameters p;
+    TEST_ASSERT_TRUE(p.loadParams(blob, n).failed());
+    TEST_ASSERT_EQUAL_UINT16_MESSAGE(Parameters::kDefaultAlarmDelayDeciS, p.alarmDelayDeciS(),
+                                     "recusa nao pode deixar o atraso do bloco no agregado");
+    TEST_ASSERT_TRUE(p.displayDecimals() == AngleDecimals::One);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_RST_01_defaults_da_tabela_2_preset_e_sentido_do_sensor);
@@ -1060,5 +1146,10 @@ int main(int, char**) {
     RUN_TEST(test_atraso_sobrevive_a_gravacao_e_a_leitura);
     RUN_TEST(test_atraso_fora_da_faixa_e_recusado);
     RUN_TEST(test_bloco_com_atraso_fora_da_faixa_nao_entra);
+    RUN_TEST(test_D18_padrao_de_fabrica_e_uma_casa);
+    RUN_TEST(test_D18_aceita_zero_uma_e_duas_casas_e_recusa_o_resto);
+    RUN_TEST(test_D18_casas_sobrevivem_a_gravacao_e_a_leitura);
+    RUN_TEST(test_D18_bloco_v2_carrega_o_atraso_e_recebe_uma_casa);
+    RUN_TEST(test_D18_bloco_v3_com_casas_invalidas_e_recusado_inteiro);
     return UNITY_END();
 }

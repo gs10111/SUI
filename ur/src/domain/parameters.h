@@ -78,16 +78,19 @@ public:
 
     static constexpr uint32_t kParamMagic = 0x44505231u;  // "DPR1"
     static constexpr uint32_t kCalMagic = 0x44435231u;    // "DCR1"
-    // VERSAO 2 desde 2026-09-17: o bloco ganhou o atraso de alarme. A versao 1 CONTINUA sendo
-    // aceita na leitura - ver loadParams - porque toda placa ja instalada tem um bloco de 32
-    // bytes gravado, e recusa-lo levaria a frota inteira a CONFIG PERDIDA na atualizacao, com os
-    // quatro reles em alarme. Um bloco v1 e carregado com o atraso no valor de fabrica, que e
-    // exatamente o comportamento que aquela placa ja tinha.
-    static constexpr uint16_t kParamVersion = 2;
+    // VERSAO 3 desde 2026-10-06: o bloco ganhou as casas decimais da indicacao (Decisao 18). A
+    // versao 2 (2026-09-17, atraso de alarme) e a 1 CONTINUAM sendo aceitas na leitura - ver
+    // loadParams - porque toda placa ja instalada tem um desses blocos gravado, e recusa-lo
+    // levaria a frota inteira a CONFIG PERDIDA na atualizacao, com os quatro reles em alarme. O
+    // campo que o bloco antigo nao tem e carregado no valor de fabrica, que e exatamente o
+    // comportamento que aquela placa ja tinha.
+    static constexpr uint16_t kParamVersion = 3;
     static constexpr uint16_t kParamVersionLegado = 1;
     static constexpr uint16_t kParamBlobSizeLegado = 32;
+    static constexpr uint16_t kParamVersionV2 = 2;
+    static constexpr uint16_t kParamBlobSizeV2 = 34;
     static constexpr uint16_t kCalVersion = 1;
-    static constexpr uint16_t kParamBlobSize = 34;
+    static constexpr uint16_t kParamBlobSize = 36;
     static constexpr uint16_t kCalBlobSize = 20;
 
     static constexpr uint16_t kPasswordMax = 9999;
@@ -144,6 +147,10 @@ public:
     static constexpr uint16_t kDefaultAlarmDelayDeciS = kAlarmDelayMinDeciS;
     static constexpr int16_t kDefaultCalFullScaleDeci = 450;
 
+    // CASAS DECIMAIS DA INDICACAO (Decisao 18, 2026-10-06). So apresentacao. O padrao e uma
+    // casa, o formato do manual: placa atualizada nao muda nada ate alguem mexer.
+    static constexpr AngleDecimals kDefaultDisplayDecimals = AngleDecimals::One;
+
     // Seletor vindo da IHM (indice de menu) ou de um blob e dado externo, nao invariante de
     // tipo: enum de C++ nao restringe o valor castado. Sem estas duas guardas o indice errado
     // vira escrita fora dos limites do agregado que comanda os quatro reles.
@@ -185,6 +192,15 @@ public:
 
     static constexpr bool alarmDelayValid(uint16_t deciS) {
         return deciS >= kAlarmDelayMinDeciS && deciS <= kAlarmDelayMaxDeciS;
+    }
+
+    AngleDecimals displayDecimals() const {
+        return static_cast<AngleDecimals>(rel_.displayDecimals);
+    }
+    Status setDisplayDecimals(AngleDecimals decimals);
+
+    static constexpr bool displayDecimalsValid(uint16_t raw) {
+        return raw <= static_cast<uint16_t>(AngleDecimals::Two);
     }
 
     Angle calFullScale(Axis axis) const {
@@ -252,6 +268,7 @@ private:
         uint8_t sensorDir[kAxisCount];
         uint16_t password;
         uint16_t alarmDelayDeciS;
+        uint16_t displayDecimals;
     };
 
     struct CalGroup {

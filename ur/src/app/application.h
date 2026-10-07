@@ -186,6 +186,10 @@ public:
 
     struct Snapshot {
         domain::Angle reading[kAppAxisCount];
+        // Decisao 18, Emenda 1: a mesma leitura em CENTESIMOS, tirada do estado do filtro, so para
+        // a indicacao de duas casas. Vale apenas quando reading[i] e valida; nunca vai a rele,
+        // limite ou saida analogica.
+        int16_t readingCenti[kAppAxisCount];
         domain::Angle raw[kAppAxisCount];
         // EMENDA 2 (aprovada 2026-09-01). Leitura passada pela cadeia de medicao mas SEM credito
         // para comandar nada: existe quando o quadro chegou integro e o conteudo foi recusado -
@@ -325,6 +329,7 @@ private:
     domain::AnalogScaler scaler_[kAppAxisCount];
     domain::Angle raw_[kAppAxisCount];
     domain::Angle reading_[kAppAxisCount];
+    int16_t readingCenti_[kAppAxisCount];
     Snapshot pub_;
     SensorSample sample_;
     uint32_t cycleStartMs_;
@@ -388,11 +393,11 @@ domain::NormalInput buildNormalInput(const Application::Snapshot& snap,
 // leitura AO VIVO dos dois eixos e o estado do portao de quietude. Substituiu o editor numerico:
 // nao ha mais campo de digitos, o alvo e sempre zero e o gesto e posicionar e segurar parado.
 void renderPresetCapture(IDisplay& display, const domain::ui::PresetWizard& preset,
-                         domain::Axis axis);
+                         domain::Axis axis, domain::AngleDecimals decimals);
 
 // Confirmacao do PSET: o valor pendente mais o gesto que grava. Mesma razao de estar aqui.
 void renderPresetConfirm(IDisplay& display, const domain::ui::PresetWizard& preset,
-                         domain::Axis axis);
+                         domain::Axis axis, domain::AngleDecimals decimals);
 
 // Mensagem temporizada centralizada (PSET aplicado, recusas, fora de faixa). A fonte sai da
 // MEDICAO: as curtas ficam grandes e as longas descem sozinhas. Antes era fonte grande fixa com
