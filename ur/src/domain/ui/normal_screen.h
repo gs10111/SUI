@@ -266,7 +266,6 @@ private:
     void renderMain(const NormalInput& in);
     void renderDetail(const NormalInput& in, uint8_t axis);
     void renderFault(const NormalInput& in);
-    void renderHeartbeat(const NormalInput& in);
     void renderPresetMark(const NormalInput& in, int16_t x, int16_t y, TextFont font);
 
     void drawAt(int16_t x, int16_t y, const char* text, TextFont font);

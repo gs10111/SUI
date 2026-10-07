@@ -3279,3 +3279,30 @@ saida do menu. Voltar a um firmware anterior pede Reset Geral ou reprogramacao d
 
 - Conferir na placa real, nos dois modos, a tela principal, o detalhe de X e Y, a captura e a
   confirmacao do Preset, e o editor de limite (que tem de continuar com a casa).
+
+## Decisao 19 - Tela principal sem batimento, coluna de estado na borda e simbolo de porcentagem
+
+**Status:** IMPLEMENTADA (pedido do responsavel em 2026-10-07, para atender o mesmo cliente da Decisao 18)
+**Impacto de seguranca:** MEDIO - revoga a Decisao 12 item 11
+**Codigo:** `ur/src/domain/ui/normal_screen.*`
+
+### O que foi decidido
+
+1. **O marcador de batimento sai das tres telas (revoga D12 item 11).** Ele era o unico campo que
+   denunciava painel CONGELADO exibindo dado plausivel - firmware travado com a ultima imagem na
+   tela. Sem ele, esse modo de falha deixa de ser visivel no painel. Os reles, a saida analogica e
+   o STWD100 continuam iguais: o watchdog ainda reinicia a placa se o laco de controle parar; o
+   que se perde e so a prova VISUAL de que o display esta sendo redesenhado. `heartbeatPhase`
+   continua sendo calculado em `buildNormalInput`, sem uso, para a volta ser de uma linha.
+2. **A coluna de estado (X1 X2 / Y1 Y2, SAI, PSET) encosta na borda direita**, medida pelo pior
+   caso de cada linha na fonte escolhida, e assim fica o mais longe possivel da leitura principal.
+   Nunca a esquerda do fim da area de medicao.
+3. **A porcentagem da saida leva o simbolo**: `SAI:+100% -050%`. A linha passa a 15 glifos; no
+   alvo (larguras medidas do u8g2) ainda cabe em Medium com uma casa; com duas casas a coluna vai
+   para Small, pela regra que ja existia.
+
+### Testes
+
+`test_D19_sem_batimento_em_nenhuma_das_tres_telas`, `test_D19_coluna_de_estado_encosta_na_borda_direita`,
+`test_saida_rastreando_mostra_porcentagem`, e os testes de fonte da coluna passaram a rodar num
+painel com as larguras do alvo (o fake arredonda para cima e cairia em Small sem a placa cair).

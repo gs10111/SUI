@@ -110,13 +110,15 @@ public:
             add(Angle::invalid(), AngleDecimals::One);
             return;
         }
-        char texto[6];
+        // O simbolo vai junto (Decisao 19): "+050%" nao deixa duvida de que e porcentagem.
+        char texto[7];
         const int16_t modulo = (percent < 0) ? static_cast<int16_t>(-percent) : percent;
         texto[0] = (percent < 0) ? '-' : '+';
         texto[1] = static_cast<char>('0' + (modulo / 100));
         texto[2] = static_cast<char>('0' + ((modulo / 10) % 10));
         texto[3] = static_cast<char>('0' + (modulo % 10));
-        texto[4] = '\0';
+        texto[4] = '%';
+        texto[5] = '\0';
         add(texto);
     }
 
@@ -214,7 +216,6 @@ void NormalScreen::render(const NormalInput& in) {
         renderDetail(in, (view_ == NormalView::DetailX) ? kNormalAxisX : kNormalAxisY);
     }
 
-    renderHeartbeat(in);
     keep(display_.present());
 }
 
@@ -223,7 +224,13 @@ void NormalScreen::renderMain(const NormalInput& in) {
     // A coluna da direita sobe para a fonte maior quando cabe; o passo e a capacidade seguem a
     // fonte escolhida, senao a coluna cresce e vaza pelo pe da tela.
     const TextFont fonteEstado = statusFont(in);
-    const int16_t colunaX = statusColumnX(in.decimals);
+    // DECISAO 19: a coluna encosta na borda direita, medida pelo pior caso de cada linha na fonte
+    // escolhida, e assim fica o mais longe possivel da leitura principal. Nunca a esquerda do
+    // fim da area de medicao.
+    const int16_t encostada = static_cast<int16_t>(
+        display_.widthPx() - kMargin - maiorLarguraDaColuna(fonteEstado, sameAnalogMode(in)));
+    const int16_t minimo = statusColumnX(in.decimals);
+    const int16_t colunaX = (encostada > minimo) ? encostada : minimo;
     const int16_t passo = spacedRowHeight(fonteEstado, statusRows(in));
 
     // DSP-01 e NRM-01: os DOIS eixos ao mesmo tempo, cada um com a sua identificacao. Leitura
@@ -547,17 +554,6 @@ void NormalScreen::renderFault(const NormalInput& in) {
 // D12 item 11: marca de 4x4 px girando por quatro posicoes dentro da caixa de 8x8 px do canto
 // inferior direito, na ordem horaria. Quem conta transacao valida e a camada de aplicacao; aqui
 // so mora a geometria.
-void NormalScreen::renderHeartbeat(const NormalInput& in) {
-    const int16_t caixaX =
-        static_cast<int16_t>(display_.widthPx() - kHeartbeatBoxPx - kMargin);
-    const int16_t caixaY =
-        static_cast<int16_t>(display_.heightPx() - kHeartbeatBoxPx - kMargin);
-    const uint8_t fase = static_cast<uint8_t>(in.heartbeatPhase % kHeartbeatPhases);
-    const int16_t dx = (fase == 1u || fase == 2u) ? kHeartbeatMarkPx : 0;
-    const int16_t dy = (fase >= 2u) ? kHeartbeatMarkPx : 0;
-    keep(display_.fillRect(static_cast<int16_t>(caixaX + dx), static_cast<int16_t>(caixaY + dy),
-                           kHeartbeatMarkPx, kHeartbeatMarkPx, true));
-}
 
 void NormalScreen::renderPresetMark(const NormalInput& in, int16_t x, int16_t y,
                                     TextFont font) {
@@ -622,11 +618,8 @@ int16_t NormalScreen::statusColumnX(AngleDecimals decimals) const {
 }
 
 TextFont NormalScreen::statusFont(const NormalInput& in) const {
-    // A faixa do batimento (D12 item 11) sai da largura util: a ultima linha da coluna pode
-    // descer ate a altura da caixa, e nenhuma linha pode invadi-la. Sem esta reserva, com duas
-    // casas e as larguras do alvo, a linha SAI: em Medium terminava em cima da caixa.
-    const int16_t largura = static_cast<int16_t>(display_.widthPx() - statusColumnX(in.decimals) -
-                                                 kHeartbeatBoxPx - kMargin);
+    const int16_t largura =
+        static_cast<int16_t>(display_.widthPx() - statusColumnX(in.decimals) - kMargin);
     if (largura <= 0) {
         return TextFont::Small;
     }
@@ -672,6 +665,11 @@ uint16_t NormalScreen::maiorLarguraDaColuna(TextFont font, bool mesmoModo) const
                                      : display_.textWidthPx(font, "SAIDA X:MEDICAO");
     if (saida > maior) {
         maior = saida;
+    }
+    // Com o simbolo de porcentagem (Decisao 19) a linha SAI: e a mais larga do caso rastreando.
+    const uint16_t porcentagem = display_.textWidthPx(font, "SAI:-100% -100%");
+    if (porcentagem > maior) {
+        maior = porcentagem;
     }
     const uint16_t preset = display_.textWidthPx(font, "PSET:XY");
     if (preset > maior) {

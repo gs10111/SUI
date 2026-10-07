@@ -134,6 +134,45 @@ struct Bancada {
     }
 };
 
+// --- O QUADRO NAS LARGURAS DO ALVO ------------------------------------------------------------
+//
+// O FakeDisplay arredonda a largura de glifo PARA CIMA (Large 15 px contra 14,125 medidos), o que
+// e conservador para "cabe na tela" mas pode levar a decisao de fonte para um ramo que a placa
+// nunca percorre: com duas casas o fake escolhia Small e o alvo escolhia Medium, e a linha SAI:
+// do alvo entrava na caixa do batimento. Este painel usa as larguras medidas no u8g2 real
+// (Small 6, Medium 9, Large 14) para que a suite exercite o ramo que a placa desenha.
+class PainelAlvo : public Painel {
+public:
+    uint16_t textWidthPx(TextFont font, const char* text) const override {
+        uint16_t porGlifo = 6u;
+        if (font == TextFont::Large) {
+            porGlifo = 14u;
+        } else if (font == TextFont::Medium) {
+            porGlifo = 9u;
+        }
+        uint16_t n = 0;
+        while (text != nullptr && text[n] != '\0') {
+            ++n;
+        }
+        return static_cast<uint16_t>(porGlifo * n);
+    }
+};
+
+struct BancadaAlvo {
+    FakeClock clock;
+    FakeKeypad keypad;
+    KeyGesture gesto;
+    PainelAlvo painel;
+    NormalScreen tela;
+
+    BancadaAlvo() : clock(), keypad(clock), gesto(keypad, clock), painel(), tela(painel, gesto) {}
+
+    NormalRequest ciclo(const NormalInput& entrada) {
+        gesto.update();
+        return tela.update(entrada);
+    }
+};
+
 NormalInput enlaceSaudavel(int16_t xDeci, int16_t yDeci) {
     NormalInput entrada{};
     entrada.reading[kNormalAxisX] = Angle::fromDeciDegrees(xDeci);
@@ -174,10 +213,6 @@ void tocar(Bancada& bancada, Key tecla) { bancada.keypad.tap(tecla, 60u); }
 constexpr int16_t kPainelW = 256;
 constexpr int16_t kPainelH = 64;
 
-// D12 item 11: caixa de 8x8 px em (247,55)-(254,62). Nenhum texto pode invadi-la.
-constexpr int16_t kBatimentoX = 247;
-constexpr int16_t kBatimentoY = 55;
-constexpr int16_t kBatimentoPx = 8;
 
 struct Caixa {
     int16_t x0;
@@ -199,9 +234,6 @@ bool intersecta(const Caixa& a, const Caixa& b) {
 }
 
 void verificarQuadro(const Painel& painel) {
-    const Caixa batimento{kBatimentoX, kBatimentoY,
-                          static_cast<int16_t>(kBatimentoX + kBatimentoPx),
-                          static_cast<int16_t>(kBatimentoY + kBatimentoPx)};
     TEST_ASSERT_TRUE(painel.drawCount() > 0u);
     for (uint8_t i = 0; i < painel.drawCount(); ++i) {
         const Caixa a = caixaDoTexto(painel, i);
@@ -210,7 +242,6 @@ void verificarQuadro(const Painel& painel) {
         TEST_ASSERT_TRUE_MESSAGE(a.y0 >= 0, texto);
         TEST_ASSERT_TRUE_MESSAGE(a.x1 <= kPainelW, texto);
         TEST_ASSERT_TRUE_MESSAGE(a.y1 <= kPainelH, texto);
-        TEST_ASSERT_FALSE_MESSAGE(intersecta(a, batimento), texto);
         for (uint8_t j = static_cast<uint8_t>(i + 1u); j < painel.drawCount(); ++j) {
             TEST_ASSERT_FALSE_MESSAGE(intersecta(a, caixaDoTexto(painel, j)), texto);
         }
@@ -840,40 +871,17 @@ static void test_D1_item17_indicador_de_preset_tem_prioridade_sobre_enlace_ok(vo
 // (247,55)-(254,62), comandada por TRANSACAO VALIDA (DECISIONS.md:2362). Marcador parado e o
 // unico sinal de painel congelado exibindo dado plausivel, que e o modo de falha mais perigoso
 // de uma IHM de seguranca.
-static void test_D12_item11_batimento_gira_por_transacao_valida(void) {
+static void test_D19_sem_batimento_em_nenhuma_das_tres_telas(void) {
     Bancada bancada;
     NormalInput entrada = enlaceSaudavel(455, -123);
-
-    const int16_t xEsperado[4] = {247, 251, 251, 247};
-    const int16_t yEsperado[4] = {55, 55, 59, 59};
-
-    for (uint8_t fase = 0; fase < 8u; ++fase) {
+    for (uint8_t fase = 0; fase < 4u; ++fase) {
         entrada.heartbeatPhase = fase;
         bancada.ciclo(entrada);
-        TEST_ASSERT_EQUAL_UINT32(fase + 1u, bancada.painel.rectCount());
-        TEST_ASSERT_EQUAL_INT16(xEsperado[fase % 4u], bancada.painel.rectX());
-        TEST_ASSERT_EQUAL_INT16(yEsperado[fase % 4u], bancada.painel.rectY());
-        TEST_ASSERT_EQUAL_UINT16(4u, bancada.painel.rectW());
-        TEST_ASSERT_EQUAL_UINT16(4u, bancada.painel.rectH());
-        TEST_ASSERT_TRUE(bancada.painel.rectOn());
-        verificarQuadro(bancada.painel);
     }
-
-    // Duas fases consecutivas nunca desenham no mesmo lugar: um contador preso salta aos olhos.
-    for (uint8_t fase = 0; fase < 4u; ++fase) {
-        const uint8_t proxima = static_cast<uint8_t>((fase + 1u) % 4u);
-        TEST_ASSERT_FALSE(xEsperado[fase] == xEsperado[proxima] &&
-                          yEsperado[fase] == yEsperado[proxima]);
-    }
-
-    // E o batimento esta nas TRES telas, inclusive na de falha - painel congelado durante a
-    // falha e exatamente o caso em que o operador precisa saber que o firmware parou.
-    const uint32_t antesDoDetalhe = bancada.painel.rectCount();
     tocar(bancada, Key::Down);
     bancada.ciclo(entrada);
-    TEST_ASSERT_EQUAL_UINT32(antesDoDetalhe + 1u, bancada.painel.rectCount());
     bancada.ciclo(enlaceEmFalha(NormalLinkState::CommFault));
-    TEST_ASSERT_EQUAL_UINT32(antesDoDetalhe + 2u, bancada.painel.rectCount());
+    TEST_ASSERT_EQUAL_UINT32(0u, bancada.painel.rectCount());
 }
 
 // O painel nao e canal de seguranca (invariante 5): a falha de desenho e RETIDA em lastStatus()
@@ -973,7 +981,9 @@ static void test_IKEYPAD_reset_volta_a_principal_e_nao_deixa_gesto_atravessar(vo
 // operador precisa num supervisor de seguranca.
 
 static void test_layout_coluna_de_estado_sobe_de_fonte_com_os_dois_eixos_no_mesmo_modo(void) {
-    Bancada bancada;
+    // Nas larguras do ALVO: com o simbolo % (Decisao 19) a linha SAI: tem 15 glifos, e so o
+    // fake arredondado para cima deixa de caber em Medium; a placa cabe.
+    BancadaAlvo bancada;
 
     TEST_ASSERT_TRUE(bancada.ciclo(enlaceSaudavel(455, -123)) == NormalRequest::None);
 
@@ -1154,7 +1164,9 @@ static void test_saida_simulada_de_um_eixo_continua_visivel(void) {
 // Com duas linhas a menos, a coluna passa a caber em Medium mesmo com o PSET no ar - que era o
 // caso em que ela tinha de encolher antes.
 static void test_limpeza_deixa_a_coluna_grande_mesmo_com_preset(void) {
-    Bancada bancada;
+    // Nas larguras do ALVO: com o simbolo % (Decisao 19) a linha SAI: tem 15 glifos, e so o
+    // fake arredondado para cima deixa de caber em Medium; a placa cabe.
+    BancadaAlvo bancada;
     NormalInput entrada = enlaceSaudavel(455, -123);
     entrada.presetActive[kNormalAxisX] = true;
     entrada.presetActive[kNormalAxisY] = true;
@@ -1220,9 +1232,7 @@ static void test_saida_rastreando_mostra_porcentagem(void) {
 
     TEST_ASSERT_TRUE(bancada.ciclo(entrada) == NormalRequest::None);
 
-    TEST_ASSERT_TRUE(bancada.painel.shows("SAI:"));
-    TEST_ASSERT_TRUE(bancada.painel.shows("+100"));
-    TEST_ASSERT_TRUE(bancada.painel.shows("-050"));
+    TEST_ASSERT_TRUE(bancada.painel.showsExactly("SAI:+100% -050%"));
     verificarQuadro(bancada.painel);
 }
 
@@ -1448,46 +1458,7 @@ static void test_D18E1_detalhe_com_duas_casas_cabe_no_pior_caso(void) {
     verificarQuadro(bancada.painel);
 }
 
-// --- O QUADRO NAS LARGURAS DO ALVO ------------------------------------------------------------
-//
-// O FakeDisplay arredonda a largura de glifo PARA CIMA (Large 15 px contra 14,125 medidos), o que
-// e conservador para "cabe na tela" mas pode levar a decisao de fonte para um ramo que a placa
-// nunca percorre: com duas casas o fake escolhia Small e o alvo escolhia Medium, e a linha SAI:
-// do alvo entrava na caixa do batimento. Este painel usa as larguras medidas no u8g2 real
-// (Small 6, Medium 9, Large 14) para que a suite exercite o ramo que a placa desenha.
-class PainelAlvo : public Painel {
-public:
-    uint16_t textWidthPx(TextFont font, const char* text) const override {
-        uint16_t porGlifo = 6u;
-        if (font == TextFont::Large) {
-            porGlifo = 14u;
-        } else if (font == TextFont::Medium) {
-            porGlifo = 9u;
-        }
-        uint16_t n = 0;
-        while (text != nullptr && text[n] != '\0') {
-            ++n;
-        }
-        return static_cast<uint16_t>(porGlifo * n);
-    }
-};
-
-struct BancadaAlvo {
-    FakeClock clock;
-    FakeKeypad keypad;
-    KeyGesture gesto;
-    PainelAlvo painel;
-    NormalScreen tela;
-
-    BancadaAlvo() : clock(), keypad(clock), gesto(keypad, clock), painel(), tela(painel, gesto) {}
-
-    void ciclo(const NormalInput& entrada) {
-        gesto.update();
-        tela.update(entrada);
-    }
-};
-
-static void test_D12_batimento_livre_nas_larguras_do_alvo_em_todo_modo_de_casas(void) {
+static void test_D19_quadro_cabe_nas_larguras_do_alvo_em_todo_modo_de_casas(void) {
     const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
     for (AngleDecimals modo : modos) {
         BancadaAlvo bancada;
@@ -1527,6 +1498,35 @@ static void test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo(void
     TEST_ASSERT_FALSE(bancada.painel.shows("+001,27"));
     TEST_ASSERT_FALSE(bancada.painel.shows("+001,30"));
     verificarQuadro(bancada.painel);
+}
+
+// Decisao 19: a coluna de estado encosta na borda direita, longe da leitura principal.
+static void test_D19_coluna_de_estado_encosta_na_borda_direita(void) {
+    const AngleDecimals modos[] = {AngleDecimals::Zero, AngleDecimals::One, AngleDecimals::Two};
+    for (AngleDecimals modo : modos) {
+        Bancada bancada;
+        NormalInput entrada = duasCasas(4537, -1234);
+        entrada.decimals = modo;
+        bancada.ciclo(entrada);
+
+        int16_t fimDaLeitura = 0;
+        int16_t inicioDaColuna = kPainelW;
+        int16_t fimDaColuna = 0;
+        for (uint8_t i = 0; i < bancada.painel.drawCount(); ++i) {
+            const Caixa c = caixaDoTexto(bancada.painel, i);
+            const char* t = bancada.painel.draw(i).text;
+            if (t[0] == 'X' && t[1] == ':') {
+                fimDaLeitura = c.x1;
+            } else if (t[0] != 'Y') {
+                inicioDaColuna = (c.x0 < inicioDaColuna) ? c.x0 : inicioDaColuna;
+                fimDaColuna = (c.x1 > fimDaColuna) ? c.x1 : fimDaColuna;
+            }
+        }
+        TEST_ASSERT_TRUE_MESSAGE(fimDaColuna >= kPainelW - 2, "a coluna encosta na borda");
+        TEST_ASSERT_TRUE_MESSAGE(inicioDaColuna - fimDaLeitura >= 14,
+                                 "e fica bem separada da leitura");
+        verificarQuadro(bancada.painel);
+    }
 }
 
 int main(int, char**) {
@@ -1578,7 +1578,7 @@ int main(int, char**) {
     RUN_TEST(test_D1_item17_indicador_de_preset_permanece_na_tela_de_falha);
     RUN_TEST(test_invariante2_modo_da_saida_analogica_e_por_eixo);
     RUN_TEST(test_D1_item17_indicador_de_preset_tem_prioridade_sobre_enlace_ok);
-    RUN_TEST(test_D12_item11_batimento_gira_por_transacao_valida);
+    RUN_TEST(test_D19_sem_batimento_em_nenhuma_das_tres_telas);
     RUN_TEST(test_IDISPLAY_lastStatus_retem_a_primeira_falha_de_desenho);
     RUN_TEST(test_IDISPLAY_falha_de_desenho_nao_engole_o_pedido_da_tecla);
     RUN_TEST(test_update_drena_todos_os_gestos_sem_pedido_no_mesmo_ciclo);
@@ -1594,7 +1594,8 @@ int main(int, char**) {
     RUN_TEST(test_D18E1_leitura_marcada_com_duas_casas_fica_com_uma);
     RUN_TEST(test_D18E1_sem_quadro_com_duas_casas_mostra_o_traco_de_uma);
     RUN_TEST(test_D18E1_detalhe_com_duas_casas_cabe_no_pior_caso);
-    RUN_TEST(test_D12_batimento_livre_nas_larguras_do_alvo_em_todo_modo_de_casas);
+    RUN_TEST(test_D19_quadro_cabe_nas_larguras_do_alvo_em_todo_modo_de_casas);
     RUN_TEST(test_D18E1_leitura_retida_na_tela_de_falha_nao_mostra_centesimo);
+    RUN_TEST(test_D19_coluna_de_estado_encosta_na_borda_direita);
     return UNITY_END();
 }
