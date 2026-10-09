@@ -89,11 +89,11 @@ static void test_tecla_esquecida_nao_volta_apos_o_wrap(void) {
     app::DisplayRefresh r;
     r.start(kT0);
     r.noteKey(kT0);
-    // Passagens normais a cada periodo esquecem a tecla.
     TEST_ASSERT_TRUE(r.takeDue(kT0 + kPeriod, false));
-    // 2^32 ms depois da tecla, alinhado com um periodo vencido.
+    // 2^32 + 5 ms depois da tecla: nowMs - lastKey da 5, que pareceria tecla recente. SEM start()
+    // no meio - start() tambem esquece a tecla e esconderia a regressao. O periodo esta vencido
+    // (o ultimo reinicio foi em kT0 + kPeriod, ~49,7 dias antes).
     const uint32_t volta = kT0 + 5u;  // = kT0 + 2^32 + 5 em aritmetica de 32 bits
-    r.start(volta - kPeriod);
     TEST_ASSERT_TRUE(r.takeDue(volta, false));
 }
 

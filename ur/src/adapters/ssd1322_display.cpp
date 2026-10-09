@@ -69,6 +69,7 @@ Ssd1322Display::Ssd1322Display(RearmHook rearmWatchdogPin)
       contrast_(0),
       pattern_(0xFFu),
       contrastSet_(false),
+      busReserved_(false),
       ready_(false),
       off_(false) {}
 
@@ -131,6 +132,7 @@ Status Ssd1322Display::begin() {
     // Passo 8 da ordem de boot. MISO real (IO39, input-only e NC), NUNCA -1: com -1 o core
     // instalado poe o IO19 (WDI) em entrada e o prende ao VSPI. Ver ORDEM DE BOOT no cabecalho.
     SPI.begin(board::kDispSclk, board::kDispMiso, board::kDispMosi, board::kNoPin);
+    busReserved_ = true;
     softenBusDrive();
     if (!initPanel(true)) {
         ready_ = false;
@@ -150,15 +152,16 @@ Status Ssd1322Display::hardReset() {
     if (board::kDispReset == board::kNoPin) {
         return Status(Err::Param);
     }
-    const bool wasReady = ready_;
     ready_ = false;
     pinMode(static_cast<uint8_t>(board::kDispReset), OUTPUT);
     digitalWrite(static_cast<uint8_t>(board::kDispReset), LOW);
     delay(kResetLowMs);
     digitalWrite(static_cast<uint8_t>(board::kDispReset), HIGH);
     delay(kResetSettleMs);
-    if (!wasReady) {
+    if (!busReserved_) {
         // Nunca houve begin(): so o pulso, como o fake. O passo 9 da ordem de boot ainda vem.
+        // Um begin() que FALHOU conta como havido: o barramento esta reservado e o init e
+        // repetido abaixo - e o reinicio periodico da Decisao 20 que recupera esse painel.
         return kOk;
     }
     if (!initPanel(false)) {

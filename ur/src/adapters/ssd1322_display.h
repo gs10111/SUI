@@ -209,6 +209,11 @@ private:
     uint8_t contrast_;
     uint8_t pattern_;
     bool contrastSet_;
+    // begin() ja reservou o VSPI. E ISTO, e nao ready_, que decide se hardReset() refaz o init:
+    // ready_ cai para false quando um init falha, e com ele como criterio a falha seria
+    // permanente - todo hardReset() seguinte daria so o pulso, devolveria kOk e o painel ficaria
+    // preto para sempre com o console dizendo OK (achado da revisao da Decisao 20).
+    bool busReserved_;
     bool ready_;
     bool off_;
 };
