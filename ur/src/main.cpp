@@ -101,6 +101,7 @@
 #include "ota_service.h"
 #include "wifi_update_portal.h"
 #include "app/boot_sequence.h"
+#include "app/display_refresh.h"
 #include "app/persist_queue.h"
 #include "board_pins.h"
 #include "domain/analog_calibration.h"
@@ -277,6 +278,11 @@ void publicarComandoOta(uint16_t valor) {
 constexpr uint32_t kOriginShiftMs = 900000;
 uint32_t g_originMs = 0;
 uint8_t g_originPhase = 0;
+
+// Reinicio periodico do painel (Decisao 20): hardReset() a cada 5 min, adiado com tecla recente
+// ou com a tela em posse do splash ou da atualizacao. Regras e testes em src/app/display_refresh.h
+// e test/native/test_display_refresh.
+app::DisplayRefresh g_displayRefresh;
 
 // Slots sujos de NVS. Uma escrita por passagem do loop() (ver o bloco ARMAZENAMENTO). A maquina
 // mora em src/app/persist_queue.h, coberta por test/native/test_persist: aqui fica so a
@@ -1314,6 +1320,7 @@ void setup() {
     g_boot.begin(bootAtMs, g_bootKeyMask);
     g_hmiMs = g_clock.nowMs();
     g_originMs = g_clock.nowMs();
+    g_displayRefresh.start(g_clock.nowMs());
 }
 
 // DIAGNOSTICO DE TECLA NO CONSOLE. DOWN (IO34) e MENU (IO35) sao INPUT-ONLY: ignoram o
@@ -1348,6 +1355,10 @@ void loop() {
     g_gesture.update();
 
     const uint32_t nowMs = g_clock.nowMs();
+    // Fora do portao de 50 ms: um toque curto entre duas passagens da IHM tambem conta.
+    if (g_keypad.pressedMask() != 0u) {
+        g_displayRefresh.noteKey(nowMs);
+    }
     if (!deadlineReached(g_hmiMs, nowMs, kHmiPeriodMs)) {
         delay(kLoopSliceMs);
         return;
@@ -1364,6 +1375,16 @@ void loop() {
         const int8_t dx = static_cast<int8_t>((g_originPhase == 1u || g_originPhase == 2u) ? 1 : 0);
         const int8_t dy = static_cast<int8_t>((g_originPhase >= 2u) ? 1 : 0);
         g_display.setOrigin(dx, dy);
+        g_configLostDrawn = false;
+    }
+
+    // REINICIO PERIODICO DO PAINEL (Decisao 20). Bloqueia ate ~500 ms AQUI, no loopTask - a
+    // tarefa ctrl, os reles e o cachorro seguem. O quadro corrente e reenviado pelo proprio
+    // hardReset() e o estado da IHM nao e tocado: a tela volta onde estava.
+    if (g_displayRefresh.takeDue(nowMs, g_boot.ownsDisplay() || g_otaNoAr)) {
+        const Status st = g_display.hardReset();
+        Serial.print(F("display: reinicio periodico "));
+        Serial.println(errName(st.err));
         g_configLostDrawn = false;
     }
 

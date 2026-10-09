@@ -56,7 +56,9 @@
 //                           errata humana do orcamento, nao para conserto no adaptador.
 //   hardReset() <= 500 ms   pulso explicito de kResetLowMs + kResetSettleMs (Decisao 12 item 2)
 //                           MAIS o caminho de init completo acima, porque o painel volta ao POR e
-//                           tem de ser reconfigurado. So no boot ou em recuperacao explicita.
+//                           tem de ser reconfigurado. So no boot ou em recuperacao explicita -
+//                           e o reinicio periodico da Decisao 20 (a cada 5 min, no loopTask,
+//                           src/app/display_refresh.h) e uma recuperacao explicita agendada.
 // Os delay() destas duas chamadas sao vTaskDelay (Arduino-ESP32), portanto CEDEM a CPU: a tarefa
 // ctrl (core 0, prio 5) segue no seu tick de 50 ms e a ISR de timer em IRAM segue chutando o WDI.
 // Quem para durante esses ms e o loopTask - botoes e IHM -, nao o ciclo de seguranca nem o

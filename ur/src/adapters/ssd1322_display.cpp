@@ -140,8 +140,9 @@ Status Ssd1322Display::begin() {
     return kOk;
 }
 
-// BLOQUEIA ate ~500 ms. Chamada de boot ou de recuperacao explicita, JAMAIS de dentro do ciclo de
-// 50 ms (ver CUSTO BLOQUEANTE DECLARADO no cabecalho). Devolve o painel PRONTO: o pulso de reset
+// BLOQUEIA ate ~500 ms. Chamada de boot ou de recuperacao explicita (inclusive o reinicio periodico
+// da Decisao 20, no loopTask), JAMAIS de dentro do ciclo de 50 ms (ver CUSTO BLOQUEANTE
+// DECLARADO no cabecalho). Devolve o painel PRONTO: o pulso de reset
 // leva o SSD1322 ao POR e apaga a configuracao dele, entao o caminho de init tem de ser repetido
 // aqui - sem isso a classe nao teria caminho de volta e todo present() seguinte devolveria
 // Err::NotInit para sempre, que e uma pre-condicao que o FakeDisplay nao tem.

@@ -3188,3 +3188,41 @@ ordem de precedencia nao mudou: **NVS ganha sempre**.
   padrao. Uma edicao desatenta daquela constante - um caractere a menos, um acento, um espaco no
   fim - passaria por toda revisao humana e faria o `softAP` subir ABERTO em toda placa da frota na
   proxima gravacao. Ha teste e ha mutante para cada um desses casos.
+
+## Decisao 20 - Reinicio periodico do painel a cada 5 minutos, voltando na mesma tela
+
+**Status:** IMPLEMENTADA (autorizada pelo bigboss em 2026-10-09)
+**Impacto de seguranca:** baixo - nenhum rele, DAC ou watchdog depende do painel
+**Numeracao:** 18 e 19 estao no PR #1 (`feat/casas-decimais`), ainda fora da `main`
+**Codigo:** `ur/src/app/display_refresh.h`, `ur/src/main.cpp` (`loop()`),
+`ur/test/native/test_display_refresh/`
+
+### O que foi decidido
+
+- A cada **5 min** (`kPeriodMs = 300000`) o `loop()` chama `IDisplay::hardReset()`: pulso no
+  RESET do SSD1322 e init completo, **reenviando o quadro corrente**. O estado da IHM (tela,
+  menu, edicao em curso, CONFIG PERDIDA) mora em RAM e nao e tocado: o operador volta onde estava.
+- **Adiado** enquanto houver tecla nos ultimos **10 s** (`kQuietMs`) e enquanto o painel for de
+  outro dono (splash/autoteste do boot, radio de atualizacao no ar). Reinicia na primeira passagem
+  livre; a contagem recomeca do instante do reinicio.
+- Uma linha no console a cada reinicio: `display: reinicio periodico <err>`.
+
+### Por que
+
+**Preventivo, sem defeito observado.** O CN4 nao tem MISO (Decisao 12 item 13): um painel que
+perca a configuracao por ruido no cabo fica com a tela errada ou apagada e o firmware nao tem como
+saber. Sem leitura de volta, a defesa e refazer o init de tempos em tempos, cegamente.
+
+### Custo aceito
+
+- **Tela preta ~0,5 s a cada 5 min** (300 ms de `delay()` do proprio U8g2 + 130 ms do pulso
+  explicito + quadros). Escolhido sobre o reenvio so dos registradores (sem pulso, sem piscar),
+  que nao cobriria um controlador travado.
+- **Teclas surdas nesse meio segundo** - por isso o adiamento com tecla recente.
+- A tarefa `ctrl` (core 0), os reles, o DAC e o cachorro **nao param**: os `delay()` sao
+  `vTaskDelay` e o token de liveness e renovado pela `ctrl`, nao pelo `loopTask`.
+
+### Pendente
+
+- **Bancada:** ver a piscada e confirmar a volta na mesma tela - na principal, com o menu aberto
+  parado e em CONFIG PERDIDA.
